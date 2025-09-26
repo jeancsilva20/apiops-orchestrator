@@ -1,0 +1,34 @@
+[tool.poetry]
+name = "apiops-orchestrator"
+version = "0.1.0"
+description = "Ferramenta de linha de comando para automação e boas práticas em ApiOps."
+authors = ["Your Name <you@example.com>"]
+license = "n"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "3.12.3"
+typer = "^0.19.2"
+rich = "^14.1.0"
+pydantic = "^2.11.9"
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.4.2"
+pytest-cov = "^7.0.0"
+black = "^25.9.0"
+ruff = "^0.13.2"
+flynt = "^1.0.6"
+mypy = "^1.18.2"
+deptry = "^0.23.1"
+bandit = "^1.8.6"
+safety = "^3.6.2"
+pre-commit = "^4.3.0"
+tox = "^4.30.2"
+sphinx = "^8.2.3"
+sphinxawesome-theme = "^5.3.2"
+tbump = "^6.11.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
