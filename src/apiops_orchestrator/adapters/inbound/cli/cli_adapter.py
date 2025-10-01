@@ -9,7 +9,7 @@ app = typer.Typer(
 @app.command("sync-openapi")
 def sync_openapi(
     repo: Path = typer.Option(
-        None, "--repo", "-r", help="Caminho do Repositório da API"
+        ..., "--repo", "-r", help="Caminho do Repositório da API"
     ),
     env: str = typer.Option(..., "--env", "-e", help="Ambiente alvo (ex.: dev, hmg, prd)"),
     apply: bool = typer.Option(
@@ -25,7 +25,8 @@ def sync_openapi(
         rprint({"error": str(e)})
         raise typer.Exit(code=1)
 
-
+# Necessário ter outro comando para o typer reconhecer o sync_openapi, caso contrário, qualquer chamada direta ao arquivo main.py caira no sync-openapi, sem receber parametros
+# Considerando que será implementado outros comandos no futuro para substituir esse placeholder, não vejo problema.
 @app.command("placeholder")
 def placeholder() -> None:
     try:
