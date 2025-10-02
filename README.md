@@ -51,7 +51,7 @@ source .venv/bin/activate
 
 Instale dependências de desenvolvimento:
 ```bash
-pip install typer rich pydantic-settings pytest
+poetry install
 ```
 
 Opcional: crie um `.env` na raiz com as variáveis acima.
