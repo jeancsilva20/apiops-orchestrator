@@ -1,91 +1,20 @@
-# Changelog
-Todas as mudanças notáveis deste projeto serão documentadas neste arquivo.
+# CHANGELOG
 
-O formato segue **[Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/)**  
-e este projeto adere a **[Semantic Versioning](https://semver.org/lang/pt-BR/)**.
+Resumo das mudanças recentes no projeto. Cada item indica data, tipo, título e autor.
 
-> Convenção de mensagens (recomendado): **Conventional Commits**.  
-> Use os tipos: `feat`, `fix`, `perf`, `refactor`, `docs`, `build`, `ci`, `test`, `chore`.  
-> _Breaking changes_ devem incluir `!` (ex.: `feat!:`) **ou** `BREAKING CHANGE:` no rodapé.
+## Histórico Recente
+- 2025-10-01 — Testes — "Testes" — Autor: Augusto — Tipo: Testes
+- 2025-10-01 — CLI — "Repo param obrigatório" — Autor: Augusto — Tipo: Correção
+- 2025-09-30 — CLI — "CLI & Testes" — Autor: Augusto — Tipo: Nova funcionalidade
+- 2025-09-30 — CLI — "CLI & Testes" — Autor: Augusto — Tipo: Nova funcionalidade
+- 2025-09-30 — Scaffold — "Implementação vazia de CLI & Testes" — Autor: Augusto — Tipo: Infra/Scaffold
+- 2025-09-26 — Ambiente — "Merged in APIO-10-criacao-de-arquivo-com-variaveis-de-ambiente (pull request #6)" — Autor: Matheus Alves Giroto — Tipo: Nova funcionalidade
+- 2025-09-24 — Arquitetura — "Merged in feature/hex-scaffold (pull request #4)" — Autor: Danilo Amaral — Tipo: Arquitetura
+- 2025-09-24 — Arquitetura — "Merged in feature/hex-scaffold (pull request #3)" — Autor: Danilo Amaral — Tipo: Arquitetura
+- 2025-09-24 — Bootstrap — "Merged in feature/repo-bootstrap (pull request #1)" — Autor: Danilo Amaral — Tipo: Infra/Bootstrap
+- 2025-09-24 — Inicialização — "Initial commit" — Autor: Danilo Amaral — Tipo: Inicialização
 
----
+Observações
+- A classificação por tipo foi inferida a partir dos títulos dos commits/PRs.
+- Para um changelog automatizado mais completo, recomenda-se adotar Conventional Commits.
 
-## [Unreleased]
-### Added
-- 
-
-### Changed
-- 
-
-### Fixed
-- 
-
-### Deprecated
-- 
-
-### Removed
-- 
-
-### Security
-- 
-
----
-
-## [v0.2.0] - 2025-09-24
-### Added
-- CLI `apiops` com subcomando `plan` para diff de recursos (Typer).
-- Geração de **SBOM** (CycloneDX) no pipeline de CI.
-- Template de PR padrão com checklist de qualidade.
-
-### Changed
-- Padronização de estilo com **ruff** + **black**; pre-commit habilitado.
-- Empacotamento com `pyproject.toml` (PEP 621) e `uv/poetry` (conforme o projeto).
-
-### Fixed
-- Tratamento de timeouts do Manager API (retry com backoff exponencial).
-
-### Security
-- Varredura de segredos e SAST (semgrep/bandit) obrigatória no PR.
-
----
-
-## [v0.1.0] - 2025-09-18
-### Added
-- Primeira versão do **apiops-orchestrator**:
-  - Composição de templates (basic-api-info, interceptors, resources, overlays).
-  - Validação de YAML e placeholders.
-  - Comando `sync-openapi` (dry-run).
-
----
-
-## Política de versões
-- **MAJOR**: mudanças incompatíveis (breaking changes).
-- **MINOR**: funcionalidades compatíveis.
-- **PATCH**: correções compatíveis.
-
-## Notas de release
-- **Breaking changes** devem ser listadas no topo da versão, com instruções de migração.
-- Mantenha “Unreleased” atualizado durante o desenvolvimento; ao lançar, mova as entradas para a nova versão e crie a **tag** correspondente.
-- **Hotfixes**: versionar como `vX.Y.Z`, referenciando o(s) commit(s) de correção.
-
-## Suporte de versão do Python
-- Suportar versões **atualmente mantidas** pela PSF.  
-- Remoções de suporte a versões EOL devem aparecer em **Deprecated/Removed** com aviso prévio em pelo menos **uma** versão MINOR.
-
-## Como lançar (exemplo)
-1. Atualize a versão em `pyproject.toml` (PEP 440), ex.: `version = "0.2.0"`.
-2. Mova entradas de **Unreleased** para `v0.2.0` (com data).
-3. Crie tag e publique:
-   ```bash
-   git commit -am "chore(release): v0.2.0"
-   git tag v0.2.0
-   git push origin main --tags
-   ```
-4. Gere/atualize o artefato e publique no registro desejado.
-
----
-
-<!-- Links de comparação (ajuste owner/repo) -->
-[Unreleased]: https://bitbucket.org/owner/repo/branches/compare/main..v0.2.0
-[v0.2.0]: https://bitbucket.org/owner/repo/branches/compare/v0.2.0..v0.1.0
-[v0.1.0]: https://bitbucket.org/owner/repo/commits/tag/v0.1.0
