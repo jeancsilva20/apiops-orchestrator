@@ -1,18 +1,18 @@
 import json, yaml
 from pathlib import Path
 from typing import Any, List
-from apiops_orchestrator.domain.ports.file_importer_port import FileLoaderPort
+from apiops_orchestrator.domain.ports.file_importer_port import PathLoaderPort
 
 
 class InvalidFileFormatError(Exception):
     pass
 
 
-class LocalFileLoaderAdapter(FileLoaderPort):
+class LocalFileLoaderAdapter(PathLoaderPort):
 
     SUPPORTED = {".yaml", ".yml", ".json", ".js", ".txt"}
 
-    def load_file_path(self, path: Path) -> Any | List[Any]:
+    def load_path(self, path: Path) -> Any | List[Any]:
         if not path.exists():
             raise FileNotFoundError(path)
         if path.is_file():

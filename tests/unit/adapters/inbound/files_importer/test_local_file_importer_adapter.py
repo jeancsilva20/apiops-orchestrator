@@ -22,7 +22,7 @@ def test_load_single_yaml_file(adapter, tmp_path: Path):
     with open(file_path, "w", encoding="utf-8") as f:
         yaml.dump(content, f)
 
-    result = adapter.load_file_path(file_path)
+    result = adapter.load_path(file_path)
     assert result == content
 
 
@@ -33,7 +33,7 @@ def test_load_single_json_file(adapter, tmp_path: Path):
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(content, f)
 
-    result = adapter.load_file_path(file_path)
+    result = adapter.load_path(file_path)
     assert result == content
 
 
@@ -43,7 +43,7 @@ def test_load_single_js_file(adapter, tmp_path: Path):
     file_path = tmp_path / "script.js"
     file_path.write_text(content, encoding="utf-8")
 
-    result = adapter.load_file_path(file_path)
+    result = adapter.load_path(file_path)
     assert result == content
 
 
@@ -53,7 +53,7 @@ def test_load_single_txt_file(adapter, tmp_path: Path):
     file_path = tmp_path / "readme.txt"
     file_path.write_text(content, encoding="utf-8")
 
-    result = adapter.load_file_path(file_path)
+    result = adapter.load_path(file_path)
     assert result == content
 
 
@@ -61,7 +61,7 @@ def test_load_path_not_found(adapter):
     """Tests that FileNotFoundError is raised for a non-existent path."""
     non_existent_path = Path("/non/existent/path/file.yaml")
     with pytest.raises(FileNotFoundError):
-        adapter.load_file_path(non_existent_path)
+        adapter.load_path(non_existent_path)
 
 
 def test_load_unsupported_file_directly(adapter, tmp_path: Path):
@@ -69,7 +69,7 @@ def test_load_unsupported_file_directly(adapter, tmp_path: Path):
     file_path = tmp_path / "document.docx"
     file_path.touch()
     with pytest.raises(InvalidFileFormatError):
-        adapter.load_file_path(file_path)
+        adapter.load_path(file_path)
 
 
 def test_load_directory_with_multiple_file_types(adapter, tmp_path: Path):
@@ -87,7 +87,7 @@ def test_load_directory_with_multiple_file_types(adapter, tmp_path: Path):
     (tmp_path / "archive.zip").touch()
     (sub_dir / "image.png").touch()
 
-    results = adapter.load_file_path(tmp_path)
+    results = adapter.load_path(tmp_path)
 
     # The results can be in any order, so we check for presence and length
     assert len(results) == 3
@@ -98,5 +98,5 @@ def test_load_directory_with_multiple_file_types(adapter, tmp_path: Path):
 
 def test_load_empty_directory(adapter, tmp_path: Path):
     """Tests loading an empty directory, which should return an empty list."""
-    results = adapter.load_file_path(tmp_path)
+    results = adapter.load_path(tmp_path)
     assert results == []
