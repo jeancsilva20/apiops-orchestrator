@@ -8,10 +8,12 @@ from apiops_orchestrator.adapters.inbound.files_importer.local_file_importer_ada
     InvalidFileFormatError,
 )
 
+
 # Fixture for the adapter instance
 @pytest.fixture
 def adapter():
     return LocalFileLoaderAdapter()
+
 
 def test_load_single_yaml_file(adapter, tmp_path: Path):
     """Tests loading a single, valid YAML file."""
@@ -23,6 +25,7 @@ def test_load_single_yaml_file(adapter, tmp_path: Path):
     result = adapter.load_file_path(file_path)
     assert result == content
 
+
 def test_load_single_json_file(adapter, tmp_path: Path):
     """Tests loading a single, valid JSON file."""
     content = {"name": "test-api", "version": "1.0"}
@@ -33,6 +36,17 @@ def test_load_single_json_file(adapter, tmp_path: Path):
     result = adapter.load_file_path(file_path)
     assert result == content
 
+
+def test_load_single_js_file(adapter, tmp_path: Path):
+    """Tests loading a single, valid JS file."""
+    content = "var teste = 'okay';"
+    file_path = tmp_path / "script.js"
+    file_path.write_text(content, encoding="utf-8")
+
+    result = adapter.load_file_path(file_path)
+    assert result == content
+
+
 def test_load_single_txt_file(adapter, tmp_path: Path):
     """Tests loading a single, valid TXT file."""
     content = "This is a simple text file."
@@ -42,11 +56,13 @@ def test_load_single_txt_file(adapter, tmp_path: Path):
     result = adapter.load_file_path(file_path)
     assert result == content
 
+
 def test_load_path_not_found(adapter):
     """Tests that FileNotFoundError is raised for a non-existent path."""
     non_existent_path = Path("/non/existent/path/file.yaml")
     with pytest.raises(FileNotFoundError):
         adapter.load_file_path(non_existent_path)
+
 
 def test_load_unsupported_file_directly(adapter, tmp_path: Path):
     """Tests that an error is raised when loading an unsupported file type directly."""
@@ -54,6 +70,7 @@ def test_load_unsupported_file_directly(adapter, tmp_path: Path):
     file_path.touch()
     with pytest.raises(InvalidFileFormatError):
         adapter.load_file_path(file_path)
+
 
 def test_load_directory_with_multiple_file_types(adapter, tmp_path: Path):
     """Tests loading a directory with a mix of supported and unsupported files."""
@@ -77,6 +94,7 @@ def test_load_directory_with_multiple_file_types(adapter, tmp_path: Path):
     assert {"key": "value"} in results
     assert {"id": 123} in results
     assert "some info" in results
+
 
 def test_load_empty_directory(adapter, tmp_path: Path):
     """Tests loading an empty directory, which should return an empty list."""
