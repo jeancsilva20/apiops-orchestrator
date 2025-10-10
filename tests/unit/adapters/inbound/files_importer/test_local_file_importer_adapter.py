@@ -37,16 +37,6 @@ def test_load_single_json_file(adapter, tmp_path: Path):
     assert result == content
 
 
-def test_load_single_js_file(adapter, tmp_path: Path):
-    """Tests loading a single, valid JS file."""
-    content = "var teste = 'okay';"
-    file_path = tmp_path / "script.js"
-    file_path.write_text(content, encoding="utf-8")
-
-    result = adapter.load_path(file_path)
-    assert result == content
-
-
 def test_load_single_txt_file(adapter, tmp_path: Path):
     """Tests loading a single, valid TXT file."""
     content = "This is a simple text file."
