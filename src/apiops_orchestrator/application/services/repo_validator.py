@@ -7,7 +7,7 @@ class RepoValidator:
         """
         Exemplo de rules:
         rules = {
-          "Templates": ["basic info.yaml", "default interceptors.yaml"],
+          "Templates": ["api-basic-info.yaml", "default-interceptors.yaml"],
           "Resources": [],
           "Env-Variables": []
         }
@@ -39,4 +39,6 @@ class RepoValidator:
                     errors.append(f"Arquivo obrigatório ausente: {file_path}")
 
         if errors:
-            raise ValueError("Validação do repositório falhou:\n" + "\n".join(errors))
+            raise ValueError(
+                "Validação do repositório de artefatos falhou:\n" + "\n".join(errors)
+            )

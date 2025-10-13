@@ -9,14 +9,12 @@ class Settings(BaseSettings):
     REQUEST_TIMEOUT: int
     DEBUG: bool
 
-    APIS_REPO_ARTIFACTS_PATH: str = "src/artifacts"  # onde o dev mexe
-    APIS_REPO_REVISIONS_PATH: str = (
-        "src/apis/revisions"  # onde ficam as pastas 1,2,3...
-    )
+    API_REPO_ARTIFACTS_PATH: str = "src/artifacts"  # onde o dev mexe
+    API_REPO_REVISIONS_PATH: str = "src/api/revisions"  # onde ficam as pastas 1,2,3...
 
     ARTIFACTS_FILE_FOLDER_VALIDATION_RULES: dict = {
         "Templates": [
-            "basic-api-info.yaml",
+            "api-basic-info.yaml",
             "default-interceptors.yaml",
         ],
         "Resources": [],
