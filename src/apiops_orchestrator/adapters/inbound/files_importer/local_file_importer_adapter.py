@@ -12,6 +12,10 @@ class InvalidFileFormatError(Exception):
     pass
 
 
+class InvalidFileEncodingError(Exception):
+    pass
+
+
 class LocalFileLoaderAdapter(PathLoaderPort):
 
     def __init__(self, loader_strategies: Dict[str, Callable[[Path], Any]] = None):
@@ -33,6 +37,8 @@ class LocalFileLoaderAdapter(PathLoaderPort):
         ]
 
     def _load_single_file(self, file_path: Path) -> Any:
+        self._ensure_utf8_encoding(file_path)
+
         suffix = file_path.suffix.lower()
         loader = self._loader_strategies.get(suffix)
 
@@ -44,3 +50,13 @@ class LocalFileLoaderAdapter(PathLoaderPort):
                 )
             )
         return loader(file_path)
+
+    @staticmethod
+    def _ensure_utf8_encoding(file_path: Path) -> None:
+        try:
+            with open(file_path, "rb") as f:
+                f.read().decode("utf-8")
+        except UnicodeDecodeError as e:
+            raise InvalidFileEncodingError(
+                f"{file_path} is not valid UTF-8 encoded: {e}"
+            ) from e
