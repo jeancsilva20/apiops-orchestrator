@@ -7,7 +7,7 @@ license = "n"
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "3.12.3"
+python = "^3.12"
 typer = "^0.19.2"
 rich = "^14.1.0"
 pydantic = "^2.11.9"
