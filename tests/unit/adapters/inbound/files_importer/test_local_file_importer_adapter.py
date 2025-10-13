@@ -6,6 +6,7 @@ import json
 from apiops_orchestrator.adapters.inbound.files_importer.local_file_importer_adapter import (
     LocalFileLoaderAdapter,
     InvalidFileFormatError,
+    InvalidFileEncodingError,
 )
 
 
@@ -90,3 +91,31 @@ def test_load_empty_directory(adapter, tmp_path: Path):
     """Tests loading an empty directory, which should return an empty list."""
     results = adapter.load_path(tmp_path)
     assert results == []
+
+
+def test_load_malformed_yaml_file(adapter, tmp_path: Path):
+    """Tests loading a malformed YAML file."""
+    file_path = tmp_path / "malformed.yaml"
+    file_path.write_text("key: value:\n  - item1")
+
+    with pytest.raises(yaml.YAMLError):
+        adapter.load_path(file_path)
+
+
+def test_load_malformed_json_file(adapter, tmp_path: Path):
+    """Tests loading a malformed JSON file."""
+    file_path = tmp_path / "malformed.json"
+    file_path.write_text('{"key": "value",}')  # Trailing comma is invalid
+
+    with pytest.raises(json.JSONDecodeError):
+        adapter.load_path(file_path)
+
+
+def test_load_file_with_encoding_error(adapter, tmp_path: Path):
+    """Tests loading a file with a different encoding."""
+    file_path = tmp_path / "encoding.txt"
+    # Write with an encoding that is not default utf-8
+    file_path.write_text("ação", encoding="latin-1")
+
+    with pytest.raises(InvalidFileEncodingError):
+        adapter.load_path(file_path)
