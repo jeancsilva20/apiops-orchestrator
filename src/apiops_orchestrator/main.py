@@ -29,11 +29,13 @@ def main() -> None:
     # ###################### #
     # Importador de Arquivos #
     # ###################### #
-
-    local_file_adapter = LocalFileLoaderAdapter()
-    file_importer_service = FileImportService(local_file_adapter)
-    files = file_importer_service.load_file_path(artifact_folder)
-    print(files)
+    try:
+        local_file_adapter = LocalFileLoaderAdapter()
+        file_importer_service = FileImportService(local_file_adapter)
+        files = file_importer_service.load_file_path(artifact_folder)
+        print(files)
+    except Exception as error:
+        print(error)
 
 
 if __name__ == "__main__":
