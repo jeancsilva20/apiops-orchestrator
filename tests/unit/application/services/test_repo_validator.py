@@ -25,9 +25,7 @@ def create_folder_structure(base_path: Path, structure: dict):
 
 
 def test_validate_artifact_struct_success(repo_validator, tmp_path):
-    repo_path = tmp_path / "repo"
-    repo_path.mkdir()
-    artifacts_path = repo_path / "artifacts"
+    artifacts_path = tmp_path / "artifacts"
     artifacts_path.mkdir()
 
     for folder, required_files in RULES.items():
@@ -37,36 +35,23 @@ def test_validate_artifact_struct_success(repo_validator, tmp_path):
             (folder_path / filename).touch()
 
     try:
-        repo_validator.validate_artifact_struct(str(repo_path))
+        repo_validator.validate_artifact_struct(artifacts_path)
     except ValueError:
         pytest.fail("validate_artifact_struct raised ValueError unexpectedly!")
 
 
-def test_validate_repo_not_found(repo_validator):
-    non_existent_repo_path = "non_existent_repo"
+def test_validate_artifact_struct_non_existent_path(repo_validator):
+    non_existent_artifacts_path = Path("non_existent_repo/artifacts")
 
     with pytest.raises(
         ValueError,
-        match=f"Pasta do repositório não encontrada: {non_existent_repo_path}",
+        match="Pasta 'artifacts' não encontrada.",
     ):
-        repo_validator.validate_artifact_struct(non_existent_repo_path)
-
-
-def test_validate_artifacts_folder_not_found(repo_validator, tmp_path):
-    repo_path = tmp_path / "repo"
-    repo_path.mkdir()
-
-    with pytest.raises(ValueError) as excinfo:
-        repo_validator.validate_artifact_struct(str(repo_path))
-    assert f"Pasta 'artifacts' não encontrada dentro de {repo_path}" in str(
-        excinfo.value
-    )
+        repo_validator.validate_artifact_struct(non_existent_artifacts_path)
 
 
 def test_validate_missing_required_folder(repo_validator, tmp_path):
-    repo_path = tmp_path / "repo"
-    repo_path.mkdir()
-    artifacts_path = repo_path / "artifacts"
+    artifacts_path = tmp_path / "artifacts"
     artifacts_path.mkdir()
 
     # Dynamically select a folder to skip
@@ -81,16 +66,14 @@ def test_validate_missing_required_folder(repo_validator, tmp_path):
                 (folder_path / filename).touch()
 
     with pytest.raises(ValueError) as excinfo:
-        repo_validator.validate_artifact_struct(str(repo_path))
+        repo_validator.validate_artifact_struct(artifacts_path)
 
     assert "Pasta obrigatória ausente" in str(excinfo.value)
     assert str(artifacts_path / folder_to_skip) in str(excinfo.value)
 
 
 def test_validate_missing_required_file(repo_validator, tmp_path):
-    repo_path = tmp_path / "repo"
-    repo_path.mkdir()
-    artifacts_path = repo_path / "artifacts"
+    artifacts_path = tmp_path / "artifacts"
     artifacts_path.mkdir()
 
     # Find a folder with files and select one file to skip
@@ -114,7 +97,7 @@ def test_validate_missing_required_file(repo_validator, tmp_path):
             (folder_path / filename).touch()
 
     with pytest.raises(ValueError) as excinfo:
-        repo_validator.validate_artifact_struct(str(repo_path))
+        repo_validator.validate_artifact_struct(artifacts_path)
 
     assert "Arquivo obrigatório ausente" in str(excinfo.value)
     assert str(artifacts_path / folder_with_missing_file / file_to_skip) in str(
@@ -123,9 +106,7 @@ def test_validate_missing_required_file(repo_validator, tmp_path):
 
 
 def test_validate_multiple_errors(repo_validator, tmp_path):
-    repo_path = tmp_path / "repo"
-    repo_path.mkdir()
-    artifacts_path = repo_path / "artifacts"
+    artifacts_path = tmp_path / "artifacts"
     artifacts_path.mkdir()
 
     # Dynamically select what to miss
@@ -161,10 +142,10 @@ def test_validate_multiple_errors(repo_validator, tmp_path):
             (folder_path / filename).touch()
 
     with pytest.raises(ValueError) as excinfo:
-        repo_validator.validate_artifact_struct(str(repo_path))
+        repo_validator.validate_artifact_struct(artifacts_path)
 
     error_message = str(excinfo.value)
-    assert "Validação do repositório falhou:" in error_message
+    assert "Validação do repositório de artefatos falhou:" in error_message
     assert (
         f"Arquivo obrigatório ausente: {artifacts_path / folder_for_missing_file / file_to_skip}"
         in error_message

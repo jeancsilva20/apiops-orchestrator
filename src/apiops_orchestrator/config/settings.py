@@ -8,8 +8,9 @@ class Settings(BaseSettings):
     AUTHORIZATION: str
     REQUEST_TIMEOUT: int
     DEBUG: bool
+    # Paths não podem começar com /, pois isso as torna Paths literais, e queremos usar Paths relativas.
 
-    API_REPO_ARTIFACTS_PATH: str = "src/artifacts"  # onde o dev mexe
+    API_REPO_ARTIFACTS_PATH: str = "artifacts"  # onde o dev mexe
     API_REPO_REVISIONS_PATH: str = "src/api/revisions"  # onde ficam as pastas 1,2,3...
 
     ARTIFACTS_FILE_FOLDER_VALIDATION_RULES: dict = {
