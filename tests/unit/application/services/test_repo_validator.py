@@ -3,8 +3,8 @@ from pathlib import Path
 from apiops_orchestrator.application.services.repo_validator import RepoValidator
 
 RULES = {
-    "Templates": ["basic info.yaml", "default interceptors.yaml"],
-    "Resources": ["teste.yaml"],
+    "Templates": ["api-basic-info.yaml", "default-interceptors.yaml"],
+    "Resources": ["resources.yaml"],
     "Env-Variables": [],
 }
 
