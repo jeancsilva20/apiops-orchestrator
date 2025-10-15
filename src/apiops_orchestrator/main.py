@@ -42,15 +42,31 @@ def main() -> None:
     # Validar Schemas #
     # ############### #
     schema_folder = settings.PROJECT_ROOT / settings.ORCHEST_SCHEMA_FOLDER
-    print(f"Folder Location: {settings.PROJECT_ROOT}")
     validator = SchemaValidator(file_importer_service, schema_folder)
 
-    yaml_data_example = file_importer_service.load_file_path(
-        repo_cep / "artifacts" / "templates" / "api-basic-info.yaml"
-    )
+    schema_mapping = {
+        "artifacts/templates/api-basic-info.yaml": "basic-api-info.schema.json",
+        "artifacts/templates/default-interceptors.yaml": "mag-default-interceptors.schema.json",
+        "artifacts/resources/": "api-operations.schema.json",
+    }
+    # Implementado assim para testes e validação, a ideia é passar isso para um orquestrador posteriormente.
+    for path, schema_name in schema_mapping.items():
+        target_path = repo_cep / path
+        try:
+            content = file_importer_service.load_file_path(target_path)
+            files_to_validate = content if isinstance(content, list) else [content]
 
-    validator.validate(yaml_data_example, "basic-api-info.schema.json")
-    # print("Validated")
+            for file_content in files_to_validate:
+                try:
+                    validator.validate(file_content, schema_name)
+                    print(
+                        f"Validation successful for a file in '{path}' with schema '{schema_name}'"
+                    )
+                except ValueError as e:
+                    print(f"{e}")
+
+        except Exception as e:
+            print(f"Error loading path {target_path}: {e}")
 
 
 if __name__ == "__main__":

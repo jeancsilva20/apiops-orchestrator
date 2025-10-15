@@ -15,6 +15,8 @@ class SchemaValidator:
         schema_path = self.schema_folder / schema_name
         try:
             schema = self.file_importer_service.load_file_path(schema_path)
+        except FileNotFoundError as e:
+            raise ValueError(f"Schema file not found at {schema_path}: {e}")
         except Exception as e:
             raise ValueError(f"Error reading schema file {schema_path}: {e}")
 
