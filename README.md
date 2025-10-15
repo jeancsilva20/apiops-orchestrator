@@ -1,95 +1,90 @@
 # apiops-orchestrator
 
-Orquestrador APIOps em Python para compor, validar, planejar e aplicar mudanças de APIs no Sensedia Manager a partir de artefatos (ex.: OpenAPI). A interface principal é uma CLI construída com Typer. O código segue princípios de Arquitetura Hexagonal (adapters, application, domain, infrastructure).
+Orquestrador APIOps em Python para compor, validar, planejar e aplicar mudanças de APIs no Sensedia Manager a partir de artefatos (ex.: OpenAPI). O código segue princípios de Arquitetura Hexagonal (adapters, application, domain, infrastructure).
 
 > Status: em desenvolvimento
 
 ## Sumário
-- Visão Geral
-- Funcionalidades
-- Como Rodar
-- Estrutura de Pastas
-- Tecnologias
-- Contribuidores
+- [Visão Geral](#visão-geral)
+- [Funcionalidades](#funcionalidades)
+- [Como Rodar](#como-rodar)
+- [Estrutura de Pastas](#estrutura-de-pastas)
+- [Tecnologias](#tecnologias)
+- [Contribuidores](#contribuidores)
 
 ## Visão Geral
-- CLI em `src/apiops_orchestrator/main.py` e comandos definidos em `src/apiops_orchestrator/adapters/inbound/cli/cli_adapter.py`.
-- Configuração por variáveis de ambiente (suporta `.env`) em `src/apiops_orchestrator/config/settings.py`.
-- Testes de unidade iniciais: `tests/unit/adapters/inbound/cli/test_cli_adapter.py`.
+
+O Orquestrador APIOps é uma ferramenta em Python para compor, validar e processar artefatos de API (ex.: OpenAPI) para o Sensedia Manager. Atualmente, o projeto opera como um script que requer configuração manual para validar a estrutura de repositórios de API. A interface de linha de comando (CLI) foi temporariamente desativada para focar no desenvolvimento da lógica de negócio principal.
 
 ## Funcionalidades
-- Comando `sync-openapi` (em construção):
-  - Obrigatórias: `--repo/-r` (caminho do repositório da API), `--env/-e` (ambiente: `dev`, `hmg`, `prd`).
-  - Opcionais: `--apply/--no-apply` (aplica mudanças via POST /revisions; padrão DRY-RUN), `--out-dir` (diretório para salvar o plano).
-  - Comportamento atual: imprime os parâmetros recebidos e finaliza. A lógica de diff/planejamento/aplicação será adicionada nas próximas iterações.
-- Comando `placeholder`: reservado para manter a raiz do Typer e futuras extensões da CLI.
 
-Variáveis de ambiente suportadas:
-
-| Variável | Descrição | Padrão |
-| --- | --- | --- |
-| `APIOPS_APIS_REPO_ARTIFACTS_PATH` | Caminho base dos artefatos das APIs | `src/artifacts` |
-| `APIOPS_APIS_REPO_REVISIONS_PATH` | Caminho para revisões das APIs | `src/apis/revisions` |
+- **Validação de Estrutura:** Verifica se a pasta de artefatos (`artifacts`) de um repositório de API segue as regras de estrutura de pastas e arquivos pré-definidas.
+- **Importação de Arquivos:** Lista todos os caminhos de arquivo dentro da pasta de artefatos para processamento futuro.
 
 ## Como Rodar
 
-Pré‑requisitos: Python 3.10+
+### Pré-requisitos
+- Python 3.10+
+- Poetry (gerenciador de dependências)
 
-Crie e ative um ambiente virtual:
+### 1. Instalação
 
-Windows
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate
-```
+1.  **Instale o Poetry** (caso ainda não o tenha):
+    Siga as instruções oficiais de instalação para o seu sistema operacional [aqui](https://python-poetry.org/docs/#installation).
 
-Linux/macOS
+2.  **Clone o repositório** (se ainda não o fez):
+    ```bash
+    git clone https://bitbucket.org/sensedia/apiops-orchestrator
+    cd apiops-orchestrator
+    ```
+
+3.  **Instale as dependências do projeto**:
+    O Poetry criará um ambiente virtual automaticamente e instalará tudo o que é necessário.
+    ```bash
+    poetry install
+    ```
+
+### 2. Configuração
+
+Antes de executar, você **precisa** configurar o caminho do repositório da API que deseja processar.
+
+1.  Abra o arquivo `src/apiops_orchestrator/main.py`.
+2.  Encontre e edite a variável `repo_cep` para que aponte para o **caminho absoluto** do seu repositório de API local (ex: `api-repo-cep`).
+    ```python
+    repo_cep = Path(
+        r"C:\caminho\absoluto\para\seu\api-repo-cep"  # Mude aqui o repositório na sua máquina.
+    )
+    ```
+
+### 3. Execução
+
+Execute o script a partir da raiz do projeto:
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+poetry run python src/apiops_orchestrator/main.py
 ```
+O script irá imprimir a localização da pasta de artefatos, validar sua estrutura e listar os arquivos encontrados.
 
-Instale dependências de desenvolvimento:
+### Testes
+
+Para rodar os testes de unidade, execute:
 ```bash
-poetry install
-```
-
-Opcional: crie um `.env` na raiz com as variáveis acima.
-
-Ajuda e exemplos de uso:
-```bash
-# ajuda geral da CLI
-python src/apiops_orchestrator/main.py --help
-
-# ajuda do comando
-python src/apiops_orchestrator/main.py sync-openapi --help
-
-# exemplo
-python src/apiops_orchestrator/main.py sync-openapi \
-  -r C:\\caminho\\da\\api -e dev --no-apply --out-dir C:\\temp\\plano
-```
-
-Rodar testes:
-```bash
-pytest -q
+pytest
 ```
 
 ## Estrutura de Pastas
-- `src/apiops_orchestrator/main.py` — ponto de entrada da CLI.
-- `src/apiops_orchestrator/adapters/inbound/cli/cli_adapter.py` — comandos Typer (`sync-openapi`, `placeholder`).
-- `src/apiops_orchestrator/config/settings.py` — configurações e variáveis de ambiente.
-- `src/apiops_orchestrator/adapters/*` — camadas de adaptação (inbound/outbound, esqueleto).
-- `src/apiops_orchestrator/application/*` — casos de uso (esqueleto).
-- `src/apiops_orchestrator/domain/*` — modelos, portas e serviços (esqueleto).
-- `src/apiops_orchestrator/infrastructure/*` — integrações de infraestrutura (esqueleto).
-- `tests/unit/...` — testes da CLI.
+- `src/apiops_orchestrator/main.py` — Ponto de entrada principal do script de orquestração.
+- `src/apiops_orchestrator/config/settings.py` — Configurações e variáveis de ambiente.
+- `src/apiops_orchestrator/adapters/*` — Camadas de adaptação (inbound/outbound).
+- `src/apiops_orchestrator/application/*` — Casos de uso e serviços da aplicação.
+- `src/apiops_orchestrator/domain/*` — Modelos, portas e serviços de domínio.
+- `src/apiops_orchestrator/infrastructure/*` — Integrações de infraestrutura.
+- `tests/unit/...` — Testes de unidade.
 
 ## Tecnologias
 - Python 3.10+
-- Typer (CLI)
-- Rich (saída colorida)
 - Pydantic Settings (configuração por ambiente/.env)
 - Pytest (testes)
+- Poetry (gerenciamento de dependências)
 
 ## Contribuidores
 - Augusto

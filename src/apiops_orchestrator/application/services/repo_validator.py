@@ -14,20 +14,14 @@ class RepoValidator:
         """
         self.rules = rules
 
-    def validate_artifact_struct(self, repo_folder: str) -> None:
+    def validate_artifact_struct(self, artifacts_folder: Path) -> None:
         errors = []
 
-        repo_path = Path(repo_folder)
-        artifacts_path = repo_path / "artifacts"
-
-        if not repo_path.exists() or not repo_path.is_dir():
-            raise ValueError(f"Pasta do repositório não encontrada: {repo_path}")
-
-        if not artifacts_path.exists() or not artifacts_path.is_dir():
-            raise ValueError(f"Pasta 'artifacts' não encontrada dentro de {repo_path}")
+        if not artifacts_folder.exists() or not artifacts_folder.is_dir():
+            raise ValueError(f"Pasta 'artifacts' não encontrada.")
 
         for folder, required_files in self.rules.items():
-            folder_path = artifacts_path / folder
+            folder_path = artifacts_folder / folder
 
             if not folder_path.exists() or not folder_path.is_dir():
                 errors.append(f"Pasta obrigatória ausente: {folder_path}")
