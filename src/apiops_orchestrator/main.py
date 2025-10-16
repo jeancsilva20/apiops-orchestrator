@@ -45,7 +45,7 @@ def main() -> None:
     validator = SchemaValidator(file_importer_service, schema_folder)
 
     schema_mapping = {
-        "artifacts/templates/api-basic-info.yaml": "basic-api-info.schema.json",
+        "artifacts/templates/api-basic-info.yaml": "api-basic-info.schema.json",
         "artifacts/templates/default-interceptors.yaml": "mag-default-interceptors.schema.json",
         "artifacts/resources/": "api-operations.schema.json",
     }
