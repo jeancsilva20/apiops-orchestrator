@@ -1,0 +1,9 @@
+{
+  "version": "1.0.0",
+  "schemas": {
+    "ApiBasicInfo": "sandbox:/template-schemas/basic-api-info.schema.json",
+    "Interceptors": "sandbox:/template-schemas/default-interceptors.schema.json",
+    "ApiOperations": "sandbox:/template-schemas/api-operations.schema.json",
+    "Environment": "sandbox:/template-schemas/environment-variables.schema.json"
+  }
+}

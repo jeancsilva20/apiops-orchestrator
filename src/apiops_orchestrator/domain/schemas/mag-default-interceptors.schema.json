@@ -1,0 +1,1038 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/default-interceptors.required-order.schema.json",
+  "title": "MAG Seguros | Default Interceptors",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "spec"
+  ],
+  "properties": {
+    "apiVersion": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "DefaultInterceptors",
+        "Interceptors"
+      ]
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "interceptors"
+      ],
+      "properties": {
+        "interceptors": {
+          "type": "array",
+          "minItems": 12,
+          "prefixItems": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "Custom"
+                },
+                "position": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "const": 1
+                    },
+                    {
+                      "type": "string",
+                      "const": "1"
+                    }
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": [
+                    "location"
+                  ]
+                },
+                "executionPoint": {
+                  "type": "string",
+                  "const": "FIRST"
+                }
+              },
+              "required": [
+                "type",
+                "position",
+                "executionPoint"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "Rate limit"
+                },
+                "position": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "const": 2
+                    },
+                    {
+                      "type": "string",
+                      "const": "2"
+                    }
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": [
+                    "quota",
+                    "interval",
+                    "limitBy",
+                    "ignoreBodyValidationMultiPartFormData"
+                  ]
+                },
+                "executionPoint": {
+                  "type": "string",
+                  "const": "FIRST"
+                }
+              },
+              "required": [
+                "type",
+                "position",
+                "executionPoint"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "Transaction ID"
+                },
+                "position": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "const": 3
+                    },
+                    {
+                      "type": "string",
+                      "const": "3"
+                    }
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": [
+                    "location",
+                    "name",
+                    "ignoreBodyValidationMultiPartFormData"
+                  ]
+                },
+                "executionPoint": {
+                  "type": "string",
+                  "const": "FIRST"
+                }
+              },
+              "required": [
+                "type",
+                "position",
+                "executionPoint"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "Log"
+                },
+                "position": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "const": 4
+                    },
+                    {
+                      "type": "string",
+                      "const": "4"
+                    }
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": [
+                    "acceptedTerms",
+                    "encryptContent",
+                    "encryptPathAndParameters",
+                    "ignoreBodyValidationMultiPartFormData"
+                  ]
+                },
+                "executionPoint": {
+                  "type": "string",
+                  "const": "FIRST"
+                }
+              },
+              "required": [
+                "type",
+                "position",
+                "executionPoint"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "Payload size"
+                },
+                "position": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "const": 5
+                    },
+                    {
+                      "type": "string",
+                      "const": "5"
+                    }
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": [
+                    "maxSize",
+                    "ignoreBodyValidationMultiPartFormData"
+                  ]
+                },
+                "executionPoint": {
+                  "type": "string",
+                  "const": "FIRST"
+                }
+              },
+              "required": [
+                "type",
+                "position",
+                "executionPoint"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "XSS threat protection"
+                },
+                "position": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "const": 6
+                    },
+                    {
+                      "type": "string",
+                      "const": "6"
+                    }
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": [
+                    "regexList",
+                    "ignoreBodyValidationMultiPartFormData"
+                  ]
+                },
+                "executionPoint": {
+                  "type": "string",
+                  "const": "FIRST"
+                }
+              },
+              "required": [
+                "type",
+                "position",
+                "executionPoint"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "SQL threat protection"
+                },
+                "position": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "const": 7
+                    },
+                    {
+                      "type": "string",
+                      "const": "7"
+                    }
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": [
+                    "sqlThreatProtectionHeaders",
+                    "sqlThreatProtectionQueryParams",
+                    "sqlThreatProtectionBody",
+                    "sqlThreatProtectionCookies",
+                    "sqlThreatProtectionPathParams",
+                    "ignoreBodyValidationMultiPartFormData"
+                  ]
+                },
+                "executionPoint": {
+                  "type": "string",
+                  "const": "FIRST"
+                }
+              },
+              "required": [
+                "type",
+                "position",
+                "executionPoint"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "Custom"
+                },
+                "position": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "const": 8
+                    },
+                    {
+                      "type": "string",
+                      "const": "8"
+                    }
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": [
+                    "location"
+                  ]
+                },
+                "executionPoint": {
+                  "type": "string",
+                  "const": "FIRST"
+                }
+              },
+              "required": [
+                "type",
+                "position",
+                "executionPoint"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "Client ID validation"
+                },
+                "position": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "const": 9
+                    },
+                    {
+                      "type": "string",
+                      "const": "9"
+                    }
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": [
+                    "responseContentType",
+                    "location",
+                    "name",
+                    "ignoreBodyValidationMultiPartFormData"
+                  ]
+                },
+                "executionPoint": {
+                  "type": "string",
+                  "const": "FIRST"
+                }
+              },
+              "required": [
+                "type",
+                "position",
+                "executionPoint"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "Service callout"
+                },
+                "position": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "const": 10
+                    },
+                    {
+                      "type": "string",
+                      "const": "10"
+                    }
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": [
+                    "body",
+                    "url",
+                    "method",
+                    "variableName",
+                    "preserveMethod",
+                    "preserveHeaders",
+                    "preserveQueryString",
+                    "preserveBody",
+                    "async",
+                    "fireAndForget",
+                    "headers",
+                    "expectedHttpStatus",
+                    "previousVariableName",
+                    "ignoreBodyValidationMultiPartFormData",
+                    "timeout"
+                  ]
+                },
+                "executionPoint": {
+                  "type": "string",
+                  "const": "FIRST"
+                }
+              },
+              "required": [
+                "type",
+                "position",
+                "executionPoint"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "Custom"
+                },
+                "position": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "const": 11
+                    },
+                    {
+                      "type": "string",
+                      "const": "11"
+                    }
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": [
+                    "location"
+                  ]
+                },
+                "executionPoint": {
+                  "type": "string",
+                  "const": "FIRST"
+                }
+              },
+              "required": [
+                "type",
+                "position",
+                "executionPoint"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "Log"
+                },
+                "position": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "const": 12
+                    },
+                    {
+                      "type": "string",
+                      "const": "12"
+                    }
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": [
+                    "acceptedTerms",
+                    "encryptContent",
+                    "encryptPathAndParameters",
+                    "ignoreBodyValidationMultiPartFormData"
+                  ]
+                },
+                "executionPoint": {
+                  "type": "string",
+                  "const": "SECOND"
+                }
+              },
+              "required": [
+                "type",
+                "position",
+                "executionPoint"
+              ],
+              "additionalProperties": false
+            }
+          ],
+          "items": {
+            "type": "object"
+          },
+          "allOf": [
+            {
+              "contains": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "Custom"
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "const": 1
+                      },
+                      {
+                        "type": "string",
+                        "const": "1"
+                      }
+                    ]
+                  },
+                  "content": {
+                    "type": "object",
+                    "required": [
+                      "location"
+                    ]
+                  },
+                  "executionPoint": {
+                    "type": "string",
+                    "const": "FIRST"
+                  }
+                },
+                "required": [
+                  "type",
+                  "position",
+                  "executionPoint"
+                ],
+                "additionalProperties": false
+              },
+              "minContains": 1
+            },
+            {
+              "contains": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "Rate limit"
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "const": 2
+                      },
+                      {
+                        "type": "string",
+                        "const": "2"
+                      }
+                    ]
+                  },
+                  "content": {
+                    "type": "object",
+                    "required": [
+                      "quota",
+                      "interval",
+                      "limitBy",
+                      "ignoreBodyValidationMultiPartFormData"
+                    ]
+                  },
+                  "executionPoint": {
+                    "type": "string",
+                    "const": "FIRST"
+                  }
+                },
+                "required": [
+                  "type",
+                  "position",
+                  "executionPoint"
+                ],
+                "additionalProperties": false
+              },
+              "minContains": 1
+            },
+            {
+              "contains": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "Transaction ID"
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "const": 3
+                      },
+                      {
+                        "type": "string",
+                        "const": "3"
+                      }
+                    ]
+                  },
+                  "content": {
+                    "type": "object",
+                    "required": [
+                      "location",
+                      "name",
+                      "ignoreBodyValidationMultiPartFormData"
+                    ]
+                  },
+                  "executionPoint": {
+                    "type": "string",
+                    "const": "FIRST"
+                  }
+                },
+                "required": [
+                  "type",
+                  "position",
+                  "executionPoint"
+                ],
+                "additionalProperties": false
+              },
+              "minContains": 1
+            },
+            {
+              "contains": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "Log"
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "const": 4
+                      },
+                      {
+                        "type": "string",
+                        "const": "4"
+                      }
+                    ]
+                  },
+                  "content": {
+                    "type": "object",
+                    "required": [
+                      "acceptedTerms",
+                      "encryptContent",
+                      "encryptPathAndParameters",
+                      "ignoreBodyValidationMultiPartFormData"
+                    ]
+                  },
+                  "executionPoint": {
+                    "type": "string",
+                    "const": "FIRST"
+                  }
+                },
+                "required": [
+                  "type",
+                  "position",
+                  "executionPoint"
+                ],
+                "additionalProperties": false
+              },
+              "minContains": 1
+            },
+            {
+              "contains": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "Payload size"
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "const": 5
+                      },
+                      {
+                        "type": "string",
+                        "const": "5"
+                      }
+                    ]
+                  },
+                  "content": {
+                    "type": "object",
+                    "required": [
+                      "maxSize",
+                      "ignoreBodyValidationMultiPartFormData"
+                    ]
+                  },
+                  "executionPoint": {
+                    "type": "string",
+                    "const": "FIRST"
+                  }
+                },
+                "required": [
+                  "type",
+                  "position",
+                  "executionPoint"
+                ],
+                "additionalProperties": false
+              },
+              "minContains": 1
+            },
+            {
+              "contains": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "XSS threat protection"
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "const": 6
+                      },
+                      {
+                        "type": "string",
+                        "const": "6"
+                      }
+                    ]
+                  },
+                  "content": {
+                    "type": "object",
+                    "required": [
+                      "regexList",
+                      "ignoreBodyValidationMultiPartFormData"
+                    ]
+                  },
+                  "executionPoint": {
+                    "type": "string",
+                    "const": "FIRST"
+                  }
+                },
+                "required": [
+                  "type",
+                  "position",
+                  "executionPoint"
+                ],
+                "additionalProperties": false
+              },
+              "minContains": 1
+            },
+            {
+              "contains": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "SQL threat protection"
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "const": 7
+                      },
+                      {
+                        "type": "string",
+                        "const": "7"
+                      }
+                    ]
+                  },
+                  "content": {
+                    "type": "object",
+                    "required": [
+                      "sqlThreatProtectionHeaders",
+                      "sqlThreatProtectionQueryParams",
+                      "sqlThreatProtectionBody",
+                      "sqlThreatProtectionCookies",
+                      "sqlThreatProtectionPathParams",
+                      "ignoreBodyValidationMultiPartFormData"
+                    ]
+                  },
+                  "executionPoint": {
+                    "type": "string",
+                    "const": "FIRST"
+                  }
+                },
+                "required": [
+                  "type",
+                  "position",
+                  "executionPoint"
+                ],
+                "additionalProperties": false
+              },
+              "minContains": 1
+            },
+            {
+              "contains": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "Custom"
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "const": 8
+                      },
+                      {
+                        "type": "string",
+                        "const": "8"
+                      }
+                    ]
+                  },
+                  "content": {
+                    "type": "object",
+                    "required": [
+                      "location"
+                    ]
+                  },
+                  "executionPoint": {
+                    "type": "string",
+                    "const": "FIRST"
+                  }
+                },
+                "required": [
+                  "type",
+                  "position",
+                  "executionPoint"
+                ],
+                "additionalProperties": false
+              },
+              "minContains": 1
+            },
+            {
+              "contains": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "Client ID validation"
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "const": 9
+                      },
+                      {
+                        "type": "string",
+                        "const": "9"
+                      }
+                    ]
+                  },
+                  "content": {
+                    "type": "object",
+                    "required": [
+                      "responseContentType",
+                      "location",
+                      "name",
+                      "ignoreBodyValidationMultiPartFormData"
+                    ]
+                  },
+                  "executionPoint": {
+                    "type": "string",
+                    "const": "FIRST"
+                  }
+                },
+                "required": [
+                  "type",
+                  "position",
+                  "executionPoint"
+                ],
+                "additionalProperties": false
+              },
+              "minContains": 1
+            },
+            {
+              "contains": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "Service callout"
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "const": 10
+                      },
+                      {
+                        "type": "string",
+                        "const": "10"
+                      }
+                    ]
+                  },
+                  "content": {
+                    "type": "object",
+                    "required": [
+                      "body",
+                      "url",
+                      "method",
+                      "variableName",
+                      "preserveMethod",
+                      "preserveHeaders",
+                      "preserveQueryString",
+                      "preserveBody",
+                      "async",
+                      "fireAndForget",
+                      "headers",
+                      "expectedHttpStatus",
+                      "previousVariableName",
+                      "ignoreBodyValidationMultiPartFormData",
+                      "timeout"
+                    ]
+                  },
+                  "executionPoint": {
+                    "type": "string",
+                    "const": "FIRST"
+                  }
+                },
+                "required": [
+                  "type",
+                  "position",
+                  "executionPoint"
+                ],
+                "additionalProperties": false
+              },
+              "minContains": 1
+            },
+            {
+              "contains": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "Custom"
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "const": 11
+                      },
+                      {
+                        "type": "string",
+                        "const": "11"
+                      }
+                    ]
+                  },
+                  "content": {
+                    "type": "object",
+                    "required": [
+                      "location"
+                    ]
+                  },
+                  "executionPoint": {
+                    "type": "string",
+                    "const": "FIRST"
+                  }
+                },
+                "required": [
+                  "type",
+                  "position",
+                  "executionPoint"
+                ],
+                "additionalProperties": false
+              },
+              "minContains": 1
+            },
+            {
+              "contains": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "Log"
+                  },
+                  "position": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "const": 12
+                      },
+                      {
+                        "type": "string",
+                        "const": "12"
+                      }
+                    ]
+                  },
+                  "content": {
+                    "type": "object",
+                    "required": [
+                      "acceptedTerms",
+                      "encryptContent",
+                      "encryptPathAndParameters",
+                      "ignoreBodyValidationMultiPartFormData"
+                    ]
+                  },
+                  "executionPoint": {
+                    "type": "string",
+                    "const": "SECOND"
+                  }
+                },
+                "required": [
+                  "type",
+                  "position",
+                  "executionPoint"
+                ],
+                "additionalProperties": false
+              },
+              "minContains": 1
+            }
+          ]
+        }
+      }
+    }
+  }
+}
