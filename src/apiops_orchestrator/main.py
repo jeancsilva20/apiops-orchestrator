@@ -6,6 +6,7 @@ from application.services.repo_validator import RepoValidator
 from application.services.schema_validator import SchemaValidator
 from config.settings import Settings
 from pathlib import Path
+from domain.services.yaml_to_json_service import YamlToJsonService
 
 
 def main() -> None:
@@ -25,7 +26,8 @@ def main() -> None:
         # print(f"Folder Location: {artifact_folder}")
         repo_validator.validate_artifact_struct(artifact_folder)
     except Exception as error:
-        print(error)
+        pass
+        # print(error)
 
     # ###################### #
     # Importador de Arquivos #
@@ -36,7 +38,8 @@ def main() -> None:
         files = file_importer_service.load_file_path(artifact_folder)
         # print(files)
     except Exception as error:
-        print(error)
+        pass
+    # print(error)
 
     # ############### #
     # Validar Schemas #
@@ -59,14 +62,32 @@ def main() -> None:
             for file_content in files_to_validate:
                 try:
                     validator.validate(file_content, schema_name)
-                    print(
-                        f"Validation successful for a file in '{path}' with schema '{schema_name}'"
-                    )
+                    # print(
+                    #    f"Validation successful for a file in '{path}' with schema '{schema_name}'"
+                # )
                 except ValueError as e:
-                    print(f"{e}")
+                    pass
+                # print(f"{e}")
 
         except Exception as e:
             print(f"Error loading path {target_path}: {e}")
+
+    # ############ #
+    # YAML TO JSON #
+    # ############ #
+
+    files = file_importer_service.load_file_path(artifact_folder)
+
+    service = YamlToJsonService(files)
+    # print(files)
+
+    result = service.build_api_json()
+    import json
+
+    # TODO Ajeitar para incluir operation resources.
+    # TODO Substituir Variaveis.
+    # TODO: Testar postman
+    print(json.dumps(result.model_dump(), indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":
