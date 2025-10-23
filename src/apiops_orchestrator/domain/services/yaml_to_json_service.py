@@ -1,7 +1,10 @@
+from pydantic import ValidationError
+
 from apiops_orchestrator.domain.models.api_basic_info_model import ApiBasicInfo, ApiInfo
 from apiops_orchestrator.domain.models.resources_model import (
     ResourcesList,
     Resource,
+    ResourceSpec,
     ResourceOperationRef,
 )
 from apiops_orchestrator.domain.models.interceptors_model import (
@@ -9,7 +12,10 @@ from apiops_orchestrator.domain.models.interceptors_model import (
     Interceptor,
 )
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
-from apiops_orchestrator.domain.models.api_operations_model import Operation
+from apiops_orchestrator.domain.models.api_operations_model import (
+    Operation,
+    ApiOperationsFile,
+)
 
 
 class YamlToJsonService:
@@ -17,12 +23,11 @@ class YamlToJsonService:
         self.yaml_files = yamls
 
     def build_api_json(self) -> ApiFull:
-        api_info = ApiInfo()
-        interceptors = []
-        resources = []
-        operations_by_file = {}
+        # api_info = ApiInfo()
+        interceptors: list[Interceptor] = []
+        operations_by_file: dict[str, Operation] = {}
+        resource_specs: list[ResourceSpec] = []
 
-        # --- 1️⃣ Primeiro, varremos todos os YAMLs ---
         for data in self.yaml_files:
             kind = data.get("kind")
 
@@ -35,57 +40,55 @@ class YamlToJsonService:
                 interceptors.extend(parsed.spec.interceptors)
 
             elif kind == "ApiOperations":
-                # Cada operação vem de um arquivo separado (ex: get_cep_{cep}.yaml)
-                ops = data.get("spec", {}).get("operation", [])
-                for op_data in ops:
-                    op = Operation(**op_data)
+                file_name = data.get("metadata", {}).get("file_name", None)
+                if not file_name:
+                    raise Exception("ApiOperationsInfo must have metadata: file_name")
 
-                    # 🧩 Aqui armazenamos pelo nome do arquivo (se existir)
-                    # exemplo: get_cep_{cep}.yaml → serve para linkar com o resource
-                    file_name = data.get("metadata", {}).get("name")
-                    if not file_name:
-                        # fallback se não existir metadata
-                        file_name = op_data.get("file", None)
-                    if file_name:
-                        operations_by_file[file_name] = op
+                for operation_data in data.get("spec", {}).get("operation", []):
+                    print(operation_data)
+                    operation = Operation(**operation_data)
+                    # Use the file_name as the key
+                    operations_by_file[file_name] = operation
 
             elif kind == "ResourcesList":
                 parsed = ResourcesList(**data)
-                resources.extend(parsed.items)
+                resource_specs.extend(parsed.items)
 
-        # --- 2️⃣ Agora, montamos os resources completos com as operations preenchidas ---
-        complete_resources = []
+        final_resources: list[Resource] = []
 
-        for resource in resources:
-            full_ops = []
+        for spec in resource_specs:
+            enriched_operations: list[Operation] = []
 
-            for op_ref in resource.operations:
-                # Buscar a operation completa pelo nome do arquivo
-                if op_ref.file and op_ref.file in operations_by_file:
-                    op_full = operations_by_file[op_ref.file]
-                    full_ops.append(op_full)
-                else:
-                    # fallback se não encontrou a operation completa
-                    full_ops.append(
-                        Operation(
-                            method=op_ref.method,
-                            path=op_ref.path,
-                            description=None,
-                            destination=None,
-                            timeout=None,
-                            interceptors=[],
+            for operation_specs in spec.operations:
+                # Use the 'file' field from the reference as the key
+                if operation_specs.file and operation_specs.file in operations_by_file:
+                    rich_operation = operations_by_file[operation_specs.file]
+
+                    # Compares the method and path between the resources.yaml and operation.yaml, to guarrante error on mismatch.
+                    if (
+                        rich_operation.method == operation_specs.method
+                        and rich_operation.path == operation_specs.path
+                    ):
+                        enriched_operations.append(rich_operation)
+                    else:
+                        print(
+                            f"Warning: Mismatch for file {operation_specs.file}. Operation Reference={operation_specs.method} {operation_specs.path}, Operation File={rich_operation.method} {rich_operation.path}"
                         )
+                else:
+                    print(
+                        f"Warning: No ApiOperation file found for {operation_specs.file}"
                     )
 
-            complete_resources.append(
-                Resource(
-                    name=resource.name,
-                    description=resource.description,
-                    operations=full_ops,
-                )
+            final_resource = Resource(
+                id=spec.id,
+                name=spec.name,
+                description=spec.description,
+                operations=enriched_operations,
             )
+            final_resources.append(final_resource)
 
-        # --- 3️⃣ Montamos o objeto final ---
         return ApiFull(
-            api=api_info, interceptors=interceptors, resources=complete_resources
+            api=api_info,
+            interceptors=interceptors,
+            resources=final_resources,
         )

@@ -7,6 +7,7 @@ from application.services.schema_validator import SchemaValidator
 from config.settings import Settings
 from pathlib import Path
 from domain.services.yaml_to_json_service import YamlToJsonService
+import json
 
 
 def main() -> None:
@@ -82,12 +83,28 @@ def main() -> None:
     # print(files)
 
     result = service.build_api_json()
-    import json
 
-    # TODO Ajeitar para incluir operation resources.
-    # TODO: Revisar models para valores fixos.
+    # TODO: Revisar models para valores fixos - Falar com Paulo
+    # Implementar tratamento de erros para yaml_to_json_service
     # IDS e POSITION Interceptors
+    """
+    TODO: visibility.visibilityType e visibility.groupVisibility - Vamos pegar do GET, retirar do YAML quando implementado.
+    apiTags 
+    {{apiId}},
+    "creationDate": {{apiCreationDate}},
+    "revisions": {{revisions}},
+    "lastRevision": {{lastRevision}}
+
+    "workflowId": 139,
+    "workflowStageId": 420,
+
+    Interceptors ID, ID TEMP e POSITION
+    
+    TIMEOUT
+    """
+    # TODO: Alterar REPO para incluir metadados, e resources.yaml na pasta resources.
     # TODO: Testar postman
+
     print(json.dumps(result.model_dump(), indent=2, ensure_ascii=False))
 
 
