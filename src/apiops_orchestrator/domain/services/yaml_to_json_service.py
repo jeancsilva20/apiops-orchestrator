@@ -45,7 +45,6 @@ class YamlToJsonService:
                     raise Exception("ApiOperationsInfo must have metadata: file_name")
 
                 for operation_data in data.get("spec", {}).get("operation", []):
-                    print(operation_data)
                     operation = Operation(**operation_data)
                     # Use the file_name as the key
                     operations_by_file[file_name] = operation
@@ -64,7 +63,7 @@ class YamlToJsonService:
                 if operation_specs.file and operation_specs.file in operations_by_file:
                     rich_operation = operations_by_file[operation_specs.file]
 
-                    # Compares the method and path between the resources.yaml and operation.yaml, to guarrante error on mismatch.
+                    # Compares the method and path between the resources.yaml and operation.yaml, to guarrante raising exception on mismatch.
                     if (
                         rich_operation.method == operation_specs.method
                         and rich_operation.path == operation_specs.path
