@@ -86,7 +86,7 @@ def main() -> None:
 
     # TODO Ajeitar para incluir operation resources.
     # TODO: Revisar models para valores fixos.
-    # TODO Substituir Variaveis.
+    # IDS e POSITION Interceptors
     # TODO: Testar postman
     print(json.dumps(result.model_dump(), indent=2, ensure_ascii=False))
 
