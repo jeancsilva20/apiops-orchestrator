@@ -8,7 +8,7 @@ from .interceptors_model import Interceptor
 class ApiFull(BaseModel):
     api: ApiInfo
     revisionNumber: int = 999
-    workflowId: int = 139
-    workflowStageId: int = 420
+    workflowId: int = 139  # Ver Paulo
+    workflowStageId: int = 420  # Ver Paulo
     interceptors: List[Interceptor] = []
     resources: List[Resource] = []
