@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from typing import List, Dict, Any
 
 
@@ -10,6 +10,14 @@ class Interceptor(BaseModel):
     content: Dict[str, Any]
     executionPoint: str
     status: str
+
+    @model_validator(mode="before")
+    def set_ids_from_position(cls, values: Dict[str, Any]):
+        position = values.get("position")
+        if position is not None:
+            values.setdefault("id", position)
+            values.setdefault("idTemp", position)
+        return values
 
 
 class InterceptorsSpec(BaseModel):

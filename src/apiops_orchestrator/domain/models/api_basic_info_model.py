@@ -12,12 +12,13 @@ class GroupVisibility(BaseModel):
 
 
 class Visibility(BaseModel):
+    visibilityType: Optional[str] = "GROUP"
     groupVisibility: Optional[GroupVisibility] = None  # TODO: Variavel a ser buscada?
 
 
 class ApiTag(BaseModel):
-    attributeName: Optional[str] = "CLI"
-    tags: Optional[List[str]] = ["Sensedia"]
+    attributeName: Optional[str] = "CLI"  # Opcional, cliente com AG, vindo .env
+    tags: Optional[List[str]] = ["Sensedia"]  # Opcional, cliente com AG, vindo .env
 
 
 class ApiInfo(BaseModel):
@@ -26,8 +27,8 @@ class ApiInfo(BaseModel):
     basePath: str
     description: Optional[str] = "Sample Description"
     apiResponsible: ApiResponsible
-    visibility: Optional[Visibility] = None
-    apiTags: Optional[List[ApiTag]] = []
+    visibility: Optional[Visibility] = None  # Copiar da resposta do GET
+    apiTags: Optional[List[ApiTag]] = []  # Opcional, cliente com AG, vindo .env
     apiType: str = "REST"
     apiSwaggerConfiguration: dict = {
         "showAppRegister": "false",

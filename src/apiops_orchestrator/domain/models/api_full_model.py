@@ -8,7 +8,11 @@ from .interceptors_model import Interceptor
 class ApiFull(BaseModel):
     api: ApiInfo
     revisionNumber: int = 999
-    workflowId: int = 139  # Ver Paulo
-    workflowStageId: int = 420  # Ver Paulo
+    workflowId: int = (
+        0  # Valor opcional, só aplicavél para clientes com AG, valor real vem do .env
+    )
+    workflowStageId: int = (
+        0  # Valor opcional, só aplicavél para clientes com AG, valor real vem do .env
+    )
     interceptors: List[Interceptor] = []
     resources: List[Resource] = []

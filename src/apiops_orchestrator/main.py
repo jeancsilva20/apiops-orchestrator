@@ -84,10 +84,6 @@ def main() -> None:
 
     result = service.build_api_json()
 
-    # TODO 1: Implementar validador para campos com valores fixos (ex: apiType)
-    # TODO 2: Alterar REPO de APIs para incluir metadados, e resources.yaml na pasta resources.
-    # TODO 3: Revisar models para valores fixos - Falar com Paulo
-
     print(json.dumps(result.model_dump(), indent=2, ensure_ascii=False))
 
 
