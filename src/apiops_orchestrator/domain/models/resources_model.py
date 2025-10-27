@@ -29,7 +29,7 @@ class ResourcesList(BaseModel):
 
     apiVersion: str
     kind: str = "ResourcesList"
-    items: List[ResourceSpec]  # <-- It parses into a list of Specs, not final Resources
+    items: List[ResourceSpec]
 
 
 # --- This is the FINAL model ---

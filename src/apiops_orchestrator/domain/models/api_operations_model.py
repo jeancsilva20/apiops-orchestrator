@@ -35,7 +35,6 @@ class Operation(BaseModel):
         try:
             val = int(timeout_value)
         except (TypeError, ValueError):
-            # Let Pydantic's core validation handle types that can't be cast to int (e.g., 'abc')
             return timeout_value
 
         if val < 0:

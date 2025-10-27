@@ -4,16 +4,16 @@ from typing import Optional, List
 
 class ApiResponsible(BaseModel):
     username: str
-    groupName: str  # TODO: Variavel a ser buscada?
+    groupName: str # Buscar via GET
 
 
 class GroupVisibility(BaseModel):
-    name: Optional[str] = ""  # TODO: Variavel a ser buscada?
+    name: Optional[str] = ""  # Buscar via GET
 
 
 class Visibility(BaseModel):
     visibilityType: Optional[str] = "GROUP"
-    groupVisibility: Optional[GroupVisibility] = None  # TODO: Variavel a ser buscada?
+    groupVisibility: Optional[GroupVisibility] = None  # Buscar via GET
 
 
 class ApiTag(BaseModel):

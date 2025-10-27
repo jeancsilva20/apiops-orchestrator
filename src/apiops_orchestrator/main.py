@@ -63,12 +63,11 @@ def main() -> None:
             for file_content in files_to_validate:
                 try:
                     validator.validate(file_content, schema_name)
-                    # print(
-                    #    f"Validation successful for a file in '{path}' with schema '{schema_name}'"
-                # )
+                    print(
+                        f"Validation successful for a file in '{path}' with schema '{schema_name}'"
+                    )
                 except ValueError as e:
-                    pass
-                # print(f"{e}")
+                    print(f"{e}")
 
         except Exception as e:
             print(f"Error loading path {target_path}: {e}")
@@ -80,7 +79,6 @@ def main() -> None:
     files = file_importer_service.load_file_path(artifact_folder)
 
     service = YamlToJsonService(files)
-    # print(files)
 
     result = service.build_api_json()
 
