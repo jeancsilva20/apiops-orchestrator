@@ -101,7 +101,6 @@ class YamlToJsonService:
 
                 final_resources.append(
                     Resource(
-                        id=spec.id,
                         name=spec.name,
                         description=spec.description,
                         operations=enriched_operations,
