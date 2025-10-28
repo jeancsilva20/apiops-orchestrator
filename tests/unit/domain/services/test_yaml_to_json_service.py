@@ -49,12 +49,13 @@ def minimal_api_operations():
     return {
         "apiVersion": "v1",
         "kind": "ApiOperations",
-        "metadata": {"file_name": "op1.yaml"},
+        "metadata": {"fileName": "op1.yaml"},
         "spec": {
             "operation": [
                 {
                     "method": "GET",
                     "path": "/test",
+                    "destination": "http://example.com",
                     "interceptors": [
                         {
                             "position": 1,
@@ -124,12 +125,13 @@ def complex_yamls():
     op1 = {
         "apiVersion": "v1",
         "kind": "ApiOperations",
-        "metadata": {"file_name": "op1.yaml"},
+        "metadata": {"fileName": "op1.yaml"},
         "spec": {
             "operation": [
                 {
                     "method": "GET",
                     "path": "/res1",
+                    "destination": "http://example.com",
                     "interceptors": [
                         {
                             "position": 1,
@@ -146,12 +148,13 @@ def complex_yamls():
     op2 = {
         "apiVersion": "v1",
         "kind": "ApiOperations",
-        "metadata": {"file_name": "op2.yaml"},
+        "metadata": {"fileName": "op2.yaml"},
         "spec": {
             "operation": [
                 {
                     "method": "POST",
                     "path": "/res2",
+                    "destination": "http://example.com",
                     "interceptors": [
                         {
                             "position": 1,
@@ -278,7 +281,7 @@ def test_multiple_api_basic_info(minimal_api_basic_info):
     """
     yamls = [minimal_api_basic_info, minimal_api_basic_info]
     service = YamlToJsonService(yamls)
-    with pytest.raises(ValueError, match="Multiple ApiBasicInfo found"):
+    with pytest.raises(ValueError, match="Multiple ApiBasicInfo found. Only one is allowed."):
         service.build_api_json()
 
 
@@ -289,7 +292,7 @@ def test_duplicate_api_operations_filename(
     minimal_resources_list,
 ):
     """
-    Tests that a ValueError is raised for duplicate ApiOperations file_name.
+    Tests that a ValueError is raised for duplicate ApiOperations fileName.
     """
     yamls = [
         minimal_api_basic_info,
@@ -299,7 +302,7 @@ def test_duplicate_api_operations_filename(
         minimal_resources_list,
     ]
     service = YamlToJsonService(yamls)
-    with pytest.raises(ValueError, match="Duplicate ApiOperations file_name"):
+    with pytest.raises(ValueError, match="Duplicate ApiOperations fileName: op1.yaml"):
         service.build_api_json()
 
 
