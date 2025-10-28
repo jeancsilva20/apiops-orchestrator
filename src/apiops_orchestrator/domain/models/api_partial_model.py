@@ -4,7 +4,7 @@ from typing import Optional, List
 
 class ApiResponsible(BaseModel):
     username: str
-    groupName: str # Buscar via GET
+    groupName: str  # Buscar via GET
 
 
 class GroupVisibility(BaseModel):
@@ -17,15 +17,15 @@ class Visibility(BaseModel):
 
 
 class ApiTag(BaseModel):
-    attributeName: Optional[str] = "CLI"  # Opcional, cliente com AG, vindo .env
-    tags: Optional[List[str]] = ["Sensedia"]  # Opcional, cliente com AG, vindo .env
+    attributeName: Optional[str]  # Opcional, cliente com AG, vindo .env
+    tags: Optional[List[str]]  # Opcional, cliente com AG, vindo .env
 
 
-class ApiInfo(BaseModel):
+class ApiPartialInfo(BaseModel):
     name: str
     version: str
     basePath: str
-    description: Optional[str] = "Sample Description"
+    description: Optional[str] = "API Description"
     apiResponsible: ApiResponsible
     visibility: Optional[Visibility] = None  # Copiar da resposta do GET
     apiTags: Optional[List[ApiTag]] = []  # Opcional, cliente com AG, vindo .env

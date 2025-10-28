@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field, field_validator
-from typing import Optional, List
+from pydantic import BaseModel, Field, field_validator, model_validator
+from typing import Optional, List, Dict, Any
 from .interceptors_model import Interceptor
 
 
@@ -11,9 +11,9 @@ class Operation(BaseModel):
 
     method: str
     path: str
-    description: Optional[str] = "Sample Operation Description"
-    destination: Optional[str] = None
-    timeout: Optional[str] = "60"
+    description: Optional[str] = "Operation Description"
+    destination: str
+    timeout: Optional[str] = None
     interceptors: List[Interceptor] = Field(default_factory=list)
 
     @field_validator("method")
@@ -28,19 +28,25 @@ class Operation(BaseModel):
         return s
 
     @field_validator("timeout", mode="before")
-    def _non_negative_timeout(cls, timeout_value: any) -> str:
-        if timeout_value == "":
-            return "60"
+    def _normalize_timeout(cls, timeout_value: Any) -> Optional[str]:
+        if timeout_value in ("", None):
+            return None
 
         try:
             val = int(timeout_value)
         except (TypeError, ValueError):
-            return timeout_value
+            return str(timeout_value)
 
         if val < 0:
             raise ValueError("Timeout must be >= 0")
 
-        return timeout_value
+        return str(val)
+
+    def model_post_init(self, __context):
+        if self.timeout is None:
+            delattr(
+                self, "timeout"
+            )  # Does not create model with timeout field if its empty
 
 
 class ApiOperationsSpec(BaseModel):

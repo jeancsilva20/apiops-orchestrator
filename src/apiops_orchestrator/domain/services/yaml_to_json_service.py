@@ -3,12 +3,15 @@ from pydantic import ValidationError
 from apiops_orchestrator.domain.services.yaml_to_json_exceptions import (
     InterceptorsNotFoundException,
     ResourcesListNotFoundException,
-    ApiInfoNotFoundException,
+    ApiBasicInfoNotFoundException,
 )
 
 from apiops_orchestrator.domain.services.yaml_to_json_enum import YamlKind
 
-from apiops_orchestrator.domain.models.api_basic_info_model import ApiBasicInfo, ApiInfo
+from apiops_orchestrator.domain.models.api_partial_model import (
+    ApiBasicInfo,
+    ApiPartialInfo,
+)
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
 from apiops_orchestrator.domain.models.api_operations_model import Operation
 from apiops_orchestrator.domain.models.interceptors_model import (
@@ -17,7 +20,7 @@ from apiops_orchestrator.domain.models.interceptors_model import (
 )
 from apiops_orchestrator.domain.models.resources_model import (
     Resource,
-    ResourcesList,
+    ResourcesSpecList,
     ResourceSpec,
 )
 
@@ -27,7 +30,7 @@ class YamlToJsonService:
         self.yaml_files = yamls
 
     def build_api_json(self) -> ApiFull:
-        api_info: ApiInfo | None = None
+        api_partial_info: ApiPartialInfo | None = None
         interceptors: list[Interceptor] = []
         operations_by_file: dict[str, Operation] = {}
         resource_specs: list[ResourceSpec] = []
@@ -37,12 +40,12 @@ class YamlToJsonService:
                 kind = data.get("kind")
 
                 if kind == YamlKind.API_BASIC_INFO.value:
-                    if api_info is not None:
+                    if api_partial_info is not None:
                         raise ValueError(
                             "Multiple ApiBasicInfo found. Only one is allowed."
                         )
                     parsed = ApiBasicInfo(**data)
-                    api_info = ApiInfo(**parsed.spec.get("api", {}))
+                    api_partial_info = ApiPartialInfo(**parsed.spec.get("api", {}))
 
                 elif kind == YamlKind.INTERCEPTORS.value:
                     parsed = InterceptorsFile(**data)
@@ -65,11 +68,11 @@ class YamlToJsonService:
                         operations_by_file[file_name] = operation
 
                 elif kind == YamlKind.RESOURCES_LIST.value:
-                    parsed = ResourcesList(**data)
+                    parsed = ResourcesSpecList(**data)
                     resource_specs.extend(parsed.items)
 
-            if api_info is None:
-                raise ApiInfoNotFoundException()
+            if api_partial_info is None:
+                raise ApiBasicInfoNotFoundException()
             if not resource_specs:
                 raise ResourcesListNotFoundException()
             if not interceptors:
@@ -108,7 +111,7 @@ class YamlToJsonService:
                 )
 
             return ApiFull(
-                api=api_info,
+                api=api_partial_info,
                 interceptors=interceptors,
                 resources=final_resources,
             )
@@ -117,7 +120,7 @@ class YamlToJsonService:
             raise ValueError(f"YAML content validation failed: {e}") from e
         except (
             ValueError,
-            ApiInfoNotFoundException,
+            ApiBasicInfoNotFoundException,
             ResourcesListNotFoundException,
             InterceptorsNotFoundException,
         ) as e:

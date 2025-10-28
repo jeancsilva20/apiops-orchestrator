@@ -1,7 +1,7 @@
 import pytest
 from apiops_orchestrator.domain.services.yaml_to_json_service import YamlToJsonService
 from apiops_orchestrator.domain.services.yaml_to_json_exceptions import (
-    ApiInfoNotFoundException,
+    ApiBasicInfoNotFoundException,
     ResourcesListNotFoundException,
     InterceptorsNotFoundException,
 )
@@ -244,7 +244,7 @@ def test_missing_api_basic_info(
     """
     yamls = [minimal_interceptors, minimal_api_operations, minimal_resources_list]
     service = YamlToJsonService(yamls)
-    with pytest.raises(ApiInfoNotFoundException):
+    with pytest.raises(ApiBasicInfoNotFoundException):
         service.build_api_json()
 
 

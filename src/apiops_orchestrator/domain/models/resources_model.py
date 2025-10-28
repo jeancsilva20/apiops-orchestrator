@@ -18,11 +18,11 @@ class ResourceOperationRef(BaseModel):
 # This model represents an 'item' in your ResourcesList.yaml
 class ResourceSpec(BaseModel):
     name: str
-    description: Optional[str] = "Sample Resource Description"
+    description: Optional[str] = "Resource Description"
     operations: List[ResourceOperationRef] = Field(default_factory=list)
 
 
-class ResourcesList(BaseModel):
+class ResourcesSpecList(BaseModel):
     """
     Represents the file resources.yaml
     """
@@ -40,5 +40,5 @@ class Resource(BaseModel):
     """
 
     name: str
-    description: Optional[str] = "Sample Resource Description"
+    description: Optional[str] = "Resource Description"
     operations: List[Operation] = Field(default_factory=list)

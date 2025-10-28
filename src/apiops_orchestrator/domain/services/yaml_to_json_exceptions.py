@@ -1,4 +1,4 @@
-class ApiInfoNotFoundException(Exception):
+class ApiBasicInfoNotFoundException(Exception):
     """Raised when ApiBasicInfo is not found in the YAML files."""
 
     def __init__(self, message="ApiBasicInfo not found. It is a mandatory component."):
