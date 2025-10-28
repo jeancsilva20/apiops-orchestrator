@@ -63,6 +63,6 @@ class ApiOperationsFile(BaseModel):
     """
 
     apiVersion: str
-    file_name: str = Field(exclude=True)
+    fileName: str = Field(exclude=True)
     kind: str = "ApiOperations"
     spec: ApiOperationsSpec

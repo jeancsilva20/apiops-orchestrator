@@ -3,7 +3,6 @@ from typing import Optional, List
 
 
 class ApiResponsible(BaseModel):
-    username: str
     groupName: str  # Buscar via GET
 
 

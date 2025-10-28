@@ -52,7 +52,7 @@ class YamlToJsonService:
                     interceptors.extend(parsed.spec.interceptors)
 
                 elif kind == YamlKind.API_OPERATIONS.value:
-                    file_name = data.get("metadata", {}).get("file_name")
+                    file_name = data.get("metadata", {}).get("fileName")
                     if not file_name:
                         raise ValueError(
                             "ApiOperations must have metadata with a file_name."
