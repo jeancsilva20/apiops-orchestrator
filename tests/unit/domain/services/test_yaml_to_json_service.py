@@ -281,7 +281,9 @@ def test_multiple_api_basic_info(minimal_api_basic_info):
     """
     yamls = [minimal_api_basic_info, minimal_api_basic_info]
     service = YamlToJsonService(yamls)
-    with pytest.raises(ValueError, match="Multiple ApiBasicInfo found. Only one is allowed."):
+    with pytest.raises(
+        ValueError, match="Multiple ApiBasicInfo found. Only one is allowed."
+    ):
         service.build_api_json()
 
 
