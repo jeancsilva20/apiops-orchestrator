@@ -80,7 +80,7 @@ def main() -> None:
 
     service = YamlToJsonService(files)
 
-    result = service.build_api_json()
+    result = service.build_api_json(settings)
 
     print(json.dumps(result.model_dump(), indent=2, ensure_ascii=False))
 

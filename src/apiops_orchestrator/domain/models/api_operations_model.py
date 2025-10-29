@@ -43,10 +43,9 @@ class Operation(BaseModel):
         return str(val)
 
     def model_post_init(self, __context):
+        """Does not create model with timeout field if its empty"""
         if self.timeout is None:
-            delattr(
-                self, "timeout"
-            )  # Does not create model with timeout field if its empty
+            delattr(self, "timeout")
 
 
 class ApiOperationsSpec(BaseModel):

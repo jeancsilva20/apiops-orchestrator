@@ -8,12 +8,8 @@ from .interceptors_model import Interceptor
 class ApiFull(BaseModel):
     api: ApiPartialInfo
     revisionNumber: int = 999
-    workflowId: int = (
-        0  # Valor opcional, só aplicavél para clientes com AG, valor real vem do .env
-    )
-    workflowStageId: int = (
-        0  # Valor opcional, só aplicavél para clientes com AG, valor real vem do .env
-    )
+    workflowId: Optional[str] = None
+    workflowStageId: Optional[str] = None
     interceptors: List[Interceptor] = []
     resources: List[Resource] = []
 

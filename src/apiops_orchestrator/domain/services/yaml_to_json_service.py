@@ -25,11 +25,14 @@ from apiops_orchestrator.domain.models.resources_model import (
 )
 
 
+from apiops_orchestrator.config.settings import Settings
+
+
 class YamlToJsonService:
     def __init__(self, yamls):
         self.yaml_files = yamls
 
-    def build_api_json(self) -> ApiFull:
+    def build_api_json(self, settings: Settings) -> ApiFull:
         api_partial_info: ApiPartialInfo | None = None
         interceptors: list[Interceptor] = []
         operations_by_file: dict[str, Operation] = {}
@@ -45,7 +48,11 @@ class YamlToJsonService:
                             "Multiple ApiBasicInfo found. Only one is allowed."
                         )
                     parsed = ApiBasicInfo(**data)
-                    api_partial_info = ApiPartialInfo(**parsed.spec.get("api", {}))
+                    api_partial_info = ApiPartialInfo(
+                        **parsed.spec.get("api", {}),
+                        id=settings.API_ID,
+                        apiTags=settings.api_tags,
+                    )
 
                 elif kind == YamlKind.INTERCEPTORS.value:
                     parsed = InterceptorsFile(**data)
@@ -114,6 +121,8 @@ class YamlToJsonService:
                 api=api_partial_info,
                 interceptors=interceptors,
                 resources=final_resources,
+                workflowId=settings.WORKFLOW_ID,
+                workflowStageId=settings.WORKFLOW_STAGE_ID,
             )
 
         except ValidationError as e:
