@@ -11,7 +11,6 @@ class Settings(BaseSettings):
     PROD_URL: str
     AUTHORIZATION: str
     REQUEST_TIMEOUT: int
-    DEBUG: bool
 
     API_ID: str
     WORKFLOW_ID: str | None = None
