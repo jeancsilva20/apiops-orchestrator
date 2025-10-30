@@ -1,6 +1,7 @@
 from adapters.inbound.files_importer.local_file_importer_adapter import (
     LocalFileLoaderAdapter,
 )
+from apiops_orchestrator.domain.models.api_full_model import ApiFull
 from application.services.file_import_service import FileImportService
 from application.services.repo_validator import RepoValidator
 from application.services.schema_validator import SchemaValidator
@@ -8,7 +9,7 @@ from config.settings import Settings
 from pathlib import Path
 from domain.services.yaml_to_json_service import YamlToJsonService
 import json
-from typing import List, Dict, Any
+from typing import List, Dict
 
 
 def _print_step(step_name: str):
@@ -79,15 +80,15 @@ def generate_api_json(
     file_importer_service: FileImportService,
     repo_path: Path,
     settings: Settings,
-) -> Dict[str, Any]:
+) -> ApiFull:
     """Generates the final API JSON from YAML files."""
     _print_step("Step 4: Generating API JSON from YAML files")
     artifact_folder = repo_path / settings.API_REPO_ARTIFACTS_PATH
     files = file_importer_service.load_file_path(artifact_folder)
-    service = YamlToJsonService(files)
-    result = service.build_api_json(settings)
+    service = YamlToJsonService(files, settings)
+    result = service.build_api_json()
     print("API JSON generated successfully.")
-    return result.model_dump()
+    return result
 
 
 def main() -> None:
@@ -121,7 +122,7 @@ def main() -> None:
         final_json = generate_api_json(file_importer_service, repo_cep_path, settings)
 
         _print_step("Final Result: API JSON")
-        print(json.dumps(final_json, indent=2, ensure_ascii=False))
+        print(json.dumps(final_json.model_dump(), indent=2, ensure_ascii=False))
 
     except Exception as e:
         print("\n" + "!" * 20)
