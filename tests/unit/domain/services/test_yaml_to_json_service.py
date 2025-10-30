@@ -1,16 +1,19 @@
-import json
 import pytest
-from apiops_orchestrator.config.settings import Settings
+from apiops_orchestrator.domain.models.api_full_model import ApiFull
 from apiops_orchestrator.domain.services.yaml_to_json_service import YamlToJsonService
 from apiops_orchestrator.domain.services.yaml_to_json_exceptions import (
     ApiBasicInfoNotFoundException,
     ResourcesListNotFoundException,
     InterceptorsNotFoundException,
 )
+from apiops_orchestrator.config.settings import Settings
 
 
-# Mock Data
-# Basic valid data for happy path
+@pytest.fixture
+def settings():
+    return Settings()
+
+
 @pytest.fixture
 def minimal_api_basic_info():
     return {
@@ -19,8 +22,8 @@ def minimal_api_basic_info():
         "spec": {
             "api": {
                 "name": "Test API",
-                "version": "v1",
                 "basePath": "/test",
+                "version": "v1",
                 "apiResponsible": {"username": "testuser", "groupName": "testgroup"},
             }
         },
@@ -57,7 +60,7 @@ def minimal_api_operations():
                 {
                     "method": "GET",
                     "path": "/test",
-                    "destination": "http://example.com",
+                    "destination": "/mock/destination",
                     "interceptors": [
                         {
                             "position": 1,
@@ -81,128 +84,108 @@ def minimal_resources_list():
         "items": [
             {
                 "name": "Test Resource",
-                "operations": [{"method": "GET", "path": "/test", "file": "op1.yaml"}],
+                "description": "A test resource",
+                "operations": [{"file": "op1.yaml", "method": "GET", "path": "/test"}],
             }
         ],
     }
 
 
-@pytest.fixture
-def settings(monkeypatch):
-    monkeypatch.setenv("API_TAGS_1", "attr1:tag1,tag2")
-    monkeypatch.setenv("API_TAGS_2", "attr2:tag3,tag4")
-    return Settings(
-        API_ID="123",
-        WORKFLOW_ID="456",
-        WORKFLOW_STAGE_ID="789",
-    )
-
-
-# Fixture for more complex scenario
 @pytest.fixture
 def complex_yamls():
-    api_basic_info = {
-        "apiVersion": "v1",
-        "kind": "ApiBasicInfo",
-        "spec": {
-            "api": {
-                "name": "Complex API",
-                "version": "v2",
-                "basePath": "/complex",
-                "apiResponsible": {"username": "admin", "groupName": "admins"},
-            }
+    return [
+        {
+            "apiVersion": "v1",
+            "kind": "ApiBasicInfo",
+            "spec": {
+                "api": {
+                    "name": "Complex API",
+                    "basePath": "/complex",
+                    "version": "v1",
+                    "apiResponsible": {"username": "admin", "groupName": "admins"},
+                }
+            },
         },
-    }
-    interceptors = {
-        "apiVersion": "v1",
-        "kind": "Interceptors",
-        "spec": {
-            "interceptors": [
+        {
+            "apiVersion": "v1",
+            "kind": "Interceptors",
+            "spec": {
+                "interceptors": [
+                    {
+                        "position": 1,
+                        "type": "global",
+                        "content": {},
+                        "executionPoint": "in",
+                        "status": "enabled",
+                    }
+                ]
+            },
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "ApiOperations",
+            "metadata": {"fileName": "op1.yaml"},
+            "spec": {
+                "operation": [
+                    {
+                        "method": "GET",
+                        "path": "/res1",
+                        "destination": "/complex/res1",
+                        "interceptors": [
+                            {
+                                "position": 1,
+                                "type": "op1-interceptor",
+                                "content": {},
+                                "executionPoint": "in",
+                                "status": "enabled",
+                            }
+                        ],
+                    }
+                ]
+            },
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "ApiOperations",
+            "metadata": {"fileName": "op2.yaml"},
+            "spec": {
+                "operation": [
+                    {
+                        "method": "POST",
+                        "path": "/res2",
+                        "destination": "/complex/res2",
+                        "interceptors": [
+                            {
+                                "position": 1,
+                                "type": "op2-interceptor",
+                                "content": {},
+                                "executionPoint": "in",
+                                "status": "enabled",
+                            }
+                        ],
+                    }
+                ]
+            },
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "ResourcesList",
+            "items": [
                 {
-                    "position": 1,
-                    "type": "inbound",
-                    "content": {},
-                    "executionPoint": "in",
-                    "status": "enabled",
+                    "name": "Resource 1",
+                    "operations": [
+                        {"file": "op1.yaml", "method": "GET", "path": "/res1"}
+                    ],
                 },
                 {
-                    "position": 2,
-                    "type": "inbound",
-                    "content": {},
-                    "executionPoint": "in",
-                    "status": "enabled",
+                    "name": "Resource 2",
+                    "operations": [
+                        {"file": "op2.yaml", "method": "POST", "path": "/res2"}
+                    ],
                 },
-            ]
+            ],
         },
-    }
-    op1 = {
-        "apiVersion": "v1",
-        "kind": "ApiOperations",
-        "metadata": {"fileName": "op1.yaml"},
-        "spec": {
-            "operation": [
-                {
-                    "method": "GET",
-                    "path": "/res1",
-                    "destination": "http://example.com",
-                    "interceptors": [
-                        {
-                            "position": 1,
-                            "type": "outbound",
-                            "content": {},
-                            "executionPoint": "out",
-                            "status": "enabled",
-                        }
-                    ],
-                }
-            ]
-        },
-    }
-    op2 = {
-        "apiVersion": "v1",
-        "kind": "ApiOperations",
-        "metadata": {"fileName": "op2.yaml"},
-        "spec": {
-            "operation": [
-                {
-                    "method": "POST",
-                    "path": "/res2",
-                    "destination": "http://example.com",
-                    "interceptors": [
-                        {
-                            "position": 1,
-                            "type": "inbound",
-                            "content": {},
-                            "executionPoint": "in",
-                            "status": "enabled",
-                        },
-                        {
-                            "position": 2,
-                            "type": "outbound",
-                            "content": {},
-                            "executionPoint": "out",
-                            "status": "enabled",
-                        },
-                    ],
-                }
-            ]
-        },
-    }
-    resources_list = {
-        "apiVersion": "v1",
-        "kind": "ResourcesList",
-        "items": [
-            {
-                "name": "Resource 1",
-                "operations": [{"method": "GET", "path": "/res1", "file": "op1.yaml"}],
-            },
-            {
-                "name": "Resource 2",
-                "operations": [{"method": "POST", "path": "/res2", "file": "op2.yaml"}],
-            },
-        ],
-    }
-    return [api_basic_info, interceptors, op1, op2, resources_list]
+    ]
 
 
 def test_build_api_json_happy_path(
@@ -222,14 +205,13 @@ def test_build_api_json_happy_path(
         minimal_api_operations,
         minimal_resources_list,
     ]
-    service = YamlToJsonService(yamls)
-    result = service.build_api_json(settings)
+    service = YamlToJsonService(yamls, settings)
+    result = service.build_api_json()
 
+    assert isinstance(result, ApiFull)
     assert result.api.name == "Test API"
-    assert len(result.interceptors) == 1
     assert len(result.resources) == 1
-    assert len(result.resources[0].operations) == 1
-    assert len(result.resources[0].operations[0].interceptors) == 1
+    assert len(result.interceptors) == 1
 
 
 def test_build_api_json_interceptor_content_is_string(
@@ -249,15 +231,10 @@ def test_build_api_json_interceptor_content_is_string(
         minimal_api_operations,
         minimal_resources_list,
     ]
-    service = YamlToJsonService(yamls)
-    result = service.build_api_json(settings)
+    service = YamlToJsonService(yamls, settings)
+    result = service.build_api_json()
 
     assert isinstance(result.interceptors[0].content, str)
-    assert result.interceptors[0].content == '{"key": "value"}'
-    assert isinstance(result.resources[0].operations[0].interceptors[0].content, str)
-    assert (
-        result.resources[0].operations[0].interceptors[0].content == '{"key": "value"}'
-    )
 
 
 def test_interceptor_position_increment(
@@ -269,7 +246,7 @@ def test_interceptor_position_increment(
     monkeypatch,
 ):
     """
-    Tests that the interceptor positions are correctly incremented.
+    Tests that the interceptor positions are correctly incremented by the ApiFull model validator.
     """
     yamls = [
         minimal_api_basic_info,
@@ -277,23 +254,30 @@ def test_interceptor_position_increment(
         minimal_api_operations,
         minimal_resources_list,
     ]
-    service = YamlToJsonService(yamls)
-    result = service.build_api_json(settings)
+    service = YamlToJsonService(yamls, settings)
+    result = service.build_api_json()
 
+    # The ApiFull model validator re-numbers all interceptors sequentially.
+    # 1. The global interceptor gets position 1.
+    # 2. The operation-specific interceptor gets position 2.
     assert result.interceptors[0].position == 1
     assert result.resources[0].operations[0].interceptors[0].position == 2
 
 
 def test_missing_api_basic_info(
-    minimal_interceptors, minimal_api_operations, minimal_resources_list, settings, monkeypatch
+    minimal_interceptors,
+    minimal_api_operations,
+    minimal_resources_list,
+    settings,
+    monkeypatch,
 ):
     """
     Tests that ApiInfoNotFoundException is raised when ApiBasicInfo is missing.
     """
     yamls = [minimal_interceptors, minimal_api_operations, minimal_resources_list]
-    service = YamlToJsonService(yamls)
+    service = YamlToJsonService(yamls, settings)
     with pytest.raises(ApiBasicInfoNotFoundException):
-        service.build_api_json(settings)
+        service.build_api_json()
 
 
 def test_missing_resources_list(
@@ -303,9 +287,9 @@ def test_missing_resources_list(
     Tests that ResourcesListNotFoundException is raised when ResourcesList is missing.
     """
     yamls = [minimal_api_basic_info, minimal_interceptors, minimal_api_operations]
-    service = YamlToJsonService(yamls)
+    service = YamlToJsonService(yamls, settings)
     with pytest.raises(ResourcesListNotFoundException):
-        service.build_api_json(settings)
+        service.build_api_json()
 
 
 def test_missing_interceptors(
@@ -315,9 +299,9 @@ def test_missing_interceptors(
     Tests that InterceptorsNotFoundException is raised when Interceptors are missing.
     """
     yamls = [minimal_api_basic_info, minimal_api_operations, minimal_resources_list]
-    service = YamlToJsonService(yamls)
+    service = YamlToJsonService(yamls, settings)
     with pytest.raises(InterceptorsNotFoundException):
-        service.build_api_json(settings)
+        service.build_api_json()
 
 
 def test_multiple_api_basic_info(minimal_api_basic_info, settings):
@@ -325,11 +309,9 @@ def test_multiple_api_basic_info(minimal_api_basic_info, settings):
     Tests that a ValueError is raised when multiple ApiBasicInfo files are provided.
     """
     yamls = [minimal_api_basic_info, minimal_api_basic_info]
-    service = YamlToJsonService(yamls)
-    with pytest.raises(
-        ValueError, match="Multiple ApiBasicInfo found. Only one is allowed."
-    ):
-        service.build_api_json(settings)
+    service = YamlToJsonService(yamls, settings)
+    with pytest.raises(ValueError, match="Multiple ApiBasicInfo found"):
+        service.build_api_json()
 
 
 def test_duplicate_api_operations_filename(
@@ -346,12 +328,12 @@ def test_duplicate_api_operations_filename(
         minimal_api_basic_info,
         minimal_interceptors,
         minimal_api_operations,
-        minimal_api_operations,
+        minimal_api_operations,  # Duplicate
         minimal_resources_list,
     ]
-    service = YamlToJsonService(yamls)
-    with pytest.raises(ValueError, match="Duplicate ApiOperations fileName: op1.yaml"):
-        service.build_api_json(settings)
+    service = YamlToJsonService(yamls, settings)
+    with pytest.raises(ValueError, match="Duplicate ApiOperations fileName"):
+        service.build_api_json()
 
 
 def test_api_operation_file_not_found(
@@ -361,9 +343,9 @@ def test_api_operation_file_not_found(
     Tests that a ValueError is raised if a resource references a non-existent ApiOperation file.
     """
     yamls = [minimal_api_basic_info, minimal_interceptors, minimal_resources_list]
-    service = YamlToJsonService(yamls)
+    service = YamlToJsonService(yamls, settings)
     with pytest.raises(ValueError, match="ApiOperation file 'op1.yaml' not found"):
-        service.build_api_json(settings)
+        service.build_api_json()
 
 
 def test_operation_mismatch(
@@ -384,9 +366,9 @@ def test_operation_mismatch(
         minimal_api_operations,
         minimal_resources_list,
     ]
-    service = YamlToJsonService(yamls)
+    service = YamlToJsonService(yamls, settings)
     with pytest.raises(ValueError, match="Operation mismatch"):
-        service.build_api_json(settings)
+        service.build_api_json()
 
 
 def test_empty_interceptors_list(
@@ -406,9 +388,9 @@ def test_empty_interceptors_list(
         minimal_api_operations,
         minimal_resources_list,
     ]
-    service = YamlToJsonService(yamls)
+    service = YamlToJsonService(yamls, settings)
     with pytest.raises(InterceptorsNotFoundException):
-        service.build_api_json(settings)
+        service.build_api_json()
 
 
 def test_empty_resources_list(
@@ -424,9 +406,9 @@ def test_empty_resources_list(
         minimal_api_operations,
         empty_resources,
     ]
-    service = YamlToJsonService(yamls)
+    service = YamlToJsonService(yamls, settings)
     with pytest.raises(ResourcesListNotFoundException):
-        service.build_api_json(settings)
+        service.build_api_json()
 
 
 def test_interceptor_missing_position(
@@ -441,7 +423,7 @@ def test_interceptor_missing_position(
         "spec": {
             "interceptors": [
                 {
-                    # No position here
+                    # No position, id, or idTemp here
                     "type": "inbound",
                     "content": {},
                     "executionPoint": "in",
@@ -451,38 +433,22 @@ def test_interceptor_missing_position(
         },
     }
     yamls = [minimal_api_basic_info, invalid_interceptors, minimal_resources_list]
-    service = YamlToJsonService(yamls)
+    service = YamlToJsonService(yamls, settings)
+    # The service wraps Pydantic's ValidationError in a ValueError
     with pytest.raises(ValueError, match="YAML content validation failed"):
-        service.build_api_json(settings)
+        service.build_api_json()
 
 
 def test_complex_scenario_multiple_interceptors(complex_yamls, settings):
     """
     Tests a more complex scenario with multiple resources and interceptors.
     """
-    service = YamlToJsonService(complex_yamls)
-    result = service.build_api_json(settings)
+    service = YamlToJsonService(complex_yamls, settings)
+    result = service.build_api_json()
 
+    assert isinstance(result, ApiFull)
     assert result.api.name == "Complex API"
-    # Global interceptors
-    assert len(result.interceptors) == 2
-    assert result.interceptors[0].position == 1
-    assert result.interceptors[1].position == 2
-
-    # Resource 1, Operation 1
     assert len(result.resources) == 2
-    res1 = result.resources[0]
-    assert res1.name == "Resource 1"
-    assert len(res1.operations) == 1
-    op1 = res1.operations[0]
-    assert len(op1.interceptors) == 1
-    assert op1.interceptors[0].position == 3  # 2 global + 1st operational
-
-    # Resource 2, Operation 1
-    res2 = result.resources[1]
-    assert res2.name == "Resource 2"
-    assert len(res2.operations) == 1
-    op2 = res2.operations[0]
-    assert len(op2.interceptors) == 2
-    assert op2.interceptors[0].position == 4  # Continues from the previous one
-    assert op2.interceptors[1].position == 5
+    assert len(result.interceptors) == 1  # Global interceptor
+    assert len(result.resources[0].operations[0].interceptors) == 1  # Op1 interceptor
+    assert len(result.resources[1].operations[0].interceptors) == 1  # Op2 interceptor

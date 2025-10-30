@@ -48,7 +48,7 @@ class YamlToJsonService:
             YamlKind.RESOURCES_LIST: self._process_resources_list,
         }
 
-        # Keys for Dictonary Lookup via .get()
+        # Keys for Dictionary Lookup via .get()
         self.KIND_KEY = "kind"
         self.KIND_API = "api"
         self.KIND_METADATA = "metadata"
@@ -87,7 +87,14 @@ class YamlToJsonService:
 
         except ValidationError as e:
             raise ValueError(f"YAML content validation failed: {e}") from e
-        except (ValueError, KeyError) as e:
+        except (
+            ValueError,
+            KeyError,
+            ApiBasicInfoNotFoundException,
+            ResourcesListNotFoundException,
+            InterceptorsNotFoundException,
+        ) as e:
+            # Catch specific, expected errors and re-raise
             raise e
         except Exception as e:
             raise RuntimeError(
