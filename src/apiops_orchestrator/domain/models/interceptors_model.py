@@ -1,5 +1,5 @@
 from pydantic import BaseModel, model_validator
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Union
 
 
 class Interceptor(BaseModel):
@@ -7,7 +7,7 @@ class Interceptor(BaseModel):
     idTemp: int
     position: int
     type: str
-    content: Dict[str, Any]
+    content: Union[Dict[str, Any], str]
     executionPoint: str
     status: str
 

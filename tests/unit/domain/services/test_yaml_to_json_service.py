@@ -1,4 +1,6 @@
+import json
 import pytest
+from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.services.yaml_to_json_service import YamlToJsonService
 from apiops_orchestrator.domain.services.yaml_to_json_exceptions import (
     ApiBasicInfoNotFoundException,
@@ -35,7 +37,7 @@ def minimal_interceptors():
                 {
                     "position": 1,
                     "type": "inbound",
-                    "content": {},
+                    "content": {"key": "value"},
                     "executionPoint": "in",
                     "status": "enabled",
                 }
@@ -60,7 +62,7 @@ def minimal_api_operations():
                         {
                             "position": 1,
                             "type": "outbound",
-                            "content": {},
+                            "content": {"key": "value"},
                             "executionPoint": "out",
                             "status": "enabled",
                         }
@@ -83,6 +85,17 @@ def minimal_resources_list():
             }
         ],
     }
+
+
+@pytest.fixture
+def settings(monkeypatch):
+    monkeypatch.setenv("API_TAGS_1", "attr1:tag1,tag2")
+    monkeypatch.setenv("API_TAGS_2", "attr2:tag3,tag4")
+    return Settings(
+        API_ID="123",
+        WORKFLOW_ID="456",
+        WORKFLOW_STAGE_ID="789",
+    )
 
 
 # Fixture for more complex scenario
@@ -197,6 +210,8 @@ def test_build_api_json_happy_path(
     minimal_interceptors,
     minimal_api_operations,
     minimal_resources_list,
+    settings,
+    monkeypatch,
 ):
     """
     Tests the successful creation of an ApiFull object from a valid set of YAML data.
@@ -208,7 +223,7 @@ def test_build_api_json_happy_path(
         minimal_resources_list,
     ]
     service = YamlToJsonService(yamls)
-    result = service.build_api_json()
+    result = service.build_api_json(settings)
 
     assert result.api.name == "Test API"
     assert len(result.interceptors) == 1
@@ -217,11 +232,41 @@ def test_build_api_json_happy_path(
     assert len(result.resources[0].operations[0].interceptors) == 1
 
 
+def test_build_api_json_interceptor_content_is_string(
+    minimal_api_basic_info,
+    minimal_interceptors,
+    minimal_api_operations,
+    minimal_resources_list,
+    settings,
+    monkeypatch,
+):
+    """
+    Tests that the interceptor content is converted to a JSON string.
+    """
+    yamls = [
+        minimal_api_basic_info,
+        minimal_interceptors,
+        minimal_api_operations,
+        minimal_resources_list,
+    ]
+    service = YamlToJsonService(yamls)
+    result = service.build_api_json(settings)
+
+    assert isinstance(result.interceptors[0].content, str)
+    assert result.interceptors[0].content == '{"key": "value"}'
+    assert isinstance(result.resources[0].operations[0].interceptors[0].content, str)
+    assert (
+        result.resources[0].operations[0].interceptors[0].content == '{"key": "value"}'
+    )
+
+
 def test_interceptor_position_increment(
     minimal_api_basic_info,
     minimal_interceptors,
     minimal_api_operations,
     minimal_resources_list,
+    settings,
+    monkeypatch,
 ):
     """
     Tests that the interceptor positions are correctly incremented.
@@ -233,14 +278,14 @@ def test_interceptor_position_increment(
         minimal_resources_list,
     ]
     service = YamlToJsonService(yamls)
-    result = service.build_api_json()
+    result = service.build_api_json(settings)
 
     assert result.interceptors[0].position == 1
     assert result.resources[0].operations[0].interceptors[0].position == 2
 
 
 def test_missing_api_basic_info(
-    minimal_interceptors, minimal_api_operations, minimal_resources_list
+    minimal_interceptors, minimal_api_operations, minimal_resources_list, settings, monkeypatch
 ):
     """
     Tests that ApiInfoNotFoundException is raised when ApiBasicInfo is missing.
@@ -248,11 +293,11 @@ def test_missing_api_basic_info(
     yamls = [minimal_interceptors, minimal_api_operations, minimal_resources_list]
     service = YamlToJsonService(yamls)
     with pytest.raises(ApiBasicInfoNotFoundException):
-        service.build_api_json()
+        service.build_api_json(settings)
 
 
 def test_missing_resources_list(
-    minimal_api_basic_info, minimal_interceptors, minimal_api_operations
+    minimal_api_basic_info, minimal_interceptors, minimal_api_operations, settings
 ):
     """
     Tests that ResourcesListNotFoundException is raised when ResourcesList is missing.
@@ -260,11 +305,11 @@ def test_missing_resources_list(
     yamls = [minimal_api_basic_info, minimal_interceptors, minimal_api_operations]
     service = YamlToJsonService(yamls)
     with pytest.raises(ResourcesListNotFoundException):
-        service.build_api_json()
+        service.build_api_json(settings)
 
 
 def test_missing_interceptors(
-    minimal_api_basic_info, minimal_api_operations, minimal_resources_list
+    minimal_api_basic_info, minimal_api_operations, minimal_resources_list, settings
 ):
     """
     Tests that InterceptorsNotFoundException is raised when Interceptors are missing.
@@ -272,10 +317,10 @@ def test_missing_interceptors(
     yamls = [minimal_api_basic_info, minimal_api_operations, minimal_resources_list]
     service = YamlToJsonService(yamls)
     with pytest.raises(InterceptorsNotFoundException):
-        service.build_api_json()
+        service.build_api_json(settings)
 
 
-def test_multiple_api_basic_info(minimal_api_basic_info):
+def test_multiple_api_basic_info(minimal_api_basic_info, settings):
     """
     Tests that a ValueError is raised when multiple ApiBasicInfo files are provided.
     """
@@ -284,7 +329,7 @@ def test_multiple_api_basic_info(minimal_api_basic_info):
     with pytest.raises(
         ValueError, match="Multiple ApiBasicInfo found. Only one is allowed."
     ):
-        service.build_api_json()
+        service.build_api_json(settings)
 
 
 def test_duplicate_api_operations_filename(
@@ -292,6 +337,7 @@ def test_duplicate_api_operations_filename(
     minimal_interceptors,
     minimal_api_operations,
     minimal_resources_list,
+    settings,
 ):
     """
     Tests that a ValueError is raised for duplicate ApiOperations fileName.
@@ -305,11 +351,11 @@ def test_duplicate_api_operations_filename(
     ]
     service = YamlToJsonService(yamls)
     with pytest.raises(ValueError, match="Duplicate ApiOperations fileName: op1.yaml"):
-        service.build_api_json()
+        service.build_api_json(settings)
 
 
 def test_api_operation_file_not_found(
-    minimal_api_basic_info, minimal_interceptors, minimal_resources_list
+    minimal_api_basic_info, minimal_interceptors, minimal_resources_list, settings
 ):
     """
     Tests that a ValueError is raised if a resource references a non-existent ApiOperation file.
@@ -317,7 +363,7 @@ def test_api_operation_file_not_found(
     yamls = [minimal_api_basic_info, minimal_interceptors, minimal_resources_list]
     service = YamlToJsonService(yamls)
     with pytest.raises(ValueError, match="ApiOperation file 'op1.yaml' not found"):
-        service.build_api_json()
+        service.build_api_json(settings)
 
 
 def test_operation_mismatch(
@@ -325,6 +371,7 @@ def test_operation_mismatch(
     minimal_interceptors,
     minimal_api_operations,
     minimal_resources_list,
+    settings,
 ):
     """
     Tests that a ValueError is raised if there is a mismatch between resource operation and ApiOperation file.
@@ -339,11 +386,11 @@ def test_operation_mismatch(
     ]
     service = YamlToJsonService(yamls)
     with pytest.raises(ValueError, match="Operation mismatch"):
-        service.build_api_json()
+        service.build_api_json(settings)
 
 
 def test_empty_interceptors_list(
-    minimal_api_basic_info, minimal_api_operations, minimal_resources_list
+    minimal_api_basic_info, minimal_api_operations, minimal_resources_list, settings
 ):
     """
     Tests that InterceptorsNotFoundException is raised for an empty interceptors list.
@@ -361,11 +408,11 @@ def test_empty_interceptors_list(
     ]
     service = YamlToJsonService(yamls)
     with pytest.raises(InterceptorsNotFoundException):
-        service.build_api_json()
+        service.build_api_json(settings)
 
 
 def test_empty_resources_list(
-    minimal_api_basic_info, minimal_interceptors, minimal_api_operations
+    minimal_api_basic_info, minimal_interceptors, minimal_api_operations, settings
 ):
     """
     Tests that ResourcesListNotFoundException is raised for an empty items list.
@@ -379,10 +426,12 @@ def test_empty_resources_list(
     ]
     service = YamlToJsonService(yamls)
     with pytest.raises(ResourcesListNotFoundException):
-        service.build_api_json()
+        service.build_api_json(settings)
 
 
-def test_interceptor_missing_position(minimal_api_basic_info, minimal_resources_list):
+def test_interceptor_missing_position(
+    minimal_api_basic_info, minimal_resources_list, settings
+):
     """
     Tests that a validation error is raised if an interceptor is missing the 'position' field.
     """
@@ -404,15 +453,15 @@ def test_interceptor_missing_position(minimal_api_basic_info, minimal_resources_
     yamls = [minimal_api_basic_info, invalid_interceptors, minimal_resources_list]
     service = YamlToJsonService(yamls)
     with pytest.raises(ValueError, match="YAML content validation failed"):
-        service.build_api_json()
+        service.build_api_json(settings)
 
 
-def test_complex_scenario_multiple_interceptors(complex_yamls):
+def test_complex_scenario_multiple_interceptors(complex_yamls, settings):
     """
     Tests a more complex scenario with multiple resources and interceptors.
     """
     service = YamlToJsonService(complex_yamls)
-    result = service.build_api_json()
+    result = service.build_api_json(settings)
 
     assert result.api.name == "Complex API"
     # Global interceptors

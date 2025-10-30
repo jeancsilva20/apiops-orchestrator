@@ -1,3 +1,4 @@
+import json
 from pydantic import ValidationError
 
 from apiops_orchestrator.domain.services.yaml_to_json_exceptions import (
@@ -5,9 +6,7 @@ from apiops_orchestrator.domain.services.yaml_to_json_exceptions import (
     ResourcesListNotFoundException,
     ApiBasicInfoNotFoundException,
 )
-
 from apiops_orchestrator.domain.services.yaml_to_json_enum import YamlKind
-
 from apiops_orchestrator.domain.models.api_partial_model import (
     ApiBasicInfo,
     ApiPartialInfo,
@@ -31,6 +30,22 @@ from apiops_orchestrator.config.settings import Settings
 class YamlToJsonService:
     def __init__(self, yamls):
         self.yaml_files = yamls
+
+    @staticmethod
+    def _process_interceptors(api_full: ApiFull):
+        """Função que adiciona caracteres de escape ao conteudo de interceptors."""
+        all_interceptors = api_full.interceptors + [
+            interceptor
+            for r in api_full.resources
+            for o in r.operations
+            for interceptor in o.interceptors
+        ]
+
+        for interceptor in all_interceptors:
+            if interceptor.type.lower() != "custom" and isinstance(
+                interceptor.content, dict
+            ):
+                interceptor.content = json.dumps(interceptor.content)
 
     def build_api_json(self, settings: Settings) -> ApiFull:
         api_partial_info: ApiPartialInfo | None = None
@@ -62,12 +77,12 @@ class YamlToJsonService:
                     file_name = data.get("metadata", {}).get("fileName")
                     if not file_name:
                         raise ValueError(
-                            "ApiOperations must have metadata with a file_name."
+                            "ApiOperations must have metadata with a fileName."
                         )
 
                     if file_name in operations_by_file:
                         raise ValueError(
-                            f"Duplicate ApiOperations file_name: {file_name}"
+                            f"Duplicate ApiOperations fileName: {file_name}"
                         )
 
                     for operation_data in data.get("spec", {}).get("operation", []):
@@ -117,13 +132,17 @@ class YamlToJsonService:
                     )
                 )
 
-            return ApiFull(
+            api_full = ApiFull(
                 api=api_partial_info,
                 interceptors=interceptors,
                 resources=final_resources,
                 workflowId=settings.WORKFLOW_ID,
                 workflowStageId=settings.WORKFLOW_STAGE_ID,
             )
+
+            self._process_interceptors(api_full)
+
+            return api_full
 
         except ValidationError as e:
             raise ValueError(f"YAML content validation failed: {e}") from e
