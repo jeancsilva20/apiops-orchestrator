@@ -35,7 +35,6 @@ class YamlToJsonService:
         self.yamls = yamls
         self.settings = settings
 
-        # State holders
         self._api_partial_info: ApiPartialInfo | None = None
         self._interceptors: list[Interceptor] = []
         self._operations_by_file: dict[str, Operation] = {}
