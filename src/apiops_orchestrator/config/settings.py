@@ -12,7 +12,10 @@ class Settings(BaseSettings):
     AUTHORIZATION: str
     REQUEST_TIMEOUT: int
 
+    # Dados da API
     API_ID: str
+
+    # Dados do Adaptive Governance
     WORKFLOW_ID: str | None = None
     WORKFLOW_STAGE_ID: str | None = None
 
