@@ -101,7 +101,7 @@ def main() -> None:
     repo_validator = RepoValidator(settings.ARTIFACTS_FILE_FOLDER_VALIDATION_RULES)
     local_file_adapter = LocalFileLoaderAdapter()
     file_importer_service = FileImportService(local_file_adapter)
-    schema_folder = settings.PROJECT_ROOT / settings.ORCHEST_SCHEMA_FOLDER
+    schema_folder = settings.PROJECT_SRC_DIR / settings.ORCHEST_SCHEMA_FOLDER
     schema_validator = SchemaValidator(file_importer_service, schema_folder)
 
     schema_mapping = {

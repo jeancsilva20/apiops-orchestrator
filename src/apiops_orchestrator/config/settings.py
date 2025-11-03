@@ -3,10 +3,18 @@ from pathlib import Path
 from typing import List, Any
 from apiops_orchestrator.domain.models.api_partial_model import ApiTag
 import os
+from dotenv import load_dotenv
+
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+
+dotenv_path = PROJECT_ROOT / ".env"
+load_dotenv(dotenv_path=dotenv_path)
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=str(dotenv_path), env_file_encoding="utf-8"
+    )
 
     PROD_URL: str
     AUTHORIZATION: str
@@ -35,8 +43,9 @@ class Settings(BaseSettings):
 
         self.api_tags = tags
 
-    # Paths não podem começar com /, pois isso as torna Paths literais, e queremos usar Paths relativas.
-    PROJECT_ROOT: Path = Path(__file__).parent.parent.parent
+    # Use o PROJECT_ROOT definido anteriormente
+    PROJECT_ROOT: Path = PROJECT_ROOT
+    PROJECT_SRC_DIR: Path = PROJECT_ROOT / "src"
     API_REPO_ARTIFACTS_PATH: str = "artifacts"  # onde o dev mexe
     API_REPO_REVISIONS_PATH: str = "src/api/revisions"  # onde ficam as pastas 1,2,3...
     ORCHEST_SCHEMA_FOLDER: str = "apiops_orchestrator/domain/schemas"
