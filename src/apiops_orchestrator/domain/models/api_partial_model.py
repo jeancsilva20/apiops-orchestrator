@@ -16,23 +16,29 @@ class Visibility(BaseModel):
 
 
 class ApiTag(BaseModel):
-    attributeName: Optional[str]  # Opcional, cliente com AG, vindo .env
-    tags: Optional[List[str]]  # Opcional, cliente com AG, vindo .env
+    attributeName: str
+    tags: List[str]
 
 
 class ApiPartialInfo(BaseModel):
+    id: str
     name: str
     version: str
     basePath: str
     description: Optional[str] = "API Description"
     apiResponsible: ApiResponsible
     visibility: Optional[Visibility] = None  # Copiar da resposta do GET
-    apiTags: Optional[List[ApiTag]] = []  # Opcional, cliente com AG, vindo .env
+    apiTags: Optional[List[ApiTag]] = []
     apiType: str = "REST"
     apiSwaggerConfiguration: dict = {
         "showAppRegister": "false",
         "showApiBrowser": "false",
     }
+
+    # Placeholders até a implementação do GET ao MANAGER.
+    creationDate: Optional[str] = "creationDate"
+    revisions: Optional[str] = "revisions"
+    lastRevision: Optional[str] = "lastRevision"
 
     @field_validator("basePath")
     def _normalize_path(cls, v: str) -> str:

@@ -6,3 +6,4 @@ class YamlKind(Enum):
     INTERCEPTORS = "Interceptors"
     API_OPERATIONS = "ApiOperations"
     RESOURCES_LIST = "ResourcesList"
+    ENVIRONMENT = "Environment"

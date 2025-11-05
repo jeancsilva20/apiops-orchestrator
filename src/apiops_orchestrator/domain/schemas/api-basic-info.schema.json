@@ -25,8 +25,7 @@
     "spec": {
       "type": "object",
       "required": [
-        "api",
-        "revision"
+        "api"
       ],
       "additionalProperties": false,
       "properties": {
@@ -105,24 +104,6 @@
               "items": {
                 "type": "string"
               }
-            }
-          }
-        },
-        "revision": {
-          "type": "object",
-          "required": [
-            "workflowId",
-            "workflowStageId"
-          ],
-          "additionalProperties": true,
-          "properties": {
-            "workflowId": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "workflowStageId": {
-              "type": "integer",
-              "minimum": 1
             }
           }
         }

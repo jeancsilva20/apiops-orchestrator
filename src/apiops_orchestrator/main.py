@@ -1,6 +1,7 @@
 from adapters.inbound.files_importer.local_file_importer_adapter import (
     LocalFileLoaderAdapter,
 )
+from apiops_orchestrator.domain.models.api_full_model import ApiFull
 from application.services.file_import_service import FileImportService
 from application.services.repo_validator import RepoValidator
 from application.services.schema_validator import SchemaValidator
@@ -8,54 +9,56 @@ from config.settings import Settings
 from pathlib import Path
 from domain.services.yaml_to_json_service import YamlToJsonService
 import json
+from typing import List, Dict
 
 
-def main() -> None:
-    settings = Settings()
+def _print_step(step_name: str):
+    """Prints a formatted step name."""
+    print("\n" + "=" * 20)
+    print(f" {step_name}")
+    print("=" * 20 + "\n")
 
-    # ###################### #
-    # Validar Pasta Artifact #
-    # ###################### #
-    repo_validator = RepoValidator(settings.ARTIFACTS_FILE_FOLDER_VALIDATION_RULES)
 
-    repo_cep = Path(
-        r"C:\Users\Sensedia\Downloads\Projetos\Nexus\apiops-orchestrator\api-repo-cep"
-    )
-    artifact_folder = repo_cep / settings.API_REPO_ARTIFACTS_PATH
-
+def validate_repository_structure(
+    repo_validator: RepoValidator, repo_path: Path, settings: Settings
+):
+    """Validates the artifact folder structure."""
+    _print_step("Step 1: Validating Repository Structure")
+    artifact_folder = repo_path / settings.API_REPO_ARTIFACTS_PATH
     try:
-        # print(f"Folder Location: {artifact_folder}")
+        print(f"Validating folder: {artifact_folder}")
         repo_validator.validate_artifact_struct(artifact_folder)
+        print("Repository structure validation successful.")
     except Exception as error:
-        pass
-        # print(error)
+        print(f"Repository structure validation failed: {error}")
+        raise
 
-    # ###################### #
-    # Importador de Arquivos #
-    # ###################### #
-    local_file_adapter = LocalFileLoaderAdapter()
-    file_importer_service = FileImportService(local_file_adapter)
+
+def import_repository_files(
+    file_importer_service: FileImportService, repo_path: Path, settings: Settings
+) -> List[Path]:
+    """Imports all files from the artifact folder."""
+    _print_step("Step 2: Importing Repository Files")
+    artifact_folder = repo_path / settings.API_REPO_ARTIFACTS_PATH
     try:
         files = file_importer_service.load_file_path(artifact_folder)
-        # print(files)
+        print(f"Found {len(files)} files in {artifact_folder}")
+        return files
     except Exception as error:
-        pass
-    # print(error)
+        print(f"File import failed: {error}")
+        raise
 
-    # ############### #
-    # Validar Schemas #
-    # ############### #
-    schema_folder = settings.PROJECT_ROOT / settings.ORCHEST_SCHEMA_FOLDER
-    validator = SchemaValidator(file_importer_service, schema_folder)
 
-    schema_mapping = {
-        "artifacts/templates/api-basic-info.yaml": "api-basic-info.schema.json",
-        "artifacts/templates/default-interceptors.yaml": "mag-default-interceptors.schema.json",
-        "artifacts/resources/": "api-operations.schema.json",
-    }
-    # Implementado assim para testes e validação, a ideia é passar isso para um orquestrador posteriormente.
+def validate_repository_schemas(
+    validator: SchemaValidator,
+    file_importer_service: FileImportService,
+    repo_path: Path,
+    schema_mapping: Dict[str, str],
+):
+    """Validates repository files against their schemas."""
+    _print_step("Step 3: Validating Schemas")
     for path, schema_name in schema_mapping.items():
-        target_path = repo_cep / path
+        target_path = repo_path / path
         try:
             content = file_importer_service.load_file_path(target_path)
             files_to_validate = content if isinstance(content, list) else [content]
@@ -64,25 +67,68 @@ def main() -> None:
                 try:
                     validator.validate(file_content, schema_name)
                     print(
-                        f"Validation successful for a file in '{path}' with schema '{schema_name}'"
+                        f"OK: Validation successful for a file in '{path}' with schema '{schema_name}'"
                     )
                 except ValueError as e:
-                    print(f"{e}")
+                    print(f"ERROR: {e}")
 
         except Exception as e:
-            print(f"Error loading path {target_path}: {e}")
+            print(f"ERROR: Error loading path {target_path}: {e}")
 
-    # ############ #
-    # YAML TO JSON #
-    # ############ #
 
+def generate_api_json(
+    file_importer_service: FileImportService,
+    repo_path: Path,
+    settings: Settings,
+) -> ApiFull:
+    """Generates the final API JSON from YAML files."""
+    _print_step("Step 4: Generating API JSON from YAML files")
+    artifact_folder = repo_path / settings.API_REPO_ARTIFACTS_PATH
     files = file_importer_service.load_file_path(artifact_folder)
-
-    service = YamlToJsonService(files)
-
+    service = YamlToJsonService(files, settings)
     result = service.build_api_json()
+    print("API JSON generated successfully.")
+    return result
 
-    print(json.dumps(result.model_dump(), indent=2, ensure_ascii=False))
+
+def main() -> None:
+    """Main orchestration function."""
+    settings = Settings()
+    repo_cep_path = Path(
+        r"C:\Users\Sensedia\Downloads\Projetos\Nexus\apiops-orchestrator\api-repo-cep"
+    )
+
+    repo_validator = RepoValidator(settings.ARTIFACTS_FILE_FOLDER_VALIDATION_RULES)
+    local_file_adapter = LocalFileLoaderAdapter()
+    file_importer_service = FileImportService(local_file_adapter)
+    schema_folder = settings.PROJECT_SRC_DIR / settings.ORCHEST_SCHEMA_FOLDER
+    schema_validator = SchemaValidator(file_importer_service, schema_folder)
+
+    schema_mapping = {
+        "artifacts/templates/api-basic-info.yaml": "api-basic-info.schema.json",
+        "artifacts/templates/default-interceptors.yaml": "mag-default-interceptors.schema.json",
+        "artifacts/resources/": "api-operations.schema.json",
+    }
+
+    try:
+        validate_repository_structure(repo_validator, repo_cep_path, settings)
+
+        import_repository_files(file_importer_service, repo_cep_path, settings)
+
+        validate_repository_schemas(
+            schema_validator, file_importer_service, repo_cep_path, schema_mapping
+        )
+
+        final_json = generate_api_json(file_importer_service, repo_cep_path, settings)
+
+        _print_step("Final Result: API JSON")
+        print(json.dumps(final_json.model_dump(), indent=2, ensure_ascii=False))
+
+    except Exception as e:
+        print("\n" + "!" * 20)
+        print(" An error occurred during the process:")
+        print(f" {e}")
+        print("!" * 20)
 
 
 if __name__ == "__main__":
