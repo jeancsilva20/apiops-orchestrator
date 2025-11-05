@@ -6,7 +6,8 @@
   "required": [
     "apiVersion",
     "kind",
-    "spec"
+    "spec",
+    "metadata"
   ],
   "additionalProperties": false,
   "properties": {
@@ -16,6 +17,16 @@
     },
     "kind": {
       "const": "ApiOperations"
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["fileName"],
+      "additionalProperties": false,
+      "properties": {
+        "fileName": {
+          "type": "string"
+        }
+      }
     },
     "spec": {
       "type": "object",
