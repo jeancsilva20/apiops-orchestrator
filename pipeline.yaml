@@ -1,0 +1,55 @@
+# Python package
+# Create and test a Python package on multiple Python versions.
+# Add steps that analyze code, save the dist with the build record, publish to a PyPI-compatible index, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/python
+
+trigger:
+- main
+
+pool:
+  vmImage: ubuntu-latest
+
+strategy:
+  matrix:
+    Python311:
+      python.version: '3.12'
+
+steps:
+- task: UsePythonVersion@0
+  inputs:
+    versionSpec: '$(python.version)'
+  displayName: 'Use Python $(python.version)'
+
+- checkout: self
+  persistCredentials: true
+
+- script: |
+    echo "Clonando repositório com credenciais do Git..."
+    git clone https://$(GIT_USERNAME):$(GIT_PAT)@dev.azure.com/jeancsilva2025S/ROBOT/_git/Sensedia%20Pipeline%20MAG ./external-repo
+
+    echo "Listando conteúdo clonado:"
+    ls -la ./external-repo
+    ls -la ./
+  displayName: Clonar outro repositório com credenciais
+
+- script: |
+    python -m pip install --upgrade pip
+    pip install poetry
+    poetry install
+  displayName: 'Install dependencies'
+
+- script: |
+    poetry run python src/apiops_orchestrator/main.py
+  displayName: 'mainExec'
+
+- script: |
+    mkdir -p test-results
+    poetry run pytest --junitxml=test-results/pytest-results.xml
+  displayName: 'Executar testes com pytest'
+
+- task: PublishTestResults@2
+  inputs:
+    testResultsFormat: 'JUnit'
+    testResultsFiles: 'test-results/pytest-results.xml'
+    failTaskOnFailedTests: true
+  displayName: 'Publicar resultados dos testes'
