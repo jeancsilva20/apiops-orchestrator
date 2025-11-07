@@ -48,8 +48,11 @@ O Orquestrador APIOps é uma ferramenta em Python para compor, validar e process
 
 Antes de executar, você **precisa** configurar o caminho do repositório da API que deseja processar.
 
-1.  Abra o arquivo `src/apiops_orchestrator/main.py`.
-2.  Encontre e edite a variável `repo_cep` para que aponte para o **caminho absoluto** do seu repositório de API local (ex: `api-repo-cep`).
+1.  **Configuração de Variáveis de Ambiente (.env)**
+    Crie um arquivo `.env` na raiz do projeto, copiando o conteúdo de `.env.example`. Este arquivo será usado para configurar variáveis de ambiente necessárias para a execução do orquestrador.
+
+2.  Abra o arquivo `src/apiops_orchestrator/main.py`.
+3.  Encontre e edite a variável `repo_cep` para que aponte para o **caminho absoluto** do seu repositório de API local (ex: `api-repo-cep`).
     ```python
     repo_cep = Path(
         r"C:\caminho\absoluto\para\seu\api-repo-cep"  # Mude aqui o repositório na sua máquina.
