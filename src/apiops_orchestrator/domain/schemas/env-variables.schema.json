@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sandbox:/template-schemas/environment-variables.schema.json",
+  "title": "Environment Variables Template",
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "spec"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "pattern": "api-management.sensedia.com/v1"
+    },
+    "kind": {
+      "const": "Environment"
+    },
+    "spec": {
+      "type": "object",
+      "required": [
+        "mapVars"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "mapVars": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "vars"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": {
+                "type": "string"
+              },
+              "vars": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "key",
+                    "value",
+                    "variableType"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "string"
+                    },
+                    "variableType": {
+                      "type": "string",
+                      "enum": [
+                        "SECURED",
+                        "DEFAULT",
+                        "Secured",
+                        "Default"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sandbox:/template-schemas/basic-api-info.schema.json",
+  "title": "Basic API Info Template",
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "spec"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "pattern": "api-management.sensedia.com/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "ApiBasicInfo",
+      "enum": [
+        "ApiBasicInfo"
+      ],
+      "description": "Resource kind. Must be exactly 'ApiBasicInfo'."
+    },
+    "spec": {
+      "type": "object",
+      "required": [
+        "api"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "api": {
+          "type": "object",
+          "required": [
+            "name",
+            "version",
+            "basePath"
+          ],
+          "additionalProperties": true,
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "basePath": {
+              "type": "string",
+              "pattern": "^/"
+            },
+            "description": {
+              "type": "string"
+            },
+            "apiResponsible": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "username": {
+                  "type": "string"
+                },
+                "groupName": {
+                  "type": "string"
+                }
+              }
+            },
+            "visibility": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "groupVisibility": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "environments": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": true,
+                "properties": {
+                  "id": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            },
+            "apiTags": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$comment": "Kind locked to 'ApiBasicInfo' as requested."
+}
