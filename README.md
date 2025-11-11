@@ -1,99 +1,103 @@
 # apiops-orchestrator
 
-Orquestrador APIOps em Python para compor, validar, planejar e aplicar mudanças de APIs no Sensedia Manager a partir de artefatos (ex.: OpenAPI). O código segue princípios de Arquitetura Hexagonal (adapters, application, domain, infrastructure).
+APIOps Orchestrator in Python is built to compose, validate, plan and apply changes to APIs in the Sensedia API Management using artifacts (e.g. OpenAPI). The code is following Hexagonal Architecture principles (adapters, application, domain, infrastructure).
 
-> Status: em desenvolvimento
+> Status: In Progress
 
-## Sumário
-- [Visão Geral](#visão-geral)
-- [Funcionalidades](#funcionalidades)
-- [Como Rodar](#como-rodar)
-- [Estrutura de Pastas](#estrutura-de-pastas)
-- [Tecnologias](#tecnologias)
-- [Contribuidores](#contribuidores)
+## Table of Contents
+- [Overview](#overview)
+- [Features](#features)
+- [How to Run](#how-to-run)
+- [Folder Structure](#folder-structure)
+- [Tech Stack](#tech-stack)
+- [Contributors](#contributors)
 
-## Visão Geral
+## Overview
 
-O Orquestrador APIOps é uma ferramenta em Python para compor, validar e processar artefatos de API (ex.: OpenAPI) para o Sensedia Manager. Atualmente, o projeto opera como um script que requer configuração manual para validar a estrutura de repositórios de API. A interface de linha de comando (CLI) foi temporariamente desativada para focar no desenvolvimento da lógica de negócio principal.
+The APIOps Orchestrator is a Python tool for composing, validating and processing API Artifacts (e.g. OpenAPI) for the Sensedia API Management. Currently the project runs as a script that requires manual configuration to validate an API repository structure. The Command-Line Interface (CLI) was temporarily disabled to focus on the development of the core business logic.
 
-## Funcionalidades
+## Features
 
-- **Validação de Estrutura:** Verifica se a pasta de artefatos (`artifacts`) de um repositório de API segue as regras de estrutura de pastas e arquivos pré-definidas.
-- **Importação de Arquivos:** Lista todos os caminhos de arquivo dentro da pasta de artefatos para processamento futuro.
+- **Structure Validation:** Verify if the artifacts folder (`artifacts`) in an API repository follows the predefined folder and file structure rules.
+- **File Importing:** List all the file paths within the (`artifacts`) folder for future processing.
 
-## Como Rodar
+## How To Run
 
-### Pré-requisitos
+### Requirements
 - Python 3.10+
-- Poetry (gerenciador de dependências)
+- Poetry (Dependency manager)
 
-### 1. Instalação
+### 1. Setup
 
-1.  **Instale o Poetry** (caso ainda não o tenha):
-    Siga as instruções oficiais de instalação para o seu sistema operacional [aqui](https://python-poetry.org/docs/#installation).
+1.  **Install Poetry** (In case you haven't already):
+    Follow the official instalation guide for your OS [here](https://python-poetry.org/docs/#installation).
 
-2.  **Clone o repositório** (se ainda não o fez):
+2.  **Clone the repository** (In case you haven't already):
     ```bash
     git clone https://bitbucket.org/sensedia/apiops-orchestrator
     cd apiops-orchestrator
     ```
 
-3.  **Instale as dependências do projeto**:
-    O Poetry criará um ambiente virtual automaticamente e instalará tudo o que é necessário.
+3.  **Install project dependencies**:
+    Poetry will automatically create a virtual environment and install all dependencies.
     ```bash
     poetry install
     ```
 
-### 2. Configuração
+### 2. Configuration
 
-Antes de executar, você **precisa** configurar o caminho do repositório da API que deseja processar.
+Before running, you **must** configure the path to the API repository that will be processed.
 
-1.  **Configuração de Variáveis de Ambiente (.env)**
-    Crie um arquivo `.env` na raiz do projeto, copiando o conteúdo de `.env.example`. Este arquivo será usado para configurar variáveis de ambiente necessárias para a execução do orquestrador.
+1.  **Environment Variables (.env)**
+    Create a `.env` file in the project root, copying the content of `.env.example`. This file will be used to set the environment variables required by the orchestrator.
 
-2.  Abra o arquivo `src/apiops_orchestrator/main.py`.
-3.  Encontre e edite a variável `repo_cep` para que aponte para o **caminho absoluto** do seu repositório de API local (ex: `api-repo-cep`).
+2.  Open `src/apiops_orchestrator/main.py`.
+3.  Find and edit `repo_cep` so it points to the **absolut path** of your local API repository (ex: `api-repo-cep`).
     ```python
     repo_cep = Path(
-        r"C:\caminho\absoluto\para\seu\api-repo-cep"  # Mude aqui o repositório na sua máquina.
+        r"C:\caminho\absoluto\para\seu\api-repo-cep"  # Update this to your local repository path.
     )
     ```
 
-### 3. Execução
+### 3. Running the code
 
-Execute o script a partir da raiz do projeto:
+Run the script from the project root:
 ```bash
 poetry run python src/apiops_orchestrator/main.py
 ```
-O script irá imprimir a localização da pasta de artefatos, validar sua estrutura e listar os arquivos encontrados.
+The script will print the location of the artifacts folder, validate its structure and list the files found.
 
-### Testes
+### Tests
 
-Para rodar os testes de unidade, execute:
+To run the unit tests:
 ```bash
 pytest
 ```
 
-## Estrutura de Pastas
-- `src/apiops_orchestrator/main.py` — Ponto de entrada principal do script de orquestração.
-- `src/apiops_orchestrator/config/settings.py` — Configurações e variáveis de ambiente.
-- `src/apiops_orchestrator/adapters/*` — Camadas de adaptação (inbound/outbound).
-- `src/apiops_orchestrator/application/*` — Casos de uso e serviços da aplicação.
-- `src/apiops_orchestrator/domain/*` — Modelos, portas e serviços de domínio.
-- `src/apiops_orchestrator/infrastructure/*` — Integrações de infraestrutura.
-- `tests/unit/...` — Testes de unidade.
+## Folder Structure
+- `src/apiops_orchestrator/main.py` — Main orchestration script entry point.
+- `src/apiops_orchestrator/config/settings.py` — Configuration and environment variables.
+- `src/apiops_orchestrator/adapters/*` — Inbound/outbound adapters
+- `src/apiops_orchestrator/application/*` — Application use cases and services.
+- `src/apiops_orchestrator/domain/*` — Domain models, ports, and services.
+- `src/apiops_orchestrator/infrastructure/*` — Infrastructure integrations.
+- `tests/unit/...` — Unit tests.
 
-## Tecnologias
+## Tech Stack
 - Python 3.10+
-- Pydantic Settings (configuração por ambiente/.env)
-- Pytest (testes)
-- Poetry (gerenciamento de dependências)
+- Pydantic Settings (environment configuration/.env)
+- Pytest (testing)
+- Poetry (dependency management)
 
-## Contribuidores
+## Contributors
 - Augusto
 - Danilo Amaral
+- Paulo de Oliveira
 - Matheus Alves Giroto
+- Alisson Lopes
+- Luiza Silva
+- Rapha Santos
 
 ---
-Consulte também `CHANGELOG.md` para o histórico de mudanças.
+Check also `CHANGELOG.md` for the project's changing history.
 
