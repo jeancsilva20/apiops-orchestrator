@@ -1,4 +1,3 @@
-# bitbucket-pipelines.yml
 image: python:3.12
 
 definitions:
@@ -10,7 +9,7 @@ pipelines:
   branches:
     main:
       - step:
-          name: Instalar dependências (Poetry)
+          name: Clonar outro repositório e instalar dependências
           caches:
             - pip
             - poetry
@@ -19,21 +18,22 @@ pipelines:
             - pip install --upgrade pip
             - pip install poetry
             - poetry --version
-            # Instala dependências do projeto
-            - poetry install
 
-      - step:
-          name: Clonar outro repositório com credenciais
-          script:
             - echo "Clonando repositório com credenciais do Git..."
             - git clone "https://${GIT_USERNAME}:${GIT_PAT}@dev.azure.com/jeancsilva2025S/ROBOT/_git/Sensedia%20Pipeline%20MAG" ./external-repo
-            - echo "Listando conteúdo clonado:"
             - ls -la ./external-repo
             - ls -la ./
 
+            - echo "Instalando dependências via Poetry..."
+            - poetry install
+
       - step:
           name: Executar main
+          caches:
+            - pip
+            - poetry
           script:
+            - pip install poetry
             - poetry run python src/apiops_orchestrator/main.py
 
       - step:
@@ -42,6 +42,8 @@ pipelines:
             - pip
             - poetry
           script:
+            - pip install poetry
+            - poetry install
             - mkdir -p test-results
             - poetry run pytest --junitxml=test-results/pytest-results.xml
           artifacts:
