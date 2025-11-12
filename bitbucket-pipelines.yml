@@ -1,4 +1,3 @@
-# bitbucket-pipelines.yml
 image: python:3.12
 
 definitions:
@@ -10,31 +9,37 @@ pipelines:
   branches:
     main:
       - step:
-          name: Build + Run + Tests
+          name: Build, run e testes
           caches:
             - pip
             - poetry
           script:
-            # Versão do Python
             - python -V
-
-            # Instala Poetry e deps
-            - python -m pip install --upgrade pip
+            - pip install --upgrade pip
             - pip install poetry
             - poetry --version
-            - poetry install
 
-            # Clona o repositório externo (Azure DevOps) com credenciais
+            # --- Pré-checagem de variáveis obrigatórias ---
+            - : "${PROD_URL:?Defina a variável PROD_URL em Repository variables}"
+            - : "${AUTHORIZATION:?Defina a variável AUTHORIZATION em Repository variables}"
+            - : "${REQUEST_TIMEOUT:?Defina a variável REQUEST_TIMEOUT (ex.: 30) em Repository variables}"
+            - : "${API_ID:?Defina a variável API_ID em Repository variables}"
+            # Credenciais usadas no clone do outro repositório
+            - : "${GIT_USERNAME:?Defina GIT_USERNAME em Repository variables}"
+            - : "${GIT_PAT:?Defina GIT_PAT em Repository variables}"
+
+            # --- Clone do repositório externo (Azure DevOps) ---
             - echo "Clonando repositório com credenciais do Git..."
             - git clone "https://${GIT_USERNAME}:${GIT_PAT}@dev.azure.com/jeancsilva2025S/ROBOT/_git/Sensedia%20Pipeline%20MAG" ./external-repo
-            - echo "Listando conteúdo clonado:"
             - ls -la ./external-repo
-            - ls -la ./
 
-            # Executa o main
+            # --- Dependências do projeto ---
+            - poetry install
+
+            # --- Execução principal ---
             - poetry run python src/apiops_orchestrator/main.py
 
-            # Testes com pytest + JUnit XML
+            # --- Testes ---
             - mkdir -p test-results
             - poetry run pytest --junitxml=test-results/pytest-results.xml
           artifacts:
