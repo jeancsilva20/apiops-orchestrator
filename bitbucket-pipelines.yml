@@ -15,26 +15,27 @@ pipelines:
             - pip
             - poetry
           script:
-            # Python e Poetry
+            # Atualiza e instala dependências Python
             - python -m pip install --upgrade pip
             - pip install poetry
             - poetry --version
             - poetry install
 
-            # Clona repositório externo (Azure DevOps) com credenciais já cadastradas
-            - echo "Clonando repositório com credenciais..."
-            - git clone "https://${GIT_USERNAME}:${GIT_PAT}@dev.azure.com/jeancsilva2025S/ROBOT/_git/Sensedia%20Pipeline%20MAG" ./external-repo
+            # Clona repositório externo (Bitbucket) via API Token
+            - echo "Clonando repositório sensedia/apis-repo via HTTPS com token..."
+            - git clone --depth 1 "https://${BB_USERNAME}:${BB_API_TOKEN}@bitbucket.org/sensedia/apis-repo.git" ./external-repo
             - ls -la ./external-repo
 
-            # Se o projeto usa pydantic BaseSettings com env_file, garanta o .env
+            # Cria arquivo .env usado pela aplicação (caso necessário)
             - printf "PROD_URL=%s\nAUTHORIZATION=%s\nREQUEST_TIMEOUT=%s\nAPI_ID=%s\n" \
               "$PROD_URL" "$AUTHORIZATION" "$REQUEST_TIMEOUT" "$API_ID" > .env
 
             # Executa aplicação
             - poetry run python src/apiops_orchestrator/main.py
 
-            # Testes + JUnit
+            # Executa testes e gera relatório JUnit
             - mkdir -p test-results
             - poetry run pytest --junitxml=test-results/pytest-results.xml
+
           artifacts:
             - test-results/**
