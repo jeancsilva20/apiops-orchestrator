@@ -20,17 +20,17 @@ class Settings(BaseSettings):
     AUTHORIZATION: str
     REQUEST_TIMEOUT: int
 
-    # Dados da API
+    # API Data
     API_ID: str
 
-    # Dados do Adaptive Governance
+    # Adaptive Governance Data
     WORKFLOW_ID: str | None = None
     WORKFLOW_STAGE_ID: str | None = None
 
     api_tags: List[ApiTag] = []
 
     def model_post_init(self, __context: Any):
-        """Carrega todas as variáveis API_TAGS_* e converte em objetos ApiTag"""
+        """Loads all API_TAGS_* variables and converts them into ApiTag objects."""
         tags: List[ApiTag] = []
 
         for key, value in os.environ.items():
@@ -43,11 +43,11 @@ class Settings(BaseSettings):
 
         self.api_tags = tags
 
-    # Use o PROJECT_ROOT definido anteriormente
+    # Use the previously defined PROJECT_ROOT.
     PROJECT_ROOT: Path = PROJECT_ROOT
     PROJECT_SRC_DIR: Path = PROJECT_ROOT / "src"
-    API_REPO_ARTIFACTS_PATH: str = "artifacts"  # onde o dev mexe
-    API_REPO_REVISIONS_PATH: str = "src/api/revisions"  # onde ficam as pastas 1,2,3...
+    API_REPO_ARTIFACTS_PATH: str = "artifacts"  # This is where the developer makes changes.
+    API_REPO_REVISIONS_PATH: str = "src/api/revisions"  # This is where folders 1, 2, 3 etc… are located.
     ORCHEST_SCHEMA_FOLDER: str = "apiops_orchestrator/domain/schemas"
 
     ARTIFACTS_FILE_FOLDER_VALIDATION_RULES: dict = {

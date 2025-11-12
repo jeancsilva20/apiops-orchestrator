@@ -5,8 +5,8 @@ from .interceptors_model import Interceptor
 
 class Operation(BaseModel):
     """
-    Representa uma operação individual dentro de um resource.
-    Pode conter interceptors e metadados como destination e timeout.
+    Represents an individual operation within a resource.
+    May contain interceptors and metadata such as destination and timeout.
     """
 
     method: str
@@ -50,7 +50,7 @@ class Operation(BaseModel):
 
 class ApiOperationsSpec(BaseModel):
     """
-    Estrutura do campo 'spec' dentro do YAML de ApiOperations.
+    Structure of the 'spec' field within the ApiOperations YAML.
     """
 
     operations: List[Operation] = Field(alias="operation")
@@ -58,7 +58,7 @@ class ApiOperationsSpec(BaseModel):
 
 class ApiOperationsFile(BaseModel):
     """
-    Representa o arquivo YAML completo de ApiOperations.
+    Represents the complete ApiOperations YAML file.
     """
 
     apiVersion: str
