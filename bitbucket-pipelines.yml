@@ -1,11 +1,4 @@
-#  Template .NET Core build
-
-#  This template allows you to validate your .NET Core package.
-#  The workflow allows running tests and code linting on the default branch.
-
-# To run your pipeline on a Windows machine, create a self-hosted Windows runner.
-# For instructions on setting up a Windows runner, see https://support.atlassian.com/bitbucket-cloud/docs/set-up-runners-for-windows/
-
+# bitbucket-pipelines.yml
 image: python:3.12
 
 definitions:
@@ -17,41 +10,31 @@ pipelines:
   branches:
     main:
       - step:
-          name: Clonar outro repositório e instalar dependências
+          name: Build + Run + Tests
           caches:
             - pip
             - poetry
           script:
+            # Versão do Python
             - python -V
-            - pip install --upgrade pip
+
+            # Instala Poetry e deps
+            - python -m pip install --upgrade pip
             - pip install poetry
             - poetry --version
+            - poetry install
 
+            # Clona o repositório externo (Azure DevOps) com credenciais
             - echo "Clonando repositório com credenciais do Git..."
             - git clone "https://${GIT_USERNAME}:${GIT_PAT}@dev.azure.com/jeancsilva2025S/ROBOT/_git/Sensedia%20Pipeline%20MAG" ./external-repo
+            - echo "Listando conteúdo clonado:"
             - ls -la ./external-repo
             - ls -la ./
 
-            - echo "Instalando dependências via Poetry..."
-            - poetry install
-
-      - step:
-          name: Executar main
-          caches:
-            - pip
-            - poetry
-          script:
-            - pip install poetry
+            # Executa o main
             - poetry run python src/apiops_orchestrator/main.py
 
-      - step:
-          name: Executar testes com pytest
-          caches:
-            - pip
-            - poetry
-          script:
-            - pip install poetry
-            - poetry install
+            # Testes com pytest + JUnit XML
             - mkdir -p test-results
             - poetry run pytest --junitxml=test-results/pytest-results.xml
           artifacts:
