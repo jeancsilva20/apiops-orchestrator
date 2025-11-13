@@ -37,10 +37,10 @@ pipelines:
             - poetry run python src/apiops_orchestrator/main.py
 
             # Executa testes + relatórios (JUnit + HTML)
-            - mkdir -p artefacts
+            - mkdir -p artifacts
             - poetry run pytest \
-                --junitxml=artefacts/pytest-results.xml \
-                --html=artefacts/pytest-report.html \
+                --junitxml=artifacts/pytest-results.xml \
+                --html=artifacts/pytest-report.html \
                 --self-contained-html
           artifacts:
-            - artefacts/**
+            - artifacts/**
