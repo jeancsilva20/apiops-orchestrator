@@ -94,9 +94,8 @@ def generate_api_json(
 def main() -> None:
     """Main orchestration function."""
     settings = Settings()
-    repo_path = (
-        settings.PROJECT_ROOT / settings.API_REPO_FOLDER
-    )  # This Path is the default for the pipeline. If you're running locally, change this Path to your local API Repository.
+    repo_path = settings.API_REPO_FOLDER
+    # This Path is the default for the pipeline. If you're running locally, change this Path to your local API Repository.
 
     repo_validator = RepoValidator(settings.ARTIFACTS_FILE_FOLDER_VALIDATION_RULES)
     local_file_adapter = LocalFileLoaderAdapter()
