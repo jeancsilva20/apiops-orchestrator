@@ -18,21 +18,21 @@ class RepoValidator:
         errors = []
 
         if not artifacts_folder.exists() or not artifacts_folder.is_dir():
-            raise ValueError(f"Pasta 'artifacts' não encontrada.")
+            raise ValueError(f"Folder 'artifacts' not found.")
 
         for folder, required_files in self.rules.items():
             folder_path = artifacts_folder / folder
 
             if not folder_path.exists() or not folder_path.is_dir():
-                errors.append(f"Pasta obrigatória ausente: {folder_path}")
+                errors.append(f"Mandatory folder missing: {folder_path}")
                 continue
 
             for filename in required_files:
                 file_path = folder_path / filename
                 if not file_path.exists():
-                    errors.append(f"Arquivo obrigatório ausente: {file_path}")
+                    errors.append(f"Mandatory file missing: {file_path}")
 
         if errors:
             raise ValueError(
-                "Validação do repositório de artefatos falhou:\n" + "\n".join(errors)
+                "Artifact repository validation failed:\n" + "\n".join(errors)
             )
