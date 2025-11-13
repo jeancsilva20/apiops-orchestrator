@@ -1,5 +1,3 @@
-# bitbucket-pipelines.yml
-
 image: python:3.12
 
 definitions:
@@ -16,9 +14,14 @@ pipelines:
             - pip
             - poetry
           script:
-            # Instala dependências
+            # Atualiza pip e instala Poetry
             - python -m pip install --upgrade pip
             - pip install poetry
+
+            # Instala plugin para relatório HTML do pytest
+            - pip install pytest-html
+
+            # Instala dependências do projeto via Poetry
             - poetry install
 
             # Clona o repositório externo via Repository Access Token
@@ -26,15 +29,18 @@ pipelines:
             - git clone --depth 1 "https://${BB_USERNAME}:${BB_REPO_TOKEN}@bitbucket.org/sensedia/apis-repo.git" ./external-repo
             - ls -la ./external-repo
 
-            # Cria arquivo .env (se necessário para sua app)
+            # Cria arquivo .env
             - printf "PROD_URL=%s\nAUTHORIZATION=%s\nREQUEST_TIMEOUT=%s\nAPI_ID=%s\n" \
               "$PROD_URL" "$AUTHORIZATION" "$REQUEST_TIMEOUT" "$API_ID" > .env
 
             # Executa aplicação
             - poetry run python src/apiops_orchestrator/main.py
 
-            # Executa testes + relatório JUnit
-            - mkdir -p test-results
-            - poetry run pytest --junitxml=test-results/pytest-results.xml
+            # Executa testes + relatórios (JUnit + HTML)
+            - mkdir -p artefacts
+            - poetry run pytest \
+                --junitxml=artefacts/pytest-results.xml \
+                --html=artefacts/pytest-report.html \
+                --self-contained-html
           artifacts:
-            - test-results/**
+            - artefacts/**
