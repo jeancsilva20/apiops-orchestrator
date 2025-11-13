@@ -94,9 +94,7 @@ def generate_api_json(
 def main() -> None:
     """Main orchestration function."""
     settings = Settings()
-    repo_cep_path = Path(
-        r"C:\Users\Sensedia\Downloads\Projetos\Nexus\apiops-orchestrator\api-repo-cep"
-    )
+    repo_cep_path = Path(r"./external-repo")
 
     repo_validator = RepoValidator(settings.ARTIFACTS_FILE_FOLDER_VALIDATION_RULES)
     local_file_adapter = LocalFileLoaderAdapter()
