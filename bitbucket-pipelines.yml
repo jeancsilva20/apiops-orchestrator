@@ -36,11 +36,8 @@ pipelines:
             # Executa aplicação
             - poetry run python src/apiops_orchestrator/main.py
 
-            # Executa testes e gera relatórios dentro de test-results/
+            # Executa testes + relatório JUnit 
             - mkdir -p test-results
-            - poetry run pytest \
-                --junitxml=test-results/pytest-results.xml \
-                --html=test-results/pytest-report.html \
-                --self-contained-html
+            - poetry run pytest --junitxml=test-results/pytest-results.xml 
           artifacts:
-            - test-results/**
+              - test-results/**
