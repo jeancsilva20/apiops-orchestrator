@@ -1,0 +1,40 @@
+# bitbucket-pipelines.yml
+
+image: python:3.12
+
+definitions:
+  caches:
+    pip: ~/.cache/pip
+    poetry: ~/.cache/pypoetry
+
+pipelines:
+  branches:
+    main:
+      - step:
+          name: Build + Run + Tests
+          caches:
+            - pip
+            - poetry
+          script:
+            # Instala dependências
+            - python -m pip install --upgrade pip
+            - pip install poetry
+            - poetry install
+
+            # Clona o repositório externo via Repository Access Token
+            - echo "Clonando repositório sensedia/apis-repo via Repository Access Token..."
+            - git clone --depth 1 "https://${BB_USERNAME}:${BB_REPO_TOKEN}@bitbucket.org/sensedia/apis-repo.git" ./external-repo
+            - ls -la ./external-repo
+
+            # Cria arquivo .env (se necessário para sua app)
+            - printf "PROD_URL=%s\nAUTHORIZATION=%s\nREQUEST_TIMEOUT=%s\nAPI_ID=%s\n" \
+              "$PROD_URL" "$AUTHORIZATION" "$REQUEST_TIMEOUT" "$API_ID" > .env
+
+            # Executa aplicação
+            - poetry run python src/apiops_orchestrator/main.py
+
+            # Executa testes + relatório JUnit
+            - mkdir -p test-results
+            - poetry run pytest --junitxml=test-results/pytest-results.xml
+          artifacts:
+            - test-results/**
