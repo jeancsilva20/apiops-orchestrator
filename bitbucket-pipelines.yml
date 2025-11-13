@@ -9,7 +9,7 @@ definitions:
 
 pipelines:
   branches:
-    main:
+    release:
       - step:
           name: Build + Run + Tests
           caches:
