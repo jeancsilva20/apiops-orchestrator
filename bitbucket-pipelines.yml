@@ -18,16 +18,19 @@ pipelines:
             - python -m pip install --upgrade pip
             - pip install poetry
 
-            # Instala plugin HTML do pytest
-            - pip install pytest-html
-
-            # Instala dependências
+            # Instala dependências do projeto via Poetry
             - poetry install
+
+            # Instala plugin HTML do pytest dentro do ambiente do Poetry
+            - poetry run pip install pytest-html
 
             # Clona repositório externo
             - echo "Clonando repositório sensedia/apis-repo..."
             - git clone --depth 1 "https://${BB_USERNAME}:${BB_REPO_TOKEN}@bitbucket.org/sensedia/apis-repo.git" ./external-repo
-            - ls -R ./external-repo
+            - ls -la ./external-repo
+
+            #debug variavel mavem
+            - echo $MAVEN_USERNAME
 
             # Gera o .env
             - printf "PROD_URL=%s\nAUTHORIZATION=%s\nREQUEST_TIMEOUT=%s\nAPI_ID=%s\n" \
@@ -36,9 +39,12 @@ pipelines:
             # Executa aplicação
             - poetry run python src/apiops_orchestrator/main.py
 
-            # Executa testes + relatório JUnit 
+            # Executa testes + relatórios (JUnit + HTML)
             - mkdir -p test-results
             - poetry run pytest --junitxml=test-results/pytest-results.xml --html=test-results/pytest-report.html --self-contained-html
-
           artifacts:
-              - test-results/**
+            - test-results/**
+            - mkdir -p test-results
+            - poetry run pytest --junitxml=test-results/pytest-results.xml --html=test-results/pytest-report.html --self-contained-html
+          artifacts:
+            - test-results/**
