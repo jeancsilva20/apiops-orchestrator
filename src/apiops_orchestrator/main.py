@@ -94,9 +94,9 @@ def generate_api_json(
 def main() -> None:
     """Main orchestration function."""
     settings = Settings()
-    repo_cep_path = Path(
-        r"C:\Users\Sensedia\Downloads\Projetos\Nexus\apiops-orchestrator\api-repo-cep"
-    )
+    repo_path = (
+        settings.PROJECT_ROOT / settings.API_REPO_FOLDER
+    )  # This Path is the default for the pipeline. If you're running locally, change this Path to your local API Repository.
 
     repo_validator = RepoValidator(settings.ARTIFACTS_FILE_FOLDER_VALIDATION_RULES)
     local_file_adapter = LocalFileLoaderAdapter()
@@ -111,15 +111,15 @@ def main() -> None:
     }
 
     try:
-        validate_repository_structure(repo_validator, repo_cep_path, settings)
+        validate_repository_structure(repo_validator, repo_path, settings)
 
-        import_repository_files(file_importer_service, repo_cep_path, settings)
+        import_repository_files(file_importer_service, repo_path, settings)
 
         validate_repository_schemas(
-            schema_validator, file_importer_service, repo_cep_path, schema_mapping
+            schema_validator, file_importer_service, repo_path, schema_mapping
         )
 
-        final_json = generate_api_json(file_importer_service, repo_cep_path, settings)
+        final_json = generate_api_json(file_importer_service, repo_path, settings)
 
         _print_step("Final Result: API JSON")
         print(json.dumps(final_json.model_dump(), indent=2, ensure_ascii=False))

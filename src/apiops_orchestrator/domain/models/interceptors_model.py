@@ -7,7 +7,7 @@ class Interceptor(BaseModel):
     idTemp: int
     position: int
     type: str
-    content: Union[Dict[str, Any], str]
+    content: Union[Dict[str, Any], str, int]
     executionPoint: str
     status: str
 
