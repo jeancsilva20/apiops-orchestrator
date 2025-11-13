@@ -43,6 +43,7 @@ def import_repository_files(
     artifact_folder = repo_path / settings.API_REPO_ARTIFACTS_PATH
     try:
         files = file_importer_service.load_file_path(artifact_folder)
+        print(files)
         print(f"Found {len(files)} files in {artifact_folder}")
         return files
     except Exception as error:
