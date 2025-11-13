@@ -38,6 +38,9 @@ pipelines:
 
             # Executa testes + relatório JUnit 
             - mkdir -p test-results
-            - poetry run pytest --junitxml=test-results/pytest-results.xml 
+            - poetry run pytest \
+                --junitxml=test-results/pytest-results.xml \
+                --html=test-results/pytest-report.html \
+                --self-contained-html
           artifacts:
               - test-results/**
