@@ -95,7 +95,7 @@ def main() -> None:
     """Main orchestration function."""
     settings = Settings()
     repo_cep_path = Path(
-        r"C:\Users\Sensedia\Downloads\Projetos\Nexus\apiops-orchestrator\api-repo-cep"
+        r"/home/daniloamaral/bitbucket/apiops-project/apis-repo"
     )
 
     repo_validator = RepoValidator(settings.ARTIFACTS_FILE_FOLDER_VALIDATION_RULES)
