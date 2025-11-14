@@ -37,6 +37,7 @@ class LocalFileLoaderAdapter(PathLoaderPort):
         ]
 
     def _load_single_file(self, file_path: Path) -> Any:
+
         # self._ensure_utf8_encoding(file_path)
 
         suffix = file_path.suffix.lower()
