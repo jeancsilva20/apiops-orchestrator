@@ -52,7 +52,6 @@ class LocalFileLoaderAdapter(PathLoaderPort):
             )
         return loader(file_path)
 
-
     @staticmethod
     def _ensure_utf8_encoding(file_path: Path) -> None:
         try:
