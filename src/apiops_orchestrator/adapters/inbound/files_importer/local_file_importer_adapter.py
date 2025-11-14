@@ -38,7 +38,7 @@ class LocalFileLoaderAdapter(PathLoaderPort):
 
     def _load_single_file(self, file_path: Path) -> Any:
 
-        # self._ensure_utf8_encoding(file_path)
+        self._ensure_utf8_encoding(file_path)
 
         suffix = file_path.suffix.lower()
         loader = self._loader_strategies.get(suffix)
@@ -53,7 +53,6 @@ class LocalFileLoaderAdapter(PathLoaderPort):
         return loader(file_path)
 
 
-""" 
     @staticmethod
     def _ensure_utf8_encoding(file_path: Path) -> None:
         try:
@@ -63,4 +62,3 @@ class LocalFileLoaderAdapter(PathLoaderPort):
             raise InvalidFileEncodingError(
                 f"{file_path} is not valid UTF-8 encoded: {e}"
             ) from e
-"""
