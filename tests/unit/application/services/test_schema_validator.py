@@ -7,13 +7,9 @@ from apiops_orchestrator.application.services.file_import_service import (
 )
 from apiops_orchestrator.application.services.schema_validator import SchemaValidator
 
-
-from apiops_orchestrator.config.settings import settings
-
-
 @pytest.fixture
 def schema_folder(tmp_path: Path) -> Path:
-    schema_dir = tmp_path / settings.ORCHEST_SCHEMA_FOLDER
+    schema_dir = tmp_path / "apiops_orchestrator/domain/schemas"
     schema_dir.mkdir(parents=True)
     return schema_dir
 

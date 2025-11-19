@@ -45,7 +45,7 @@ def test_validate_artifact_struct_non_existent_path(repo_validator):
 
     with pytest.raises(
         ValueError,
-        match="Pasta 'artifacts' não encontrada.",
+        match="Folder 'artifacts' not found.",
     ):
         repo_validator.validate_artifact_struct(non_existent_artifacts_path)
 
@@ -68,7 +68,7 @@ def test_validate_missing_required_folder(repo_validator, tmp_path):
     with pytest.raises(ValueError) as excinfo:
         repo_validator.validate_artifact_struct(artifacts_path)
 
-    assert "Pasta obrigatória ausente" in str(excinfo.value)
+    assert "Mandatory folder missing" in str(excinfo.value)
     assert str(artifacts_path / folder_to_skip) in str(excinfo.value)
 
 
@@ -99,7 +99,7 @@ def test_validate_missing_required_file(repo_validator, tmp_path):
     with pytest.raises(ValueError) as excinfo:
         repo_validator.validate_artifact_struct(artifacts_path)
 
-    assert "Arquivo obrigatório ausente" in str(excinfo.value)
+    assert "Mandatory file missing" in str(excinfo.value)
     assert str(artifacts_path / folder_with_missing_file / file_to_skip) in str(
         excinfo.value
     )
@@ -145,13 +145,13 @@ def test_validate_multiple_errors(repo_validator, tmp_path):
         repo_validator.validate_artifact_struct(artifacts_path)
 
     error_message = str(excinfo.value)
-    assert "Validação do repositório de artefatos falhou:" in error_message
+    assert "Artifact repository validation failed:" in error_message
     assert (
-        f"Arquivo obrigatório ausente: {artifacts_path / folder_for_missing_file / file_to_skip}"
+        f"Mandatory file missing: {artifacts_path / folder_for_missing_file / file_to_skip}"
         in error_message
     )
     for skipped_folder in folders_to_skip:
         assert (
-            f"Pasta obrigatória ausente: {artifacts_path / skipped_folder}"
+            f"Mandatory folder missing: {artifacts_path / skipped_folder}"
             in error_message
         )

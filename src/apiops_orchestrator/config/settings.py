@@ -16,8 +16,10 @@ class Settings(BaseSettings):
         env_file=str(dotenv_path), env_file_encoding="utf-8"
     )
 
-    PROD_URL: str
+    HOST: str
     AUTHORIZATION: str
+    OAUTH_CLIENT_ID: str
+    OAUTH_CLIENT_SECRET: str
     REQUEST_TIMEOUT: int
 
     # API Data
@@ -45,9 +47,14 @@ class Settings(BaseSettings):
 
     # Use the previously defined PROJECT_ROOT.
     PROJECT_ROOT: Path = PROJECT_ROOT
+    API_REPO_FOLDER: Path = "./external-repo"
     PROJECT_SRC_DIR: Path = PROJECT_ROOT / "src"
-    API_REPO_ARTIFACTS_PATH: str = "artifacts"  # This is where the developer makes changes.
-    API_REPO_REVISIONS_PATH: str = "src/api/revisions"  # This is where folders 1, 2, 3 etc… are located.
+    API_REPO_ARTIFACTS_PATH: str = (
+        "artifacts"  # This is where the developer makes changes.
+    )
+    API_REPO_REVISIONS_PATH: str = (
+        "src/api/revisions"  # This is where folders 1, 2, 3 etc… are located.
+    )
     ORCHEST_SCHEMA_FOLDER: str = "apiops_orchestrator/domain/schemas"
 
     ARTIFACTS_FILE_FOLDER_VALIDATION_RULES: dict = {
@@ -58,6 +65,3 @@ class Settings(BaseSettings):
         "Resources": [],
         "Env-Variables": [],
     }
-
-
-settings = Settings()

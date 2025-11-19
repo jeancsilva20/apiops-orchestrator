@@ -9,14 +9,14 @@ app = typer.Typer(
 @app.command("sync-openapi")
 def sync_openapi(
     repo: Path = typer.Option(
-        ..., "--repo", "-r", help="Caminho do Repositório da API"
+        ..., "--repo", "-r", help="API Repository Path"
     ),
-    env: str = typer.Option(..., "--env", "-e", help="Ambiente alvo (ex.: dev, hmg, prd)"),
+    env: str = typer.Option(..., "--env", "-e", help="Target environment (e.g., dev, hmg, prd)"),
     apply: bool = typer.Option(
-        False, "--apply/--no-apply", help="POST /revisions; se não, DRY-RUN."
+        False, "--apply/--no-apply", help="POST /revisions; otherwise, DRY-RUN."
     ),
     out_dir: Path | None = typer.Option(
-        None, "--out-dir", help="Diretório para salvar o plano gerado"
+        None, "--out-dir", help="Directory to save the generated plan"
     ),
 ) -> None:
     try:

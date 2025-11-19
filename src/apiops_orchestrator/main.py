@@ -10,6 +10,7 @@ from pathlib import Path
 from domain.services.yaml_to_json_service import YamlToJsonService
 import json
 from typing import List, Dict
+import traceback
 
 
 def _print_step(step_name: str):
@@ -42,6 +43,7 @@ def import_repository_files(
     artifact_folder = repo_path / settings.API_REPO_ARTIFACTS_PATH
     try:
         files = file_importer_service.load_file_path(artifact_folder)
+        print(files)
         print(f"Found {len(files)} files in {artifact_folder}")
         return files
     except Exception as error:
@@ -74,6 +76,7 @@ def validate_repository_schemas(
 
         except Exception as e:
             print(f"ERROR: Error loading path {target_path}: {e}")
+            print(traceback.format_exc())
 
 
 def generate_api_json(
@@ -94,9 +97,9 @@ def generate_api_json(
 def main() -> None:
     """Main orchestration function."""
     settings = Settings()
-    repo_cep_path = Path(
-        r"/home/daniloamaral/bitbucket/apiops-project/apis-repo"
-    )
+    repo_path = (
+        settings.PROJECT_ROOT / settings.API_REPO_FOLDER
+    )  # This Path is the default for the pipeline. If you're running locally, change this Path to your local API Repository.
 
     repo_validator = RepoValidator(settings.ARTIFACTS_FILE_FOLDER_VALIDATION_RULES)
     local_file_adapter = LocalFileLoaderAdapter()
@@ -111,15 +114,15 @@ def main() -> None:
     }
 
     try:
-        validate_repository_structure(repo_validator, repo_cep_path, settings)
+        validate_repository_structure(repo_validator, repo_path, settings)
 
-        import_repository_files(file_importer_service, repo_cep_path, settings)
+        import_repository_files(file_importer_service, repo_path, settings)
 
         validate_repository_schemas(
-            schema_validator, file_importer_service, repo_cep_path, schema_mapping
+            schema_validator, file_importer_service, repo_path, schema_mapping
         )
 
-        final_json = generate_api_json(file_importer_service, repo_cep_path, settings)
+        final_json = generate_api_json(file_importer_service, repo_path, settings)
 
         _print_step("Final Result: API JSON")
         print(json.dumps(final_json.model_dump(), indent=2, ensure_ascii=False))
