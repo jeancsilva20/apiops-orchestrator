@@ -16,8 +16,10 @@ class Settings(BaseSettings):
         env_file=str(dotenv_path), env_file_encoding="utf-8"
     )
 
-    PROD_URL: str
+    HOST: str
     AUTHORIZATION: str
+    OAUTH_CLIENT_ID: str
+    OAUTH_CLIENT_SECRET: str
     REQUEST_TIMEOUT: int
 
     # API Data
@@ -63,6 +65,3 @@ class Settings(BaseSettings):
         "Resources": [],
         "Env-Variables": [],
     }
-
-
-settings = Settings()

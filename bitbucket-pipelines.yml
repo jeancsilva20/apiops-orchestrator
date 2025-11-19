@@ -33,8 +33,8 @@ pipelines:
             - echo "MAVEN_USERNAME: $MAVEN_USERNAME"
 
             # Gera o .env
-            - printf "PROD_URL=%s\nAUTHORIZATION=%s\nREQUEST_TIMEOUT=%s\nAPI_ID=%s\n" \
-              "$PROD_URL" "$AUTHORIZATION" "$REQUEST_TIMEOUT" "$API_ID" > .env
+            - printf "HOST=%s\nAUTHORIZATION=%s\nREQUEST_TIMEOUT=%s\nAPI_ID=%s\n" \
+              "$HOST" "$AUTHORIZATION" "$REQUEST_TIMEOUT" "$API_ID" > .env
 
             # Executa aplicação
             - poetry run python src/apiops_orchestrator/main.py
