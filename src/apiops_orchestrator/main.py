@@ -5,6 +5,8 @@ from apiops_orchestrator.domain.models.api_full_model import ApiFull
 from application.services.file_import_service import FileImportService
 from application.services.repo_validator import RepoValidator
 from application.services.schema_validator import SchemaValidator
+from application.services.publisher_service import PublisherService
+from adapters.outbound.http.manager_api.manager_api_adapter import ManagerApiAdapter
 from config.settings import Settings
 from pathlib import Path
 from domain.services.yaml_to_json_service import YamlToJsonService
@@ -106,6 +108,14 @@ def main() -> None:
     file_importer_service = FileImportService(local_file_adapter)
     schema_folder = settings.PROJECT_SRC_DIR / settings.ORCHEST_SCHEMA_FOLDER
     schema_validator = SchemaValidator(file_importer_service, schema_folder)
+    manager_adapter = ManagerApiAdapter(
+        token=settings.AUTHORIZATION,
+        base_path="/api-manager/api/v3/",
+        max_retries=3,
+        api_id=settings.API_ID,
+        settings=settings
+    )
+    publisher_service = PublisherService(manager_adapter)
 
     schema_mapping = {
         "artifacts/templates/api-basic-info.yaml": "api-basic-info.schema.json",
@@ -126,6 +136,12 @@ def main() -> None:
 
         _print_step("Final Result: API JSON")
         print(json.dumps(final_json.model_dump(), indent=2, ensure_ascii=False))
+
+        _print_step("Step 5: GET /apis/{id} call started")
+        remote_api_data = publisher_service.fetch_remote_api_data()
+
+        print("GET call successfully completed.")
+        print(json.dumps(remote_api_data, indent=2, ensure_ascii=False))
 
     except Exception as e:
         print("\n" + "!" * 20)
