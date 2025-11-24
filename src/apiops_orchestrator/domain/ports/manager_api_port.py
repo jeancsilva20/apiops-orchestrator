@@ -6,3 +6,7 @@ class PublisherPort(ABC):
     def get_api_by_id(self) -> Dict[str, Any]:
         """Contract to search data from the API by ID"""
         pass
+
+    def get_custom_interceptor_by_id(self, custom_interceptor_id: int) -> Dict[str, str] | None:
+        """Get the content of a custom interceptor"""
+        pass

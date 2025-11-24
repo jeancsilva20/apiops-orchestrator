@@ -45,3 +45,12 @@ class ManagerApiAdapter(PublisherPort):
         """GET to retrieve the API data"""
         endpoint = f"apis/{self.api_id}"
         return self._request("GET", endpoint)
+
+    def get_custom_interceptor_by_id(self, custom_interceptor_id: int) -> Dict[str, str] | None:
+        endpoint = f"custom-interceptors/{custom_interceptor_id}"
+
+        json_response = self._request("GET", endpoint)
+        formatted_content = {"id": json_response["id"], "name": json_response["name"],
+                             "script": json_response["script"]}
+
+        return formatted_content
