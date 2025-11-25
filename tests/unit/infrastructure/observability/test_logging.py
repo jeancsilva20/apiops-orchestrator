@@ -41,12 +41,11 @@ def test_set_and_get_context_data():
     """Tests if set_api_info and set_default_data keep data from local thread."""
     log_lib.set_default_data()
     log_lib.set_api_info(api_id=123, customer="test client")
-    log_lib.set_span_id("span-abc")
+    log_lib.set_span_id()
 
     assert hasattr(log_lib._log_context, "trace_id")
     assert log_lib._log_context.api_id == 123
     assert log_lib._log_context.customer == "test client"
-    assert log_lib._log_context.span_id == "span-abc"
 
 
 def test_clear_context():
@@ -68,7 +67,7 @@ def test_context_filter_injection():
     Tests whether the ContextFilter retrieves the thread data and places it in the LogRecord.
     """
     log_lib.set_api_info(api_id=999, customer="big corp")
-    log_lib.set_span_id("span-123")
+    log_lib.set_span_id()
 
     record = logging.LogRecord(
         name="test_logger", level=logging.INFO, pathname="test.py", lineno=10,
@@ -80,7 +79,6 @@ def test_context_filter_injection():
 
     assert record.api_id == 999
     assert record.customer == "big corp"
-    assert record.span_id == "span-123"
 
 
 def test_json_formatter_output():
@@ -120,6 +118,6 @@ def test_log_duration_context_manager():
             # just check if duration is set, or mock time.perf_counter if you need precision)
             pass
 
-        mock_logger.debug.assert_called_once()
-        args, _ = mock_logger.debug.call_args
+        mock_logger.info.assert_called_once()
+        args, _ = mock_logger.info.call_args
         assert "Execution of test_operation finished" in args[0]
