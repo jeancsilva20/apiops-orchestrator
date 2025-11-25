@@ -81,6 +81,7 @@ class ContextFilter(logging.Filter):
         record.customer = getattr(_log_context, 'customer', None)
         record.span_id = getattr(_log_context, 'span_id', None)
         record.duration = getattr(_log_context, 'duration', None)
+        record.status = getattr(_log_context, 'status', Status("IN PROGRESS").value)
         return True
 
 class JsonFormatter(logging.Formatter):
@@ -132,6 +133,7 @@ class SimpleFormatter(logging.Formatter):
     RESET = "\x1b[0m"
 
     def format(self, record: logging.LogRecord) -> str:
+        log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
         colors = {
             Level.DEBUG.value: self.BLUE,
             Level.INFO.value: self.GREEN,
@@ -146,9 +148,10 @@ class SimpleFormatter(logging.Formatter):
 
         trace_id = getattr(record, 'trace_id', None)
         message = record.getMessage()
+        duration = record.duration
         # Add exception data, if it exists
-        if record.exc_info:
-            message += "\n" + self.formatException(record.exc_info)
+        if record.exc_info and log_level == "DEBUG":
+             message += "\n" + self.formatException(record.exc_info)
 
         # Final format: [TIMESTAMP] LEVEL:[context] Message
         return f"[{timestamp_str}] {color}{level}{self.RESET}: {message} - [trace_id={trace_id}]"
@@ -171,11 +174,15 @@ def log_duration(operation_name: str, extra_data: dict = None):
         duration = (end_time - start_time) * 1000  # Conversion to miliseconds
         _log_context.duration = round(duration, 2)
         logger = logging.getLogger()
-        logger.debug(f"Execution of {operation_name} finished.")
+        #This line cannot be deleted, it´s needed for context use
+        logger.info(f"Execution of {operation_name} finished in {_log_context.duration}ms")
         _log_context.duration = None
 
-def set_span_id(span_id: str):
-    _log_context.span_id = span_id
+def set_span_id():
+    _log_context.span_id = uuid.uuid4()
+
+def set_status(status: str):
+    _log_context.status = Status(status).value
 
 def set_default_data():
     _log_context.trace_id = uuid.uuid4()
@@ -184,11 +191,20 @@ def set_api_info(api_id: int, customer: str):
     _log_context.api_id = api_id
     _log_context.customer = customer
 
+def clear_operation_context():
+    """
+        Clears span id and status from thread context
+    """
+    vars_to_clear = ['span_id', 'status']
+    for var in vars_to_clear:
+        if hasattr(_log_context, var):
+            delattr(_log_context, var)
+
 def clear_context():
     """
     Clears all thread context
     """
-    vars_to_clear = ['trace_id', 'span_id', 'api_id', 'customer', 'duration']
+    vars_to_clear = ['trace_id', 'api_id', 'customer', 'duration']
     for var in vars_to_clear:
         if hasattr(_log_context, var):
             delattr(_log_context, var)
