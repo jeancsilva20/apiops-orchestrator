@@ -2,6 +2,7 @@ from adapters.inbound.files_importer.local_file_importer_adapter import (
     LocalFileLoaderAdapter,
 )
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
+from apiops_orchestrator.domain.ports.manager_api_port import PublisherPort
 from application.services.file_import_service import FileImportService
 from application.services.repo_validator import RepoValidator
 from application.services.schema_validator import SchemaValidator
@@ -83,6 +84,7 @@ def validate_repository_schemas(
 
 def generate_api_json(
     file_importer_service: FileImportService,
+    api_manager: PublisherPort,
     repo_path: Path,
     settings: Settings,
 ) -> ApiFull:
@@ -90,7 +92,7 @@ def generate_api_json(
     _print_step("Step 4: Generating API JSON from YAML files")
     artifact_folder = repo_path / settings.API_REPO_ARTIFACTS_PATH
     files = file_importer_service.load_file_path(artifact_folder)
-    service = YamlToJsonService(files, settings)
+    service = YamlToJsonService(files, settings, api_manager)
     result = service.build_api_json()
     print("API JSON generated successfully.")
     return result
@@ -132,7 +134,7 @@ def main() -> None:
             schema_validator, file_importer_service, repo_path, schema_mapping
         )
 
-        final_json = generate_api_json(file_importer_service, repo_path, settings)
+        final_json = generate_api_json(file_importer_service, manager_adapter, repo_path, settings)
 
         _print_step("Final Result: API JSON")
         print(json.dumps(final_json.model_dump(), indent=2, ensure_ascii=False))
