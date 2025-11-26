@@ -160,6 +160,13 @@ def main() -> None:
 
             logger.debug("GET call successfully completed")
             # print(json.dumps(remote_api_data, indent=2, ensure_ascii=False))
+
+            logger.info("Step 6: POST /revisions call started")
+            publish_response = publisher_service.publish_changes(final_json)
+
+            logger.debug("POST call successfully completed.")
+            print(json.dumps(publish_response, indent=2, ensure_ascii=False))
+
             logger.info("Finished application")
 
         except Exception as e:

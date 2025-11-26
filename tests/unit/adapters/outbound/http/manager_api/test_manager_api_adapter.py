@@ -137,3 +137,44 @@ def test_get_custom_interceptor_by_id_retries(mock_settings):
                 adapter.get_custom_interceptor_by_id(8)
 
         assert mock_request.call_count == 3
+
+
+def test_publish_api_changes_success(mock_settings):
+    api_id = 123
+    adapter = ManagerApiAdapter(
+        token="password123",
+        base_path="/api-manager/api/v3/",
+        max_retries=3,
+        api_id=api_id,
+        settings=mock_settings
+    )
+
+    payload_to_send = {
+        "api": {"name": "Test API"},
+        "interceptors": [],
+        "resources": []
+    }
+
+    expected_response = {"id": "rev_001", "status": "published"}
+
+    with patch("requests.request") as mock_request:
+        mock_response_obj = Mock()
+        mock_response_obj.json.return_value = expected_response
+        mock_response_obj.status_code = 200
+        mock_request.return_value = mock_response_obj
+
+        result = adapter.publish_api_changes(payload_to_send)
+
+        assert result == expected_response
+
+        expected_url = "http://urltest.com/api-manager/api/v3/revisions"
+
+        mock_request.assert_called_once_with(
+            "POST",
+            expected_url,
+            headers={
+                "Authorization": "Bearer password123",
+                "Content-Type": "application/json"
+            },
+            json=payload_to_send
+        )
