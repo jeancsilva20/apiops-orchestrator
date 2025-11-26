@@ -17,5 +17,5 @@ class PublisherService:
             data = self.publisher.get_api_by_id()
             set_status("SUCCESS")
             self.logger.info(f"Data reached successfully: {data}")
-            clear_operation_context()()
+            clear_operation_context()
             return data
