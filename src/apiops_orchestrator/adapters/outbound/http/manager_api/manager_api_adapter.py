@@ -54,3 +54,8 @@ class ManagerApiAdapter(PublisherPort):
                              "script": json_response["script"]}
 
         return formatted_content
+
+    def publish_api_changes(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        endpoint = f"revisions"
+
+        return self._request("POST", endpoint=endpoint, json=data)

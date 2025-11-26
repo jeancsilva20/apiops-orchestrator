@@ -1,4 +1,6 @@
 import logging
+
+from apiops_orchestrator.domain.models.api_full_model import ApiFull
 from apiops_orchestrator.domain.ports.manager_api_port import PublisherPort
 from typing import Dict, Any
 from apiops_orchestrator.infrastructure.observability.logging import log_duration, set_span_id, clear_operation_context, set_status
@@ -19,3 +21,9 @@ class PublisherService:
             self.logger.info(f"Data reached successfully: {data}")
             clear_operation_context()
             return data
+
+    def publish_changes(self, api_data: ApiFull) -> Dict[str, Any]:
+        """Send the final JSON to the call."""
+        payload = api_data.model_dump(by_alias=True, exclude_none=True)
+
+        return self.publisher.publish_api_changes(payload)
