@@ -2,6 +2,8 @@ import pytest
 from unittest.mock import MagicMock
 import requests
 from apiops_orchestrator.application.services.publisher_service import PublisherService
+from apiops_orchestrator.domain.models.api_full_model import ApiFull
+from apiops_orchestrator.domain.models.api_partial_model import ApiPartialInfo
 from apiops_orchestrator.domain.ports.manager_api_port import PublisherPort
 
 
@@ -26,3 +28,36 @@ def test_fetch_remote_api_data_propagates_error():
         service.fetch_remote_api_data()
 
     assert "Erro 500" in str(excinfo.value)
+
+def test_format_data_updates_fields():
+    mock_adapter = MagicMock(spec=PublisherPort)
+    api_partial_info_mock = MagicMock(spec=ApiPartialInfo)
+
+    api_data = ApiFull(
+        api=api_partial_info_mock,
+        revisionNumber=999,
+        workflowId=None,
+        workflowStageId=None,
+        interceptors=[],
+        resources=[]
+    )
+
+
+    remote_api_data = {
+        "revisions": [
+            {"workflowId": 10, "workflowStageId": 5},
+            {"workflowId": 20, "workflowStageId": 7},   # Last revision
+        ],
+        "lastRevision": 99,
+        "creationDate": 123456789,
+    }
+
+
+    obj = PublisherService(mock_adapter)
+    updated = obj._format_data(api_data, remote_api_data)
+
+    assert updated.workflowId == 20
+    assert updated.workflowStageId == 7
+    assert updated.api.lastRevision == 99
+    assert updated.api.creationDate == 123456789
+    assert updated.api.revisions == remote_api_data["revisions"]
