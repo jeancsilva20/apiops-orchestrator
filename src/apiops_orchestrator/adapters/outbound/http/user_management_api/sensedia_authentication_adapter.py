@@ -6,6 +6,7 @@ from requests.auth import HTTPBasicAuth
 
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.ports.authentication_port import AuthenticationPort
+from apiops_orchestrator.infrastructure.utils.retry_util import RetryUtil
 from rich import print as rprint
 
 
@@ -23,17 +24,18 @@ class SensediaAuthenticationAdapter(AuthenticationPort):
             basic = HTTPBasicAuth(user, password)
             headers = {} # Add additional headers
             payload = {"grantType": "client_credentials", "scope": "apis/all"}
+            url = f"{host}/{self.base_path}/oauth2/token"
 
-            for attempt in range(1, self.max_retries + 1):
-                r = requests.post(f"{host}/{self.base_path}/oauth2/token", auth=basic, headers=headers, json=payload)
-                if 500 <= r.status_code < 600:
-                    print(f"Error {r.status_code} ({attempt}/{self.max_retries} try)")
-                    if attempt < self.max_retries:
-                        time.sleep(5)
-                        continue
-                    else:
-                        raise Exception(f"failed after {self.max_retries} tries")
-                return r.json()["access_token"]
+            response_data = RetryUtil.http_request(
+                method="POST",
+                url=url,
+                headers=headers,
+                auth=basic,
+                json=payload,
+                max_retries=self.max_retries
+            )
+
+            return response_data["access_token"]
         except Exception as error:
             rprint({"error": str(error)})
             raise typer.Exit(code=1)
