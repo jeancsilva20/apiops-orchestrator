@@ -11,6 +11,20 @@ class PublisherService:
         self.publisher = publisher_port
         self.logger = logging.getLogger(__name__)
 
+    def _format_data(self, api_data: ApiFull, remote_api_data: Dict[str, Any]) -> ApiFull:
+        revisions = remote_api_data["revisions"]
+
+        if "workflowId" in revisions[len(revisions) - 1]:
+            api_data.workflowId = revisions[len(revisions) - 1]["workflowId"]
+        if "workflowStageId" in revisions[len(revisions) - 1]:
+            api_data.workflowStageId = revisions[len(revisions) - 1]["workflowStageId"]
+
+        api_data.api.lastRevision = remote_api_data["lastRevision"]
+        api_data.api.creationDate = remote_api_data["creationDate"]
+        api_data.api.revisions = revisions
+
+        return api_data
+
     def fetch_remote_api_data(self) -> Dict[str, Any]:
         """Call the port to retrieve the API data."""
         set_span_id()
@@ -18,12 +32,15 @@ class PublisherService:
             self.logger.debug("Loading path file")
             data = self.publisher.get_api_by_id()
             set_status("SUCCESS")
-            self.logger.info(f"Data reached successfully: {data}")
             clear_operation_context()
             return data
 
     def publish_changes(self, api_data: ApiFull) -> Dict[str, Any]:
         """Send the final JSON to the call."""
-        payload = api_data.model_dump(by_alias=True, exclude_none=True)
+
+        remote_api_data = self.fetch_remote_api_data()
+        formatted_api_data = self._format_data(api_data, remote_api_data)
+
+        payload = formatted_api_data.model_dump(by_alias=True, exclude_none=True)
 
         return self.publisher.publish_api_changes(payload)

@@ -152,21 +152,13 @@ def main() -> None:
             logger.info("Step 4: Generating API JSON from YAML files")
             final_json = generate_api_json(file_importer_service, manager_adapter, repo_path, settings, logger)
 
-            # logger.debug("Final Result: API JSON")
-            # print(json.dumps(final_json.model_dump(), indent=2, ensure_ascii=False))
-
-            logger.info("Step 5: GET /apis/{id} call started")
-            remote_api_data = publisher_service.fetch_remote_api_data()
-
-            logger.debug("GET call successfully completed")
-            # print(json.dumps(remote_api_data, indent=2, ensure_ascii=False))
-
-            logger.info("Step 6: POST /revisions call started")
+            logger.info("Step 5: POST /revisions call started")
             publish_response = publisher_service.publish_changes(final_json)
 
             logger.debug("POST call successfully completed.")
-            print(json.dumps(publish_response, indent=2, ensure_ascii=False))
+            # print(json.dumps(publish_response, indent=2, ensure_ascii=False))
 
+            logger.info(f"Revision {publish_response["id"]} created sucessfully")
             logger.info("Finished application")
 
         except Exception as e:
