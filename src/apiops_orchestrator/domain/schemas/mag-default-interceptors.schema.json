@@ -51,15 +51,7 @@
                   ]
                 },
                 "content": {
-                  "type": "object",
-                  "required": [
-                    "location"
-                  ],
-                  "properties": {
-                    "location": {
-                      "type": "string"
-                    }
-                  }
+                  "type": "integer"
                 },
                 "executionPoint": {
                   "type": "string",
@@ -84,7 +76,7 @@
               "properties": {
                 "type": {
                   "type": "string",
-                  "const": "Rate Limit"
+                    "const": "Rate limit"
                 },
                 "position": {
                   "anyOf": [
@@ -220,7 +212,7 @@
               "properties": {
                 "type": {
                   "type": "string",
-                  "const": "Log Obfuscation"
+                  "const": "Log obfuscation"
                 },
                 "position": {
                   "anyOf": [
@@ -345,7 +337,7 @@
               "properties": {
                 "type": {
                   "type": "string",
-                  "const": "Payload Size"
+                  "const": "Payload size"
                 },
                 "position": {
                   "anyOf": [
@@ -397,7 +389,7 @@
               "properties": {
                 "type": {
                   "type": "string",
-                  "const": "XSS Threat Protection"
+                  "const": "XSS threat protection"
                 },
                 "position": {
                   "anyOf": [
@@ -468,15 +460,7 @@
                   ]
                 },
                 "content": {
-                  "type": "object",
-                  "required": [
-                    "location"
-                  ],
-                  "properties": {
-                    "location": {
-                      "type": "string"
-                    }
-                  }
+                  "type": "integer"
                 },
                 "executionPoint": {
                   "type": "string",
@@ -501,7 +485,7 @@
               "properties": {
                 "type": {
                   "type": "string",
-                  "const": "Client ID Validation"
+                  "const": "Client ID validation"
                 },
                 "position": {
                   "anyOf": [
