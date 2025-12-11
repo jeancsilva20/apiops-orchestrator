@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "API Resources",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "spec"],
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "api-management.sensedia.com/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "Resources"
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "description", "destination", "timeout", "interceptors"],
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "destination": { "type": "string" },
+        "timeout": { "type": "string" },
+        "interceptors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "position",
+              "type",
+              "content",
+              "executionPoint",
+              "status"
+            ],
+            "properties": {
+              "position": {
+                "type": ["integer", "string"]
+              },
+              "type": {
+                "type": "string"
+              },
+              "executionPoint": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "content": {}
+            }
+          }
+        }
+      }
+    }
+  }
+}
