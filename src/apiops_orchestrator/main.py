@@ -134,7 +134,7 @@ def main() -> None:
         schema_mapping = {
             "artifacts/templates/api-basic-info.yaml": "api-basic-info.schema.json",
             "artifacts/templates/default-interceptors.yaml": "mag-default-interceptors.schema.json",
-            "artifacts/resources/": "api-operations.schema.json",
+            # "artifacts/Resources/resources.yaml": "api-resources.schema.json",
         }
 
         try:
