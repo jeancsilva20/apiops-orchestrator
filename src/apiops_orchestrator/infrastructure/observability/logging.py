@@ -55,7 +55,7 @@ def setup_file_handler(logger, context_filter):
     except OSError as e:
         # When environment is readonly, do not fail app only warns with stderr
         sys.stderr.write(f"ERROR: Unable to create log folder '{log_dir}'. File logging disabled. Error: {e}\n")
-        return
+        raise OSError("Unable to create log folder")
 
     timestamp_str = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H-%M-%SZ')
     filename = os.path.join(log_dir, f".{timestamp_str}.ndjson")
@@ -67,6 +67,7 @@ def setup_file_handler(logger, context_filter):
         logger.addHandler(file_handler)
     except IOError as e:
         sys.stderr.write(f"ERROR: Unable to create log file '{filename}'. Error: {e}\n")
+        raise IOError(f"Unable to create log folder. Error: {e}")
 
 class ContextFilter(logging.Filter):
     """
@@ -131,6 +132,7 @@ class SimpleFormatter(logging.Formatter):
     RED = "\x1b[31;21m"
     BOLD_RED = "\x1b[38;5;88;21m"
     RESET = "\x1b[0m"
+    RED_BG = "\x1b[41;97;1m"
 
     def format(self, record: logging.LogRecord) -> str:
         log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -139,7 +141,7 @@ class SimpleFormatter(logging.Formatter):
             Level.INFO.value: self.GREEN,
             Level.WARN.value: self.YELLOW,
             Level.ERROR.value: self.RED,
-            Level.FATAL.value: self.BOLD_RED
+            Level.FATAL.value: self.RED_BG
         }
 
         timestamp_str = datetime.fromtimestamp(record.created).strftime('%Y-%m-%d %H:%M:%S')

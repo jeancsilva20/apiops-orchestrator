@@ -32,7 +32,6 @@ class RepoValidator:
 
                 if not folder_path.exists() or not folder_path.is_dir():
                     set_status("FAILURE")
-                    self.logger.error(f"Mandatory folder missing: {folder_path}")
                     errors.append(f"Mandatory folder missing: {folder_path}")
                     continue
 
@@ -40,7 +39,6 @@ class RepoValidator:
                     file_path = folder_path / filename
                     if not file_path.exists():
                         set_status("FAILURE")
-                        self.logger.error(f"Mandatory file missing: {file_path}")
                         errors.append(f"Mandatory file missing: {file_path}")
 
             if errors:

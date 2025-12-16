@@ -56,4 +56,4 @@ class RetryUtil:
                     set_status("FAILURE")
                     logger.error(f"Error: {e}")
                     clear_operation_context()
-                    raise
+                    raise e
