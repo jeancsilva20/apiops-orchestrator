@@ -87,7 +87,7 @@ class YamlToJsonService:
             return api_full
 
         except ValidationError as e:
-            raise ValueError(f"YAML content validation failed: {e}") from e
+            raise ValueError(f"YAML content validation failed:\n{e}") from e
         except (
             ValueError,
             KeyError,

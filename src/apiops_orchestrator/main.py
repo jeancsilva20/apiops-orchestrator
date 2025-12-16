@@ -1,8 +1,11 @@
+import sys
+
 from adapters.inbound.files_importer.local_file_importer_adapter import (
     LocalFileLoaderAdapter,
 )
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
 from apiops_orchestrator.domain.ports.manager_api_port import PublisherPort
+from apiops_orchestrator.infrastructure.utils.critical_exception_handler import critical_exception_handler
 from application.services.file_import_service import FileImportService
 from application.services.repo_validator import RepoValidator
 from application.services.schema_validator import SchemaValidator
@@ -67,20 +70,17 @@ def validate_repository_schemas(
             files_to_validate = content if isinstance(content, list) else [content]
 
             for file_content in files_to_validate:
-                try:
-                    validator.validate(file_content, schema_name)
-                    set_status("SUCCESS")
-                    logger.info(
-                        f"OK: Validation successful for a file in '{path}' with schema '{schema_name}'"
-                    )
-                    clear_operation_context()
-                except ValueError as e:
-                    raise
+                validator.validate(file_content, schema_name)
+                set_status("SUCCESS")
+                logger.info(
+                    f"OK: Validation successful for a file in '{path}' with schema '{schema_name}'"
+                )
+                clear_operation_context()
 
-        except Exception as e:
+        except FileNotFoundError as e:
             set_status("FAILURE")
-            logger.error(f"Error loading path {target_path}", exc_info=e, stack_info=traceback.format_exc())
             clear_operation_context()
+            raise Exception(f"File not found. Path: {target_path}", e)
 
 
 def generate_api_json(
@@ -103,6 +103,7 @@ def generate_api_json(
 
 def main() -> None:
     """Main orchestration function."""
+    sys.excepthook = critical_exception_handler
     settings = Settings()
     setup_logging()
     set_default_data()
@@ -137,32 +138,28 @@ def main() -> None:
             # "artifacts/Resources/resources.yaml": "api-resources.schema.json",
         }
 
-        try:
-            logger.info("Step 1: Validating Repository Structure")
-            validate_repository_structure(repo_validator, repo_path, settings, logger)
+        logger.info("Step 1: Validating Repository Structure")
+        validate_repository_structure(repo_validator, repo_path, settings, logger)
 
-            logger.info("Step 2: Importing Repository Files")
-            import_repository_files(file_importer_service, repo_path, settings, logger)
+        logger.info("Step 2: Importing Repository Files")
+        import_repository_files(file_importer_service, repo_path, settings, logger)
 
-            logger.info("Step 3: Validating Schemas")
-            validate_repository_schemas(
-                schema_validator, file_importer_service, repo_path, schema_mapping, logger
-            )
+        logger.info("Step 3: Validating Schemas")
+        validate_repository_schemas(
+            schema_validator, file_importer_service, repo_path, schema_mapping, logger
+        )
 
-            logger.info("Step 4: Generating API JSON from YAML files")
-            final_json = generate_api_json(file_importer_service, manager_adapter, repo_path, settings, logger)
+        logger.info("Step 4: Generating API JSON from YAML files")
+        final_json = generate_api_json(file_importer_service, manager_adapter, repo_path, settings, logger)
 
-            logger.info("Step 5: POST /revisions call started")
-            publish_response = publisher_service.publish_changes(final_json)
+        logger.info("Step 5: POST /revisions call started")
+        publish_response = publisher_service.publish_changes(final_json)
 
-            logger.debug("POST call successfully completed.")
-            # print(json.dumps(publish_response, indent=2, ensure_ascii=False))
+        logger.debug("POST call successfully completed")
+        # print(json.dumps(publish_response, indent=2, ensure_ascii=False))
 
-            logger.info(f"Revision {publish_response["id"]} created sucessfully")
-            logger.info("Finished application")
-
-        except Exception as e:
-            logger.warning("An error occurred during the process")
+        logger.info(f"Revision {publish_response["id"]} created successfully")
+        logger.info("Finished application")
 
 
 if __name__ == "__main__":

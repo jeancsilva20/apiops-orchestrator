@@ -6,6 +6,7 @@ from apiops_orchestrator.application.services.file_import_service import (
     FileImportService,
 )
 from apiops_orchestrator.application.services.schema_validator import SchemaValidator
+from jsonschema import exceptions
 
 @pytest.fixture
 def schema_folder(tmp_path: Path) -> Path:
@@ -54,7 +55,7 @@ def test_validate_missing_required_property(
     yaml_data = {"name": "my-api"}  # Missing 'version'
 
     with pytest.raises(
-        ValueError,
+        exceptions.ValidationError,
         match="Schema validation failed for file.*for field.*version.*is a required property",
     ):
         schema_validator.validate(yaml_data, schema_name)
@@ -72,7 +73,7 @@ def test_validate_invalid_type(schema_validator, file_importer_service_mock):
     yaml_data = {"name": "my-api", "version": "1.0"}  # 'version' should be a number
 
     with pytest.raises(
-        ValueError,
+        exceptions.ValidationError,
         match="Schema validation failed for file.*for field.*version.*is not of type.*number",
     ):
         schema_validator.validate(yaml_data, schema_name)

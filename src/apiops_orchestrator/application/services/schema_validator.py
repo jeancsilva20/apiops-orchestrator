@@ -22,11 +22,9 @@ class SchemaValidator:
                 schema = self.file_importer_service.load_file_path(schema_path)
             except FileNotFoundError as e:
                 set_status("FAILURE")
-                self.logger.error(f"Schema file not found at {schema_path}", exc_info=e)
-                raise ValueError(f"Schema file not found at {schema_path}: {e}")
+                raise FileNotFoundError(f"Schema file not found at {schema_path}: {e}")
             except Exception as e:
                 set_status("FAILURE")
-                self.logger.error(f"Error reading schema file {schema_path}", exc_info=e)
                 raise ValueError(f"Error reading schema file {schema_path}: {e}")
 
             try:
@@ -34,8 +32,7 @@ class SchemaValidator:
             except exceptions.ValidationError as e:
                 field_path = ".".join(str(p) for p in e.path)
                 set_status("FAILURE")
-                self.logger.error(f"Schema validation failed for file {str(schema_path)} for field '{field_path}'", exc_info=e)
-                raise ValueError(
+                raise exceptions.ValidationError(
                     f"Schema validation failed for file {str(schema_path)} for field '{field_path}': {e.message}"
                 )
             return True
