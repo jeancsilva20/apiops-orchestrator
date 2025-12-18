@@ -1,24 +1,28 @@
+import json
+import logging
+import os
 import sys
+from pathlib import Path
+from typing import List, Dict
+
+import yaml
 
 from adapters.inbound.files_importer.local_file_importer_adapter import (
     LocalFileLoaderAdapter,
 )
+from adapters.outbound.http.manager_api.manager_api_adapter import ManagerApiAdapter
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
 from apiops_orchestrator.domain.ports.manager_api_port import PublisherPort
+from apiops_orchestrator.domain.services.json_to_yaml_service import JsonToYamlService
+from apiops_orchestrator.infrastructure.observability.logging import setup_logging, set_default_data, log_duration, \
+    set_api_info, set_status, clear_operation_context
 from apiops_orchestrator.infrastructure.utils.critical_exception_handler import critical_exception_handler
 from application.services.file_import_service import FileImportService
+from application.services.publisher_service import PublisherService
 from application.services.repo_validator import RepoValidator
 from application.services.schema_validator import SchemaValidator
-from application.services.publisher_service import PublisherService
-from adapters.outbound.http.manager_api.manager_api_adapter import ManagerApiAdapter
 from config.settings import Settings
-from pathlib import Path
 from domain.services.yaml_to_json_service import YamlToJsonService
-import json
-from typing import List, Dict
-import traceback
-import logging
-from apiops_orchestrator.infrastructure.observability.logging import setup_logging, set_default_data, log_duration, set_api_info, set_status, clear_operation_context
 
 
 def validate_repository_structure(
@@ -154,6 +158,12 @@ def main() -> None:
 
         logger.info("Step 5: POST /revisions call started")
         publish_response = publisher_service.publish_changes(final_json)
+
+        logger.info("Step 6: Convert JSON file to YAML file")
+        service = JsonToYamlService(final_json, logger)
+        result = service.build_yaml_parts()
+        service.save_yamls_to_disk(result, "meus_yamls_gerados")
+        # print(result)
 
         logger.debug("POST call successfully completed")
         # print(json.dumps(publish_response, indent=2, ensure_ascii=False))
