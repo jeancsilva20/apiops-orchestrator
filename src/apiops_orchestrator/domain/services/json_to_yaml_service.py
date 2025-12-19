@@ -1,42 +1,23 @@
 import json
 import logging
 import os
+import re
+from typing import List, Dict, Any, Tuple
 
 import yaml
-from pydantic import ValidationError
-from typing import List, Dict, Any, Callable, Tuple
 
-from apiops_orchestrator.domain.ports.manager_api_port import PublisherPort
-from apiops_orchestrator.domain.services.yaml_to_json_exceptions import (
-    InterceptorsNotFoundException,
-    ResourcesListNotFoundException,
-    ApiBasicInfoNotFoundException,
-)
-from apiops_orchestrator.domain.services.yaml_to_json_enum import YamlKind
-from apiops_orchestrator.domain.models.api_partial_model import (
-    ApiBasicInfo,
-    ApiPartialInfo,
-)
-from apiops_orchestrator.domain.models.api_full_model import ApiFull
-from apiops_orchestrator.domain.models.api_operations_model import Operation
-from apiops_orchestrator.domain.models.interceptors_model import (
-    Interceptor,
-    InterceptorsFile,
-)
-from apiops_orchestrator.domain.models.resources_model import (
-    Resource,
-    ResourcesSpecList,
-    ResourceSpec,
-)
 from apiops_orchestrator.config.settings import Settings
+from apiops_orchestrator.domain.models.api_full_model import ApiFull
+
 
 class JsonToYamlService:
     """
     Service to build a complete API YAML structure from a list of JSON data parts.
     """
-    def __init__(self, json_full_object: ApiFull, logger: logging):
+    def __init__(self, json_full_object: ApiFull, settings: Settings):
         self.json_full_object = json_full_object
-        self.logger = logger
+        self.logger = logging.getLogger(__name__)
+        self.settings = settings
 
         # Keys for Dictionary Lookup via .get()
         self.KIND_KEY = "kind"
@@ -46,144 +27,205 @@ class JsonToYamlService:
         self.KIND_SPEC = "spec"
         self.KIND_OPERATION = "operation"
 
+    def _gerar_nome_arquivo(self, method: str, path: str) -> str:
+        """
+        Objetivo: Transformar 'GET' e '/cep/{cep}' em 'get_cep_{cep}.yaml'
+        """
+        # 1. Concatena método e path, tudo em minúsculo
+        # Ex: get + /cep/{cep}
+        base_name = f"{str(method).lower()}{str(path).lower()}"
+
+        # 2. Substitui barras por underscores
+        # Ex: get_cep_{cep}
+        clean_name = base_name.replace('/', '_')
+
+        # 3. Remove caracteres PROIBIDOS no Windows, mas MANTÉM { e }
+        # Proibidos: < > : " \ | ? *
+        clean_name = re.sub(r'[<>:"\\|?*]', '', clean_name)
+
+        # 4. Remove underscores duplicados ou no início/fim causados pela concatenação
+        clean_name = clean_name.strip('_')
+
+        return f"{clean_name}.yaml"
+
     def build_yaml_parts(self) -> List[Dict[str, Any]]:
-        """Orchestrates the parsing, validation, and building of the ApiFull object."""
         yaml_parts = [self._create_basic_info_part()]
+
+        # 2. Interceptores Globais
         if self.json_full_object.interceptors:
             yaml_parts.append(self._create_interceptors_part())
+
+        # 3. Resources e Operações
         if self.json_full_object.resources:
-            resources_part, operations_parts = self._create_resources_and_ops_parts()
-            yaml_parts.append(resources_part)
-            yaml_parts.extend(operations_parts)
+            # Aqui retornamos a lista de recursos (para resources.yaml) e os arquivos de op
+            resources_list, operations_files = self._create_resources_and_ops_parts()
+
+            # Adiciona o resources.yaml (que é uma lista de objetos, não um dict único com spec)
+            yaml_parts.append({
+                "kind": "Resources",
+                "content": resources_list
+            })
+
+            # Adiciona os arquivos de operação
+            yaml_parts.extend(operations_files)
 
         return yaml_parts
 
     def _create_basic_info_part(self) -> Dict[str, Any]:
         api_data = self._to_dict(self.json_full_object.api)
-        return {self.KIND_KEY: "ApiBasicInfo", self.KIND_SPEC: {self.KIND_API: api_data}}
-
-    def _create_interceptors_part(self) -> Dict[str, Any]:
-        """Creates corresponding dictionaries as YamlKind.INTERCEPTORS"""
-        interceptors_list = [self._prepare_interceptor(i) for i in self.json_full_object.interceptors]
+        # Cleans unused fields
+        for field in ['revisions', 'deployments', 'creationDate', 'id', 'apiType', 'apiSwaggerConfiguration', 'lastRevision']:
+            api_data.pop(field, None)
 
         return {
-            self.KIND_KEY: "Interceptors",
-            self.KIND_SPEC: {
-                "interceptors": interceptors_list
+            "apiVersion": "api-management.sensedia.com/v1",
+            "kind": "ApiBasicInfo",
+            "spec": {
+                "api": api_data,
+                "revision": {
+                    "workflowId": self.settings.WORKFLOW_ID,
+                    "workflowStageId": self.settings.WORKFLOW_STAGE_ID
+                }
             }
         }
 
-    def _create_resources_and_ops_parts(self) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
-        """
-        Generates Resources and all files for ApiOperations files.
-        """
-        resource_items = []
+    def _create_interceptors_part(self) -> Dict[str, Any]:
+        interceptors_list = [self._prepare_interceptor(i) for i in self.json_full_object.interceptors]
+        return {
+            "apiVersion": "api-management.sensedia.com/v1",
+            "kind": "Interceptors",
+            "spec": {"interceptors": interceptors_list}
+        }
+
+    def _create_resources_and_ops_parts(self):
+        resources_output_list = []
         operation_files = []
 
         for resource in self.json_full_object.resources:
             ops_refs = []
 
-            for op in resource.operations:
-                # 1. Generates file name
-                clean_path = str(op.path).strip('/').replace('/', '-').replace('{', '').replace('}', '')
-                filename = f"{op.method.lower()}-{clean_path}.yaml"
+            # Makes sure operation will be searched
+            ops_list = getattr(resource, 'operations', [])
 
-                # 2. Resource is created
+            for op in ops_list:
+                # Gera nome do arquivo usando o método dedicado
+                file_name = self._gerar_nome_arquivo(op.method, op.path)
+
+                # Creates reference for resources.yaml
                 ops_refs.append({
+                    "id": getattr(op, 'id', None),
                     "method": op.method,
                     "path": op.path,
-                    "file": filename
+                    "file": file_name
                 })
 
-                # 3. ApiOperations is created
+                # Prepares operation content
                 op_data = self._to_dict(op)
+
+                # Special treatment for interceptors inside opearation
                 if 'interceptors' in op_data:
                     op_data['interceptors'] = [
                         self._prepare_interceptor(i) for i in op.interceptors
                     ]
 
-                operation_part = {
-                    self.KIND_KEY: "ApiOperations",
-                    self.KIND_METADATA: {
-                        self.KIND_FILE_NAME: filename,
-                        "resourceName": resource.name
-                    },
-                    self.KIND_SPEC: {
-                        self.KIND_OPERATION: [op_data]
-                    }
-                }
-                operation_files.append(operation_part)
+                # Removes fields not present in individual file
+                op_data.pop('id', None)
 
-            #Processed resource is added to list
-            resource_items.append({
+                # Creates structure of operation file
+                operation_files.append({
+                    "kind": "ApiOperations",
+                    "method": op.method,
+                    "path": op.path,
+                    "content": {
+                        "apiVersion": "api-management.sensedia.com/v1",
+                        "kind": "ApiOperations",
+                        "spec": {
+                            "operation": [op_data]
+                        }
+                    }
+                })
+
+            # Adds entry for resources.yaml
+            resources_output_list.append({
+                "apiVersion": "api-management.sensedia.com/v1",
+                "kind": "Resources",
+                "id": getattr(resource, 'id', None),
                 "name": resource.name,
-                "description": resource.description,
+                "description": getattr(resource, 'description', None),
                 "operations": ops_refs
             })
 
-        resources_part = {
-            self.KIND_KEY: "Resources",
-            "items": resource_items
-        }
-
-        return resources_part, operation_files
+        return resources_output_list, operation_files
 
     # --- Helpers ---
 
     def _prepare_interceptor(self, interceptor_obj: Any) -> Dict[str, Any]:
-        """
-        If interceptor contet is a JSON string, tries to convert it back to Dict
-        """
         i_dict = self._to_dict(interceptor_obj)
+        content = i_dict.get('content')
 
-        # Tries to load JSON content
-        if isinstance(i_dict.get('content'), str):
+        # Tenta converter string JSON para Dict (para ficar bonito no YAML)
+        if isinstance(content, str):
             try:
-                i_dict['content'] = json.loads(i_dict['content'])
+                i_dict['content'] = json.loads(content)
             except (json.JSONDecodeError, TypeError):
-                pass  #Keeps as string, it´s not valid
+                # Se falhar, mantém como string (pode ser o ID '158' como string)
+                pass
+
+        # Se content for string numérica ("158"), converte para int
+        if isinstance(i_dict.get('content'), str) and i_dict['content'].isdigit():
+            i_dict['content'] = int(i_dict['content'])
+
+        # Removes internal fields
+        i_dict.pop('parent', None)
+        i_dict.pop('revision', None)
 
         return i_dict
 
-    def _to_dict(self, obj: Any) -> Dict[str, Any]:
-        """Pydantic or Common Object changed to Dict recursively."""
-        if hasattr(obj, 'model_dump'):  # Pydantic v2
-            return obj.model_dump()
-        if hasattr(obj, 'dict'):  # Pydantic v1
-            return obj.dict()
-        if hasattr(obj, '__dict__'):
-            return obj.__dict__
+    def _to_dict(self, obj: Any) -> Any:
+        if isinstance(obj, list): return [self._to_dict(i) for i in obj]
+        if isinstance(obj, dict): return {k: self._to_dict(v) for k, v in obj.items()}
+        if hasattr(obj, '__dict__'): return self._to_dict(obj.__dict__)
         return obj
 
-    def save_yamls_to_disk(self, yaml_parts: List[Dict[str, Any]], output_folder: str = "output_api"):
-        """
-        Receives a list of dictionaries and write each on their respective .yaml file
-        """
-
+    def save_to_disk(self, output_folder="output_yaml"):
         if not os.path.exists(output_folder):
             os.makedirs(output_folder)
-            self.logger.info(f"Pasta '{output_folder}' criada.")
 
-        for part in yaml_parts:
+        parts = self.build_yaml_parts()
+        print(f"Escrevendo em: {output_folder}/")
+
+        for part in parts:
             kind = part.get('kind')
-            file_name = "unknown.yaml"
+            content = part.get('content')
+            file_name = None
 
+            # Determine filename based on kind
             if kind == 'ApiBasicInfo':
-                file_name = "api-info.yaml"
+                file_name = "api-basic-info.yaml"
+                content = part  # For ApiBasicInfo, the part itself is the content
             elif kind == 'Interceptors':
-                file_name = "interceptors.yaml"
+                file_name = "default-interceptors.yaml"
+                content = part  # For Interceptors, the part itself is the content
             elif kind == 'Resources':
                 file_name = "resources.yaml"
+                # content is already set from part.get('content')
             elif kind == 'ApiOperations':
-                file_name = part.get('metadata', {}).get('fileName', 'unknown-op.yaml')
+                method = part.get('method')
+                path = part.get('path')
+                file_name = self._gerar_nome_arquivo(method, path)
+                # content is already set from part.get('content')
+            elif kind == 'Deployment':
+                file_name = "deployment.yaml"
+                content = part  # For Deployment, the part itself is the content
+            else:
+                self.logger.warning(f"Unknown kind: {kind}. Skipping this part.")
+                continue
+
+            if not file_name:
+                self.logger.warning(f"Could not determine filename for kind: {kind}. Skipping.")
+                continue
 
             full_path = os.path.join(output_folder, file_name)
 
-            try:
-                with open(full_path, 'w', encoding='utf-8') as f:
-                    yaml.dump(part, f, sort_keys=False, allow_unicode=True, indent=2, default_flow_style=False)
-
-                self.logger.debug(f"Salvo: {file_name}")
-
-            except Exception as e:
-                self.logger.error(f"Erro ao salvar {file_name}", exc_info=e)
+            with open(full_path, 'w', encoding='utf-8') as f:
+                yaml.dump(content, f, sort_keys=False, allow_unicode=True, indent=2, default_flow_style=False)

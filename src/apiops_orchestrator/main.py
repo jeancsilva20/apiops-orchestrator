@@ -1,11 +1,8 @@
-import json
 import logging
-import os
+import logging
 import sys
 from pathlib import Path
 from typing import List, Dict
-
-import yaml
 
 from adapters.inbound.files_importer.local_file_importer_adapter import (
     LocalFileLoaderAdapter,
@@ -160,9 +157,9 @@ def main() -> None:
         publish_response = publisher_service.publish_changes(final_json)
 
         logger.info("Step 6: Convert JSON file to YAML file")
-        service = JsonToYamlService(final_json, logger)
+        service = JsonToYamlService(final_json, settings)
         result = service.build_yaml_parts()
-        service.save_yamls_to_disk(result, "meus_yamls_gerados")
+        service.save_to_disk("teste")
         # print(result)
 
         logger.debug("POST call successfully completed")
