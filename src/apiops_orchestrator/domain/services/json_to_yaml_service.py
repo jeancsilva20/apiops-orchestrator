@@ -2,14 +2,13 @@ import json
 import logging
 import os
 import re
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any
 
 import yaml
 
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
 from apiops_orchestrator.domain.services.json_to_yaml_enum import JsonKind
-
 
 
 class JsonToYamlService:
@@ -41,7 +40,7 @@ class JsonToYamlService:
 
         return f"{clean_name}.yaml"
 
-    def _build_yaml_parts(self) -> List[Dict[str, Any]]:
+    def build_yaml_parts(self) -> List[Dict[str, Any]]:
         # 1. Basic info
         yaml_parts = [self._create_basic_info_part()]
 
@@ -53,9 +52,9 @@ class JsonToYamlService:
         if self.json_full_object.resources:
             resources_list, operations_files = self._create_resources_and_ops_parts()
 
-            # Adds resources.yaml (because it is a object list, not a unique dict with spec)
+            # Adds resources.yaml (because it is an object list, not a unique dict with spec)
             yaml_parts.append({
-                "kind": JsonKind.RESOURCES.value(),
+                "kind": JsonKind.RESOURCES.value,
                 "content": resources_list
             })
 
@@ -71,8 +70,8 @@ class JsonToYamlService:
             api_data.pop(field, None)
 
         return {
-            "apiVersion": "api-management.sensedia.com/v1",
-            "kind": "ApiBasicInfo",
+            "apiVersion": self.settings.VERSION,
+            "kind": JsonKind.API_BASIC_INFO.value,
             "spec": {
                 "api": api_data,
                 "revision": {
@@ -85,8 +84,8 @@ class JsonToYamlService:
     def _create_interceptors_part(self) -> Dict[str, Any]:
         interceptors_list = [self._prepare_interceptor(i) for i in self.json_full_object.interceptors]
         return {
-            "apiVersion": "api-management.sensedia.com/v1",
-            "kind": "Interceptors",
+            "apiVersion": self.settings.VERSION,
+            "kind": JsonKind.INTERCEPTORS.value,
             "spec": {"interceptors": interceptors_list}
         }
 
@@ -126,12 +125,12 @@ class JsonToYamlService:
 
                 # Creates structure of operation file
                 operation_files.append({
-                    "kind": "ApiOperations",
+                    "kind": JsonKind.API_OPERATIONS.value,
                     "method": op.method,
                     "path": op.path,
                     "content": {
-                        "apiVersion": "api-management.sensedia.com/v1",
-                        "kind": "ApiOperations",
+                        "apiVersion": self.settings.VERSION,
+                        "kind": JsonKind.API_OPERATIONS.value,
                         "spec": {
                             "operation": [op_data]
                         }
@@ -140,8 +139,8 @@ class JsonToYamlService:
 
             # Adds entry for resources.yaml
             resources_output_list.append({
-                "apiVersion": "api-management.sensedia.com/v1",
-                "kind": "Resources",
+                "apiVersion": self.settings.VERSION,
+                "kind": JsonKind.RESOURCES.value,
                 "id": getattr(resource, 'id', None),
                 "name": resource.name,
                 "description": getattr(resource, 'description', None),
@@ -156,15 +155,15 @@ class JsonToYamlService:
         i_dict = self._to_dict(interceptor_obj)
         content = i_dict.get('content')
 
-        # Tenta converter string JSON para Dict (para ficar bonito no YAML)
+        # Tries to convert string JSON to Dict
         if isinstance(content, str):
             try:
                 i_dict['content'] = json.loads(content)
             except (json.JSONDecodeError, TypeError):
-                # Se falhar, mantém como string (pode ser o ID '158' como string)
+                # If it fails, keeps the string
                 pass
 
-        # Se content for string numérica ("158"), converte para int
+        # If content is a numeric string like ("158"), converts it into int
         if isinstance(i_dict.get('content'), str) and i_dict['content'].isdigit():
             i_dict['content'] = int(i_dict['content'])
 
@@ -184,8 +183,8 @@ class JsonToYamlService:
         if not os.path.exists(output_folder):
             os.makedirs(output_folder)
 
-        parts = self._build_yaml_parts()
-        print(f"Escrevendo em: {output_folder}/")
+        parts = self.build_yaml_parts()
+        self.logger.info(f"Criando arquivos na pasta: {output_folder}")
 
         for part in parts:
             kind = part.get('kind')
@@ -211,14 +210,11 @@ class JsonToYamlService:
                 file_name = "deployment.yaml"
                 content = part  # For Deployment, the part itself is the content
             else:
-                self.logger.warning(f"Unknown kind: {kind}. Skipping this part.")
-                continue
-
-            if not file_name:
-                self.logger.warning(f"Could not determine filename for kind: {kind}. Skipping.")
+                self.logger.warning(f"O kind não está mapeado: {kind}. Tentando o próximo.")
                 continue
 
             full_path = os.path.join(output_folder, file_name)
+            self.logger.info(f"{file_name} criado")
 
             with open(full_path, 'w', encoding='utf-8') as f:
                 yaml.dump(content, f, sort_keys=False, allow_unicode=True, indent=2, default_flow_style=False)

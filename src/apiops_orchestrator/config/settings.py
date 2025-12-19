@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     WORKFLOW_ID: str | None = None
     WORKFLOW_STAGE_ID: str | None = None
 
+    VERSION: str | None = None
+
     api_tags: List[ApiTag] = []
 
     def model_post_init(self, __context: Any):
