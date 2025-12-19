@@ -8,6 +8,8 @@ import yaml
 
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
+from apiops_orchestrator.domain.services.json_to_yaml_enum import JsonKind
+
 
 
 class JsonToYamlService:
@@ -27,53 +29,44 @@ class JsonToYamlService:
         self.KIND_SPEC = "spec"
         self.KIND_OPERATION = "operation"
 
-    def _gerar_nome_arquivo(self, method: str, path: str) -> str:
+    def _generate_filename(self, method: str, path: str) -> str:
         """
-        Objetivo: Transformar 'GET' e '/cep/{cep}' em 'get_cep_{cep}.yaml'
+        Transforms path and method into file name
         """
-        # 1. Concatena método e path, tudo em minúsculo
-        # Ex: get + /cep/{cep}
         base_name = f"{str(method).lower()}{str(path).lower()}"
-
-        # 2. Substitui barras por underscores
-        # Ex: get_cep_{cep}
         clean_name = base_name.replace('/', '_')
-
-        # 3. Remove caracteres PROIBIDOS no Windows, mas MANTÉM { e }
-        # Proibidos: < > : " \ | ? *
         clean_name = re.sub(r'[<>:"\\|?*]', '', clean_name)
-
-        # 4. Remove underscores duplicados ou no início/fim causados pela concatenação
+        # Removes duplicated underscores in beginning or end after concatenation
         clean_name = clean_name.strip('_')
 
         return f"{clean_name}.yaml"
 
-    def build_yaml_parts(self) -> List[Dict[str, Any]]:
+    def _build_yaml_parts(self) -> List[Dict[str, Any]]:
+        # 1. Basic info
         yaml_parts = [self._create_basic_info_part()]
 
-        # 2. Interceptores Globais
+        # 2. All/all interceptors
         if self.json_full_object.interceptors:
             yaml_parts.append(self._create_interceptors_part())
 
-        # 3. Resources e Operações
+        # 3. Resources and Operations
         if self.json_full_object.resources:
-            # Aqui retornamos a lista de recursos (para resources.yaml) e os arquivos de op
             resources_list, operations_files = self._create_resources_and_ops_parts()
 
-            # Adiciona o resources.yaml (que é uma lista de objetos, não um dict único com spec)
+            # Adds resources.yaml (because it is a object list, not a unique dict with spec)
             yaml_parts.append({
-                "kind": "Resources",
+                "kind": JsonKind.RESOURCES.value(),
                 "content": resources_list
             })
 
-            # Adiciona os arquivos de operação
+            # Adds operations files
             yaml_parts.extend(operations_files)
 
         return yaml_parts
 
     def _create_basic_info_part(self) -> Dict[str, Any]:
         api_data = self._to_dict(self.json_full_object.api)
-        # Cleans unused fields
+        # Cleans unimportant properties
         for field in ['revisions', 'deployments', 'creationDate', 'id', 'apiType', 'apiSwaggerConfiguration', 'lastRevision']:
             api_data.pop(field, None)
 
@@ -108,8 +101,8 @@ class JsonToYamlService:
             ops_list = getattr(resource, 'operations', [])
 
             for op in ops_list:
-                # Gera nome do arquivo usando o método dedicado
-                file_name = self._gerar_nome_arquivo(op.method, op.path)
+                # Generates file name
+                file_name = self._generate_filename(op.method, op.path)
 
                 # Creates reference for resources.yaml
                 ops_refs.append({
@@ -122,7 +115,7 @@ class JsonToYamlService:
                 # Prepares operation content
                 op_data = self._to_dict(op)
 
-                # Special treatment for interceptors inside opearation
+                # Special treatment for interceptors inside operation
                 if 'interceptors' in op_data:
                     op_data['interceptors'] = [
                         self._prepare_interceptor(i) for i in op.interceptors
@@ -191,7 +184,7 @@ class JsonToYamlService:
         if not os.path.exists(output_folder):
             os.makedirs(output_folder)
 
-        parts = self.build_yaml_parts()
+        parts = self._build_yaml_parts()
         print(f"Escrevendo em: {output_folder}/")
 
         for part in parts:
@@ -212,7 +205,7 @@ class JsonToYamlService:
             elif kind == 'ApiOperations':
                 method = part.get('method')
                 path = part.get('path')
-                file_name = self._gerar_nome_arquivo(method, path)
+                file_name = self._generate_filename(method, path)
                 # content is already set from part.get('content')
             elif kind == 'Deployment':
                 file_name = "deployment.yaml"
