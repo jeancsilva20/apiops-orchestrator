@@ -6,19 +6,33 @@ from typing import List, Dict, Any
 
 import yaml
 
+from apiops_orchestrator.adapters.outbound.files_exporter.local_file_exporter_adapter import LocalFileExporterAdapter
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
 from apiops_orchestrator.domain.services.json_to_yaml_enum import JsonKind
+
+class PrettyYAMLDumper(yaml.SafeDumper):
+    """Custom YAML dumper for proper list indentation."""
+    def increase_indent(self, flow=False, indentless=False):
+        return super(PrettyYAMLDumper, self).increase_indent(flow, False)
+
+
+def represent_list(dumper, sequence):
+    return dumper.represent_sequence('tag:yaml.org,2002:seq', sequence, flow_style=False)
+
+
+PrettyYAMLDumper.add_representer(list, represent_list)
 
 
 class JsonToYamlService:
     """
     Service to build a complete API YAML structure from a list of JSON data parts.
     """
-    def __init__(self, json_full_object: ApiFull, settings: Settings):
+    def __init__(self, json_full_object: ApiFull, settings: Settings, local_file_exporter: LocalFileExporterAdapter) -> None:
         self.json_full_object = json_full_object
         self.logger = logging.getLogger(__name__)
         self.settings = settings
+        self.local_file_exporter = local_file_exporter
 
         # Keys for Dictionary Lookup via .get()
         self.KIND_KEY = "kind"
@@ -27,18 +41,6 @@ class JsonToYamlService:
         self.KIND_FILE_NAME = "fileName"
         self.KIND_SPEC = "spec"
         self.KIND_OPERATION = "operation"
-
-    def _generate_filename(self, method: str, path: str) -> str:
-        """
-        Transforms path and method into file name
-        """
-        base_name = f"{str(method).lower()}{str(path).lower()}"
-        clean_name = base_name.replace('/', '_')
-        clean_name = re.sub(r'[<>:"\\|?*]', '', clean_name)
-        # Removes duplicated underscores in beginning or end after concatenation
-        clean_name = clean_name.strip('_')
-
-        return f"{clean_name}.yaml"
 
     def build_yaml_parts(self) -> List[Dict[str, Any]]:
         # 1. Basic info
@@ -101,11 +103,10 @@ class JsonToYamlService:
 
             for op in ops_list:
                 # Generates file name
-                file_name = self._generate_filename(op.method, op.path)
+                file_name = self.local_file_exporter.generate_filename(op.method, op.path)
 
                 # Creates reference for resources.yaml
                 ops_refs.append({
-                    "id": getattr(op, 'id', None),
                     "method": op.method,
                     "path": op.path,
                     "file": file_name
@@ -141,7 +142,6 @@ class JsonToYamlService:
             resources_output_list.append({
                 "apiVersion": self.settings.VERSION,
                 "kind": JsonKind.RESOURCES.value,
-                "id": getattr(resource, 'id', None),
                 "name": resource.name,
                 "description": getattr(resource, 'description', None),
                 "operations": ops_refs
@@ -179,42 +179,3 @@ class JsonToYamlService:
         if hasattr(obj, '__dict__'): return self._to_dict(obj.__dict__)
         return obj
 
-    def save_to_disk(self, output_folder="output_yaml"):
-        if not os.path.exists(output_folder):
-            os.makedirs(output_folder)
-
-        parts = self.build_yaml_parts()
-        self.logger.info(f"Criando arquivos na pasta: {output_folder}")
-
-        for part in parts:
-            kind = part.get('kind')
-            content = part.get('content')
-            file_name = None
-
-            # Determine filename based on kind
-            if kind == 'ApiBasicInfo':
-                file_name = "api-basic-info.yaml"
-                content = part  # For ApiBasicInfo, the part itself is the content
-            elif kind == 'Interceptors':
-                file_name = "default-interceptors.yaml"
-                content = part  # For Interceptors, the part itself is the content
-            elif kind == 'Resources':
-                file_name = "resources.yaml"
-                # content is already set from part.get('content')
-            elif kind == 'ApiOperations':
-                method = part.get('method')
-                path = part.get('path')
-                file_name = self._generate_filename(method, path)
-                # content is already set from part.get('content')
-            elif kind == 'Deployment':
-                file_name = "deployment.yaml"
-                content = part  # For Deployment, the part itself is the content
-            else:
-                self.logger.warning(f"O kind não está mapeado: {kind}. Tentando o próximo.")
-                continue
-
-            full_path = os.path.join(output_folder, file_name)
-            self.logger.info(f"{file_name} criado")
-
-            with open(full_path, 'w', encoding='utf-8') as f:
-                yaml.dump(content, f, sort_keys=False, allow_unicode=True, indent=2, default_flow_style=False)

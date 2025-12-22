@@ -8,6 +8,7 @@ from adapters.inbound.files_importer.local_file_importer_adapter import (
     LocalFileLoaderAdapter,
 )
 from adapters.outbound.http.manager_api.manager_api_adapter import ManagerApiAdapter
+from apiops_orchestrator.adapters.outbound.files_exporter.local_file_exporter_adapter import LocalFileExporterAdapter
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
 from apiops_orchestrator.domain.ports.manager_api_port import PublisherPort
 from apiops_orchestrator.domain.services.json_to_yaml_service import JsonToYamlService
@@ -101,6 +102,12 @@ def generate_api_json(
     clear_operation_context()
     return result
 
+def generate_yaml_files(final_json: ApiFull, settings: Settings):
+    local_file_adapter = LocalFileExporterAdapter()
+    service = JsonToYamlService(final_json, settings, local_file_adapter)
+    result = service.build_yaml_parts()
+    local_file_adapter.export_path(result, "teste")
+
 
 def main() -> None:
     """Main orchestration function."""
@@ -157,10 +164,7 @@ def main() -> None:
         publish_response = publisher_service.publish_changes(final_json)
 
         logger.info("Step 6: Convert JSON file to YAML file")
-        service = JsonToYamlService(final_json, settings)
-        result = service.build_yaml_parts()
-        service.save_to_disk("teste")
-        # print(result)
+        generate_yaml_files(final_json, settings)
 
         logger.debug("POST call successfully completed")
         # print(json.dumps(publish_response, indent=2, ensure_ascii=False))
