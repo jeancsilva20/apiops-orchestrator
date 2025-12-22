@@ -1,8 +1,9 @@
 import json
 import logging
-import os
-import re
+from dataclasses import asdict, is_dataclass
+from datetime import datetime
 from typing import List, Dict, Any
+from uuid import UUID
 
 import yaml
 
@@ -10,6 +11,23 @@ from apiops_orchestrator.adapters.outbound.files_exporter.local_file_exporter_ad
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
 from apiops_orchestrator.domain.services.json_to_yaml_enum import JsonKind
+
+
+class _YamlDocumentFactory:
+    """Factory for creating standard YAML document structures."""
+
+    @staticmethod
+    def create_document(
+        kind: str,
+        spec: Dict[str, Any],
+        version: str
+    ) -> Dict[str, Any]:
+        """Create a standard YAML document with apiVersion, kind, and spec."""
+        return {
+            "apiVersion": version,
+            "kind": kind,
+            "spec": spec
+        }
 
 class JsonToYamlService:
     """
@@ -58,25 +76,28 @@ class JsonToYamlService:
         for field in ['revisions', 'deployments', 'creationDate', 'id', 'apiType', 'apiSwaggerConfiguration', 'lastRevision']:
             api_data.pop(field, None)
 
-        return {
-            "apiVersion": self.settings.VERSION,
-            "kind": JsonKind.API_BASIC_INFO.value,
-            "spec": {
-                "api": api_data,
-                "revision": {
-                    "workflowId": self.settings.WORKFLOW_ID,
-                    "workflowStageId": self.settings.WORKFLOW_STAGE_ID
-                }
+        spec = {
+            "api": api_data,
+            "revision": {
+                "workflowId": self.settings.WORKFLOW_ID,
+                "workflowStageId": self.settings.WORKFLOW_STAGE_ID
             }
         }
 
+        return _YamlDocumentFactory.create_document(
+            kind=JsonKind.API_BASIC_INFO.value,
+            spec=spec,
+            version=self.settings.VERSION
+        )
+
     def _create_interceptors_part(self) -> Dict[str, Any]:
         interceptors_list = [self._prepare_interceptor(i) for i in self.json_full_object.interceptors]
-        return {
-            "apiVersion": self.settings.VERSION,
-            "kind": JsonKind.INTERCEPTORS.value,
-            "spec": {"interceptors": interceptors_list}
-        }
+        spec = {"interceptors": interceptors_list}
+        return _YamlDocumentFactory.create_document(
+            kind=JsonKind.INTERCEPTORS.value,
+            spec=spec,
+            version=self.settings.VERSION
+        )
 
     def _create_resources_and_ops_parts(self):
         resources_output_list = []
@@ -112,17 +133,16 @@ class JsonToYamlService:
                 op_data.pop('id', None)
 
                 # Creates structure of operation file
+                op_spec = {"operation": [op_data]}
                 operation_files.append({
                     "kind": JsonKind.API_OPERATIONS.value,
                     "method": op.method,
                     "path": op.path,
-                    "content": {
-                        "apiVersion": self.settings.VERSION,
-                        "kind": JsonKind.API_OPERATIONS.value,
-                        "spec": {
-                            "operation": [op_data]
-                        }
-                    }
+                    "content": _YamlDocumentFactory.create_document(
+                        kind=JsonKind.API_OPERATIONS.value,
+                        spec=op_spec,
+                        version=self.settings.VERSION
+                    )
                 })
 
             # Adds entry for resources.yaml
@@ -160,9 +180,37 @@ class JsonToYamlService:
 
         return i_dict
 
-    def _to_dict(self, obj: Any) -> Any:
-        if isinstance(obj, list): return [self._to_dict(i) for i in obj]
-        if isinstance(obj, dict): return {k: self._to_dict(v) for k, v in obj.items()}
-        if hasattr(obj, '__dict__'): return self._to_dict(obj.__dict__)
+    def _to_dict(self, obj: Any, _max_depth: int = 100, _current_depth: int = 0) -> Any:
+        """
+        Convert objects to dictionaries recursively.
+
+        Handles:
+        - Dataclasses (using asdict)
+        - Lists and dicts (recursive conversion)
+        - Primitives (returned as-is)
+        """
+        if _current_depth > _max_depth:
+            self.logger.warning(f"Maximum recursion depth {_max_depth} exceeded during object conversion")
+            raise RecursionError(f"Maximum recursion depth {_max_depth} exceeded")
+
+        # Handle dataclasses (fastest path for structured data)
+        if is_dataclass(obj) and not isinstance(obj, type):
+            try:
+                return asdict(obj)
+            except Exception as e:
+                self.logger.debug(f"Failed to convert dataclass using asdict: {str(e)}, falling back to __dict__")
+
+        # Handle lists
+        if isinstance(obj, list):
+            return [self._to_dict(item, _max_depth, _current_depth + 1) for item in obj]
+
+        # Handle dictionaries
+        if isinstance(obj, dict):
+            return {
+                key: self._to_dict(value, _max_depth, _current_depth + 1)
+                for key, value in obj.items()
+            }
+
+        # Return primitives as-is (str, int, float, bool, None, etc.)
         return obj
 
