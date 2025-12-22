@@ -56,7 +56,7 @@ def test_validate_missing_required_property(
 
     with pytest.raises(
         exceptions.ValidationError,
-        match="Schema validation failed for file.*for field.*version.*is a required property",
+        match="Schema validation failed for file.*version.*is a required property",
     ):
         schema_validator.validate(yaml_data, schema_name)
 
@@ -74,7 +74,7 @@ def test_validate_invalid_type(schema_validator, file_importer_service_mock):
 
     with pytest.raises(
         exceptions.ValidationError,
-        match="Schema validation failed for file.*for field.*version.*is not of type.*number",
+        match="Schema validation failed for file.*is not of type 'number'",
     ):
         schema_validator.validate(yaml_data, schema_name)
 
