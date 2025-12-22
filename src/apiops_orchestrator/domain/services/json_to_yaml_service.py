@@ -11,19 +11,6 @@ from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
 from apiops_orchestrator.domain.services.json_to_yaml_enum import JsonKind
 
-class PrettyYAMLDumper(yaml.SafeDumper):
-    """Custom YAML dumper for proper list indentation."""
-    def increase_indent(self, flow=False, indentless=False):
-        return super(PrettyYAMLDumper, self).increase_indent(flow, False)
-
-
-def represent_list(dumper, sequence):
-    return dumper.represent_sequence('tag:yaml.org,2002:seq', sequence, flow_style=False)
-
-
-PrettyYAMLDumper.add_representer(list, represent_list)
-
-
 class JsonToYamlService:
     """
     Service to build a complete API YAML structure from a list of JSON data parts.
