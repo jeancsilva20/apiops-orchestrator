@@ -14,7 +14,7 @@ class SchemaValidator:
         self.schema_folder = schema_folder
         self.logger = logging.getLogger(__name__)
 
-    def validate(self, yaml_data: dict, schema_name: str):
+    def validate(self, yaml_data: dict, schema_name: str, target_path: Path):
         schema_path = self.schema_folder / schema_name
         set_span_id()
         with log_duration(__name__):
@@ -30,9 +30,13 @@ class SchemaValidator:
             try:
                 validate(instance=yaml_data, schema=schema)
             except exceptions.ValidationError as e:
+                if e.validator == "type" and e.instance is None:
+                    message = "Cannot be null"
+                else:
+                    message = e.message
                 field_path = ".".join(str(p) for p in e.path)
                 set_status("FAILURE")
                 raise exceptions.ValidationError(
-                    f"Schema validation failed for file {str(schema_path)} for field '{field_path}': {e.message}"
+                    f"Schema validation failed for file {str(target_path)} {f"for field '{field_path}'" if field_path else ""}: {message}"
                 )
             return True

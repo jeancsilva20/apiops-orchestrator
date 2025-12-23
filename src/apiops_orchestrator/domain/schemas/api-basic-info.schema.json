@@ -36,7 +36,7 @@
             "version",
             "basePath"
           ],
-          "additionalProperties": true,
+          "additionalProperties": false,
           "properties": {
             "name": {
               "type": "string",
@@ -55,7 +55,7 @@
             },
             "apiResponsible": {
               "type": "object",
-              "additionalProperties": true,
+              "additionalProperties": false,
               "properties": {
                 "username": {
                   "type": "string"
@@ -67,11 +67,11 @@
             },
             "visibility": {
               "type": "object",
-              "additionalProperties": true,
+              "additionalProperties": false,
               "properties": {
                 "groupVisibility": {
                   "type": "object",
-                  "additionalProperties": true,
+                  "additionalProperties": false,
                   "properties": {
                     "name": {
                       "type": "string"
@@ -87,7 +87,7 @@
                 "required": [
                   "id"
                 ],
-                "additionalProperties": true,
+                "additionalProperties": false,
                 "properties": {
                   "id": {
                     "type": "integer",

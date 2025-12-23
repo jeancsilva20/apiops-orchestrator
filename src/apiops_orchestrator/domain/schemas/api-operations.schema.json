@@ -45,7 +45,7 @@
               "path",
               "destination"
             ],
-            "additionalProperties": true,
+            "additionalProperties": false,
             "properties": {
               "method": {
                 "type": "string",
