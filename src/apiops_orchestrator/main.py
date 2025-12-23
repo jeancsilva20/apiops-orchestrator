@@ -106,6 +106,7 @@ def generate_yaml_files(final_json: ApiFull, settings: Settings):
     local_file_adapter = LocalFileExporterAdapter()
     service = JsonToYamlService(final_json, settings, local_file_adapter)
     result = service.build_yaml_parts()
+    #Output de teste
     local_file_adapter.export_path(result, "teste")
 
 
