@@ -109,9 +109,6 @@ class JsonFormatter(logging.Formatter):
                 "api_id": api_id_val,
                 "customer": customer_val,
                 "span_id": record.span_id
-            },
-            "importador":{
-                "exemploCase": record.example_case
             }
         }
 
