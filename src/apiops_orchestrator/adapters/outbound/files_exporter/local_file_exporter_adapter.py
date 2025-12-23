@@ -12,6 +12,8 @@ from apiops_orchestrator.adapters.outbound.files_exporter.files_exporter_excepti
 )
 
 from apiops_orchestrator.domain.ports.file_exporter_port import PathExporterPort
+from apiops_orchestrator.domain.services.json_to_yaml_enum import JsonKind
+
 
 class LocalFileExporterAdapter(PathExporterPort):
     def __init__(self, exporter_strategies: Dict[str, Callable[[Path], Any]] = None):
@@ -34,21 +36,21 @@ class LocalFileExporterAdapter(PathExporterPort):
             file_name = None
 
             # Determine filename based on kind
-            if kind == 'ApiBasicInfo':
+            if kind == JsonKind.API_BASIC_INFO.value:
                 file_name = "api-basic-info.yaml"
                 part_content = part
-            elif kind == 'Interceptors':
+            elif kind == JsonKind.INTERCEPTORS.value:
                 file_name = "default-interceptors.yaml"
                 part_content = part
-            elif kind == 'Resources':
+            elif kind == JsonKind.RESOURCES.value:
                 file_name = "resources.yaml"
                 part_content = part
-            elif kind == 'ApiOperations':
+            elif kind == JsonKind.API_OPERATIONS.value:
                 method = part.get('method')
                 path = part.get('path')
                 file_name = self.generate_filename(method, path)
                 part_content = part
-            elif kind == 'Deployment':
+            elif kind == JsonKind.ENVIRONMENT.value:
                 file_name = "deployment.yaml"
                 part_content = part
             else:
