@@ -72,7 +72,7 @@ def validate_repository_schemas(
             files_to_validate = content if isinstance(content, list) else [content]
 
             for file_content in files_to_validate:
-                validator.validate(file_content, schema_name)
+                validator.validate(file_content, schema_name, target_path)
                 set_status("SUCCESS")
                 logger.info(
                     f"OK: Validation successful for a file in '{path}' with schema '{schema_name}'"

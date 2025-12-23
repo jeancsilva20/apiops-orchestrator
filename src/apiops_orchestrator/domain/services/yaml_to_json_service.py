@@ -87,7 +87,14 @@ class YamlToJsonService:
             return api_full
 
         except ValidationError as e:
-            raise ValueError(f"YAML content validation failed:\n{e}") from e
+            errors = []
+            for error in e.errors():
+                field = ".".join(str(x) for x in error["loc"])
+                message = error["msg"]
+                errors.append(f"- {field}: {message}")
+
+            formatted_error = "\n".join(errors)
+            raise ValueError(f"YAML content validation failed:\n{formatted_error}") from e
         except (
             ValueError,
             KeyError,
