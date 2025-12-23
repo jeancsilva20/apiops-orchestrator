@@ -3,10 +3,7 @@ from typing import Any, Callable
 
 import yaml
 
-from apiops_orchestrator.adapters.outbound.files_exporter.file_exporter_enum import (
-    FileTypeEnum,
-)
-
+from apiops_orchestrator.adapters.outbound.files_exporter.file_exporter_enum import FileTypeEnum
 
 class PrettyYAMLDumper(yaml.SafeDumper):
     """Custom YAML dumper for proper list indentation."""
@@ -27,6 +24,3 @@ FILE_EXPORTER_STRATEGIES: dict[str, Callable[[Path, Any], Any]] = {
     FileTypeEnum.YAML.value: _export_yaml,
     FileTypeEnum.YML.value: _export_yaml,
 }
-
-class FileExportMessages:
-    INVALID_DATA = "File could not be exported"

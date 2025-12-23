@@ -4,9 +4,11 @@ from pathlib import Path
 from typing import Any, List, Dict, Callable
 import re
 
-from apiops_orchestrator.adapters.outbound.files_exporter.file_exporter_strategy import (
-    FILE_EXPORTER_STRATEGIES,
-    FileExportMessages,
+from apiops_orchestrator.adapters.outbound.files_exporter.file_exporter_strategy import FILE_EXPORTER_STRATEGIES
+
+from apiops_orchestrator.adapters.outbound.files_exporter.files_exporter_exceptions import (
+    FileExporterException,
+    UnmappedKindException,
 )
 
 from apiops_orchestrator.domain.ports.file_exporter_port import PathExporterPort
@@ -50,19 +52,19 @@ class LocalFileExporterAdapter(PathExporterPort):
                 file_name = "deployment.yaml"
                 part_content = part
             else:
-                self.logger.warning(f"O kind não está mapeado: {kind}. Tentando o próximo.")
-                continue
+                self.logger.warning(f"O kind não está mapeado: {kind}.")
+                raise UnmappedKindException(kind)
 
             full_path = Path(output_folder) / file_name
             try:
                 exporter = self._exporter_strategies.get('.yaml')
                 if exporter:
                     exporter(full_path, part_content)
-                    self.logger.info(f"{file_name} criado")
-                else:
-                    self.logger.error("Estratégia de exportação YAML não encontrada")
+                    self.logger.debug(f"Arquivo {file_name} criado")
+
             except Exception as e:
-                self.logger.error(f"Erro ao criar arquivo {file_name}: {str(e)}")
+                self.logger.error(f"Erro ao criar arquivo {file_name}", exc_info=e)
+                raise FileExporterException(str(full_path))
 
 
     def generate_filename(self, method: str, path: str) -> str:
