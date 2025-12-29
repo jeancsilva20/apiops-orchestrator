@@ -9,6 +9,10 @@ from apiops_orchestrator.application.services.schema_validator import SchemaVali
 from jsonschema import exceptions
 
 @pytest.fixture
+def target_path(tmp_path: Path) -> Path:
+    return tmp_path / "api.yaml"
+
+@pytest.fixture
 def schema_folder(tmp_path: Path) -> Path:
     schema_dir = tmp_path / "apiops_orchestrator/domain/schemas"
     schema_dir.mkdir(parents=True)
@@ -27,7 +31,7 @@ def schema_validator(file_importer_service_mock, schema_folder):
     )
 
 
-def test_validate_success(schema_validator, file_importer_service_mock):
+def test_validate_success(schema_validator, file_importer_service_mock, target_path):
     schema_name = "my_schema.json"
     schema_content = {
         "type": "object",
@@ -38,12 +42,10 @@ def test_validate_success(schema_validator, file_importer_service_mock):
 
     yaml_data = {"name": "my-api", "version": 1}
 
-    assert schema_validator.validate(yaml_data, schema_name) is True
+    assert schema_validator.validate(yaml_data, schema_name, target_path) is True
 
 
-def test_validate_missing_required_property(
-    schema_validator, file_importer_service_mock
-):
+def test_validate_missing_required_property(schema_validator, file_importer_service_mock, target_path):
     schema_name = "my_schema.json"
     schema_content = {
         "type": "object",
@@ -58,10 +60,10 @@ def test_validate_missing_required_property(
         exceptions.ValidationError,
         match="Schema validation failed for file.*version.*is a required property",
     ):
-        schema_validator.validate(yaml_data, schema_name)
+        schema_validator.validate(yaml_data, schema_name, target_path)
 
 
-def test_validate_invalid_type(schema_validator, file_importer_service_mock):
+def test_validate_invalid_type(schema_validator, file_importer_service_mock, target_path):
     schema_name = "my_schema.json"
     schema_content = {
         "type": "object",
@@ -76,10 +78,10 @@ def test_validate_invalid_type(schema_validator, file_importer_service_mock):
         exceptions.ValidationError,
         match="Schema validation failed for file.*is not of type 'number'",
     ):
-        schema_validator.validate(yaml_data, schema_name)
+        schema_validator.validate(yaml_data, schema_name, target_path)
 
 
-def test_validate_non_existent_schema(schema_validator, file_importer_service_mock):
+def test_validate_non_existent_schema(schema_validator, file_importer_service_mock, target_path):
     file_importer_service_mock.load_file_path.side_effect = Exception("File not found")
     with pytest.raises(ValueError, match="Error reading schema file"):
-        schema_validator.validate({}, "non_existent_schema.json")
+        schema_validator.validate({}, "non_existent_schema.json", target_path)
