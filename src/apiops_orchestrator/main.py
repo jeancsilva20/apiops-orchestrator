@@ -4,19 +4,17 @@ from adapters.inbound.files_importer.local_file_importer_adapter import (
     LocalFileLoaderAdapter,
 )
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
-from apiops_orchestrator.domain.ports.manager_api_port import PublisherPort
+from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
 from apiops_orchestrator.infrastructure.utils.critical_exception_handler import critical_exception_handler
-from application.services.file_import_service import FileImportService
+from application.services.file_importer_service import FileImporterService
 from application.services.repo_validator import RepoValidator
 from application.services.schema_validator import SchemaValidator
 from application.services.publisher_service import PublisherService
 from adapters.outbound.http.manager_api.manager_api_adapter import ManagerApiAdapter
 from config.settings import Settings
 from pathlib import Path
-from domain.services.yaml_to_json_service import YamlToJsonService
-import json
+from apiops_orchestrator.application.services.conversor_service import ConversorService
 from typing import List, Dict
-import traceback
 import logging
 from apiops_orchestrator.infrastructure.observability.logging import setup_logging, set_default_data, log_duration, set_api_info, set_status, clear_operation_context
 
@@ -38,7 +36,7 @@ def validate_repository_structure(
 
 
 def import_repository_files(
-    file_importer_service: FileImportService, repo_path: Path, settings: Settings, logger: logging.Logger
+    file_importer_service: FileImporterService, repo_path: Path, settings: Settings, logger: logging.Logger
 ) -> List[Path]:
     """Imports all files from the artifact folder."""
     artifact_folder = repo_path / settings.API_REPO_ARTIFACTS_PATH
@@ -57,7 +55,7 @@ def import_repository_files(
 
 def validate_repository_schemas(
     validator: SchemaValidator,
-    file_importer_service: FileImportService,
+    file_importer_service: FileImporterService,
     repo_path: Path,
     schema_mapping: Dict[str, str],
     logger: logging.Logger
@@ -84,8 +82,8 @@ def validate_repository_schemas(
 
 
 def generate_api_json(
-    file_importer_service: FileImportService,
-    api_manager: PublisherPort,
+    file_importer_service: FileImporterService,
+    api_manager: ManagerApiPort,
     repo_path: Path,
     settings: Settings,
     logger: logging.Logger
@@ -93,7 +91,7 @@ def generate_api_json(
     """Generates the final API JSON from YAML files."""
     artifact_folder = repo_path / settings.API_REPO_ARTIFACTS_PATH
     files = file_importer_service.load_file_path(artifact_folder)
-    service = YamlToJsonService(files, settings, api_manager)
+    service = ConversorService(files, settings, api_manager)
     result = service.build_api_json()
     set_status("SUCCESS")
     logger.info("API JSON generated successfully.")
@@ -117,7 +115,7 @@ def main() -> None:
 
         repo_validator = RepoValidator(settings.ARTIFACTS_FILE_FOLDER_VALIDATION_RULES)
         local_file_adapter = LocalFileLoaderAdapter()
-        file_importer_service = FileImportService(local_file_adapter)
+        file_importer_service = FileImporterService(local_file_adapter)
         api_bindings_file = file_importer_service.load_file_path(repo_path / "bindings.json")
         metadata = api_bindings_file.get("metadata", {})
         set_api_info(api_bindings_file["api_id"], metadata.get("customer", "Desconhecido"))

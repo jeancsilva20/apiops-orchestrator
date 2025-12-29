@@ -4,11 +4,11 @@ import requests
 from apiops_orchestrator.application.services.publisher_service import PublisherService
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
 from apiops_orchestrator.domain.models.api_partial_model import ApiPartialInfo
-from apiops_orchestrator.domain.ports.manager_api_port import PublisherPort
+from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
 
 
 def test_fetch_remote_api_data_success():
-    mock_adapter = MagicMock(spec=PublisherPort)
+    mock_adapter = MagicMock(spec=ManagerApiPort)
     expected_json = {"id": "123", "name": "My API Test"}
     mock_adapter.get_api_by_id.return_value = expected_json
 
@@ -18,7 +18,7 @@ def test_fetch_remote_api_data_success():
     mock_adapter.get_api_by_id.assert_called_once()
 
 def test_fetch_remote_api_data_propagates_error():
-    mock_adapter = MagicMock(spec=PublisherPort)
+    mock_adapter = MagicMock(spec=ManagerApiPort)
     original_error = requests.exceptions.HTTPError("Erro 500 - Server Error")
     mock_adapter.get_api_by_id.side_effect = original_error
 
@@ -30,7 +30,7 @@ def test_fetch_remote_api_data_propagates_error():
     assert "Erro 500" in str(excinfo.value)
 
 def test_format_data_updates_fields():
-    mock_adapter = MagicMock(spec=PublisherPort)
+    mock_adapter = MagicMock(spec=ManagerApiPort)
     api_partial_info_mock = MagicMock(spec=ApiPartialInfo)
 
     api_data = ApiFull(

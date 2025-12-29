@@ -1,13 +1,13 @@
 import logging
 
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
-from apiops_orchestrator.domain.ports.manager_api_port import PublisherPort
+from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
 from typing import Dict, Any
 from apiops_orchestrator.infrastructure.observability.logging import log_duration, set_span_id, clear_operation_context, set_status
 
 
 class PublisherService:
-    def __init__(self, publisher_port: PublisherPort):
+    def __init__(self, publisher_port: ManagerApiPort):
         self.publisher = publisher_port
         self.logger = logging.getLogger(__name__)
 

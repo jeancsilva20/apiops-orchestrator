@@ -2,8 +2,8 @@ import pytest
 from unittest.mock import Mock
 from pathlib import Path
 
-from apiops_orchestrator.application.services.file_import_service import (
-    FileImportService,
+from apiops_orchestrator.application.services.file_importer_service import (
+    FileImporterService,
 )
 from apiops_orchestrator.domain.ports.file_importer_port import PathLoaderPort
 
@@ -16,8 +16,8 @@ def mock_importer():
 
 @pytest.fixture
 def service(mock_importer):
-    """Fixture for the FileImportService."""
-    return FileImportService(importer=mock_importer)
+    """Fixture for the FileImporterService."""
+    return FileImporterService(importer=mock_importer)
 
 
 def test_load_file_path_delegates_to_importer(service, mock_importer):

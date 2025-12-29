@@ -1,15 +1,15 @@
 import logging
 from pathlib import Path
 from jsonschema import validate, exceptions
-from apiops_orchestrator.application.services.file_import_service import (
-    FileImportService,
+from apiops_orchestrator.application.services.file_importer_service import (
+    FileImporterService,
 )
 from apiops_orchestrator.infrastructure.observability.logging import log_duration, set_span_id, clear_operation_context, set_status
 
 
 
 class SchemaValidator:
-    def __init__(self, file_importer_service: FileImportService, schema_folder: Path):
+    def __init__(self, file_importer_service: FileImporterService, schema_folder: Path):
         self.file_importer_service = file_importer_service
         self.schema_folder = schema_folder
         self.logger = logging.getLogger(__name__)
