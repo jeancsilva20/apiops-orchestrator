@@ -1,11 +1,11 @@
 import typer
 from typing import Dict, Any
-from apiops_orchestrator.domain.ports.manager_api_port import PublisherPort
+from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.adapters.outbound.http.common.http_error_mapper import HttpErrorMapper
 from apiops_orchestrator.infrastructure.utils.http_client import HttpClient
 
-class ManagerApiAdapter(PublisherPort):
+class ManagerApiAdapter(ManagerApiPort):
     def __init__(self, token: str, base_path: str, max_retries: int, api_id: int, settings: Settings):
         self.host = settings.HOST
         self.token = token

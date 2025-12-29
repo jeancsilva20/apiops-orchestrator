@@ -5,7 +5,7 @@ from apiops_orchestrator.infrastructure.observability.logging import log_duratio
 from apiops_orchestrator.infrastructure.observability.logging_status_enum import Status
 
 
-class FileImportService:
+class FileImporterService:
     def __init__(self, importer: PathLoaderPort):
         self.importer = importer
         self.logger = logging.getLogger(__name__)

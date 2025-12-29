@@ -2,8 +2,8 @@ import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from apiops_orchestrator.application.services.file_import_service import (
-    FileImportService,
+from apiops_orchestrator.application.services.file_importer_service import (
+    FileImporterService,
 )
 from apiops_orchestrator.application.services.schema_validator import SchemaValidator
 from jsonschema import exceptions
@@ -17,7 +17,7 @@ def schema_folder(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def file_importer_service_mock():
-    return MagicMock(spec=FileImportService)
+    return MagicMock(spec=FileImporterService)
 
 
 @pytest.fixture
