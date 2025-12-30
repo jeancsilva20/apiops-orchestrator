@@ -14,7 +14,7 @@ from apiops_orchestrator.adapters.outbound.files_exporter.files_exporter_excepti
 )
 
 from apiops_orchestrator.domain.ports.file_exporter_port import PathExporterPort
-from apiops_orchestrator.domain.services.json_to_yaml_enum import JsonKind
+from apiops_orchestrator.domain.services.json_to_yaml_enum import JsonKind, JsonKindFileName
 
 
 class LocalFileExporterAdapter(PathExporterPort):
@@ -39,13 +39,13 @@ class LocalFileExporterAdapter(PathExporterPort):
 
             # Determine filename based on kind
             if kind == JsonKind.API_BASIC_INFO.value:
-                file_name = "api-basic-info.yaml"
+                file_name = JsonKindFileName.API_BASIC_INFO.value
                 part_content = part
             elif kind == JsonKind.INTERCEPTORS.value:
-                file_name = "default-interceptors.yaml"
+                file_name = JsonKindFileName.INTERCEPTORS.value
                 part_content = part
             elif kind == JsonKind.RESOURCES.value:
-                file_name = "resources.yaml"
+                file_name = JsonKindFileName.RESOURCES.value
                 part_content = part
             elif kind == JsonKind.API_OPERATIONS.value:
                 method = part.get("method")
@@ -53,7 +53,7 @@ class LocalFileExporterAdapter(PathExporterPort):
                 file_name = self.generate_filename(method, path)
                 part_content = part
             elif kind == JsonKind.ENVIRONMENT.value:
-                file_name = "deployment.yaml"
+                file_name = JsonKindFileName.ENVIRONMENT.value
                 part_content = part
             else:
                 self.logger.warning(f"The kind is not mapped: {kind}.")
