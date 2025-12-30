@@ -1,10 +1,12 @@
 import logging
 import os
 from pathlib import Path
-from typing import Any, List, Dict, Callable
+from typing import Any, Dict, Callable
 import re
 
-from apiops_orchestrator.adapters.outbound.files_exporter.file_exporter_strategy import FILE_EXPORTER_STRATEGIES
+from apiops_orchestrator.adapters.outbound.files_exporter.file_exporter_strategy import (
+    FILE_EXPORTER_STRATEGIES,
+)
 
 from apiops_orchestrator.adapters.outbound.files_exporter.files_exporter_exceptions import (
     FileExporterException,
@@ -31,8 +33,8 @@ class LocalFileExporterAdapter(PathExporterPort):
         self.logger.info(f"Criando arquivos na pasta: {output_folder}")
 
         for part in content:
-            kind = part.get('kind')
-            part_content = part.get('content')
+            kind = part.get("kind")
+            part_content = part.get("content")
             file_name = None
 
             # Determine filename based on kind
@@ -46,8 +48,8 @@ class LocalFileExporterAdapter(PathExporterPort):
                 file_name = "resources.yaml"
                 part_content = part
             elif kind == JsonKind.API_OPERATIONS.value:
-                method = part.get('method')
-                path = part.get('path')
+                method = part.get("method")
+                path = part.get("path")
                 file_name = self.generate_filename(method, path)
                 part_content = part
             elif kind == JsonKind.ENVIRONMENT.value:
@@ -59,7 +61,7 @@ class LocalFileExporterAdapter(PathExporterPort):
 
             full_path = Path(output_folder) / file_name
             try:
-                exporter = self._exporter_strategies.get('.yaml')
+                exporter = self._exporter_strategies.get(".yaml")
                 if exporter:
                     exporter(full_path, part_content)
                     self.logger.debug(f"Arquivo {file_name} criado")
@@ -68,15 +70,15 @@ class LocalFileExporterAdapter(PathExporterPort):
                 self.logger.error(f"Erro ao criar arquivo {file_name}", exc_info=e)
                 raise FileExporterException(str(full_path))
 
-
-    def generate_filename(self, method: str, path: str) -> str:
+    @staticmethod
+    def generate_filename(method: str, path: str) -> str:
         """
         Transforms path and method into file name
         """
         base_name = f"{str(method).lower()}{str(path).lower()}"
-        clean_name = base_name.replace('/', '_')
-        clean_name = re.sub(r'[<>:"\\|?*]', '', clean_name)
+        clean_name = base_name.replace("/", "_")
+        clean_name = re.sub(r'[<>:"\\|?*]', "", clean_name)
         # Removes duplicated underscores in beginning or end after concatenation
-        clean_name = clean_name.strip('_')
+        clean_name = clean_name.strip("_")
 
         return f"{clean_name}.yaml"
