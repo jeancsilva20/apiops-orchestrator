@@ -30,7 +30,7 @@ class LocalFileExporterAdapter(PathExporterPort):
 
     def _export_yaml(self, output_folder: Path, content: Any) -> Any:
         """Exports a YAML file."""
-        self.logger.info(f"Criando arquivos na pasta: {output_folder}")
+        self.logger.info(f"Creating files in folder: {output_folder}")
 
         for part in content:
             kind = part.get("kind")
@@ -56,7 +56,7 @@ class LocalFileExporterAdapter(PathExporterPort):
                 file_name = "deployment.yaml"
                 part_content = part
             else:
-                self.logger.warning(f"O kind não está mapeado: {kind}.")
+                self.logger.warning(f"The kind is not mapped: {kind}.")
                 raise UnmappedKindException(kind)
 
             full_path = Path(output_folder) / file_name
@@ -64,10 +64,10 @@ class LocalFileExporterAdapter(PathExporterPort):
                 exporter = self._exporter_strategies.get(".yaml")
                 if exporter:
                     exporter(full_path, part_content)
-                    self.logger.debug(f"Arquivo {file_name} criado")
+                    self.logger.debug(f"File {file_name} created")
 
             except Exception as e:
-                self.logger.error(f"Erro ao criar arquivo {file_name}", exc_info=e)
+                self.logger.error(f"Error creating file {file_name}", exc_info=e)
                 raise FileExporterException(str(full_path))
 
     @staticmethod
