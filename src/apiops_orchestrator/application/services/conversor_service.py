@@ -2,13 +2,13 @@ import json
 from pydantic import ValidationError
 from typing import List, Dict, Any, Callable
 
-from apiops_orchestrator.domain.ports.manager_api_port import PublisherPort
-from apiops_orchestrator.domain.services.yaml_to_json_exceptions import (
+from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
+from apiops_orchestrator.application.exceptions.yaml_to_json_exceptions import (
     InterceptorsNotFoundException,
     ResourcesListNotFoundException,
     ApiBasicInfoNotFoundException,
 )
-from apiops_orchestrator.domain.services.yaml_to_json_enum import YamlKind
+from apiops_orchestrator.application.enums.yaml_to_json_enum import YamlKind
 from apiops_orchestrator.domain.models.api_partial_model import (
     ApiBasicInfo,
     ApiPartialInfo,
@@ -27,12 +27,12 @@ from apiops_orchestrator.domain.models.resources_model import (
 from apiops_orchestrator.config.settings import Settings
 
 
-class YamlToJsonService:
+class ConversorService:
     """
     Service to build a complete API JSON structure from a list of YAML data parts.
     """
 
-    def __init__(self, yamls: List[Dict[str, Any]], settings: Settings, manager_api: PublisherPort):
+    def __init__(self, yamls: List[Dict[str, Any]], settings: Settings, manager_api: ManagerApiPort):
         self.yamls = yamls
         self.settings = settings
         self.manager_api = manager_api
@@ -183,7 +183,7 @@ class YamlToJsonService:
         return final_resources
 
     @staticmethod
-    def _escape_interceptors_content(api_full: ApiFull, manager_api: PublisherPort):
+    def _escape_interceptors_content(api_full: ApiFull, manager_api: ManagerApiPort):
         """
         Instance method to escape the content of non-custom interceptors.
         This method mutates the ApiFull object.

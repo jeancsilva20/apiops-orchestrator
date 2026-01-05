@@ -1,18 +1,13 @@
 import logging
-import logging
 import sys
-from pathlib import Path
-from typing import List, Dict
 
 from adapters.inbound.files_importer.local_file_importer_adapter import (
     LocalFileLoaderAdapter,
 )
-from adapters.outbound.http.manager_api.manager_api_adapter import ManagerApiAdapter
 from apiops_orchestrator.adapters.outbound.files_exporter.local_file_exporter_adapter import (
     LocalFileExporterAdapter,
 )
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
-from apiops_orchestrator.domain.ports.manager_api_port import PublisherPort
 from apiops_orchestrator.domain.services.json_to_yaml_service import JsonToYamlService
 from apiops_orchestrator.infrastructure.observability.logging import (
     setup_logging,
@@ -25,12 +20,16 @@ from apiops_orchestrator.infrastructure.observability.logging import (
 from apiops_orchestrator.infrastructure.utils.critical_exception_handler import (
     critical_exception_handler,
 )
-from application.services.file_import_service import FileImportService
 from application.services.publisher_service import PublisherService
+from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
+from application.services.file_importer_service import FileImporterService
 from application.services.repo_validator import RepoValidator
 from application.services.schema_validator import SchemaValidator
+from adapters.outbound.http.manager_api.manager_api_adapter import ManagerApiAdapter
 from config.settings import Settings
-from domain.services.yaml_to_json_service import YamlToJsonService
+from pathlib import Path
+from apiops_orchestrator.application.services.conversor_service import ConversorService
+from typing import List, Dict
 
 
 def validate_repository_structure(
@@ -53,7 +52,7 @@ def validate_repository_structure(
 
 
 def import_repository_files(
-    file_importer_service: FileImportService,
+    file_importer_service: FileImporterService,
     repo_path: Path,
     settings: Settings,
     logger: logging.Logger,
@@ -75,7 +74,7 @@ def import_repository_files(
 
 def validate_repository_schemas(
     validator: SchemaValidator,
-    file_importer_service: FileImportService,
+    file_importer_service: FileImporterService,
     repo_path: Path,
     schema_mapping: Dict[str, str],
     logger: logging.Logger,
@@ -102,8 +101,8 @@ def validate_repository_schemas(
 
 
 def generate_api_json(
-    file_importer_service: FileImportService,
-    api_manager: PublisherPort,
+    file_importer_service: FileImporterService,
+    api_manager: ManagerApiPort,
     repo_path: Path,
     settings: Settings,
     logger: logging.Logger,
@@ -111,7 +110,7 @@ def generate_api_json(
     """Generates the final API JSON from YAML files."""
     artifact_folder = repo_path / settings.API_REPO_ARTIFACTS_PATH
     files = file_importer_service.load_file_path(artifact_folder)
-    service = YamlToJsonService(files, settings, api_manager)
+    service = ConversorService(files, settings, api_manager)
     result = service.build_api_json()
     set_status("SUCCESS")
     logger.info("API JSON generated successfully.")
@@ -143,10 +142,8 @@ def main() -> None:
 
         repo_validator = RepoValidator(settings.ARTIFACTS_FILE_FOLDER_VALIDATION_RULES)
         local_file_adapter = LocalFileLoaderAdapter()
-        file_importer_service = FileImportService(local_file_adapter)
-        api_bindings_file = file_importer_service.load_file_path(
-            repo_path / "bindings.json"
-        )
+        file_importer_service = FileImporterService(local_file_adapter)
+        api_bindings_file = file_importer_service.load_file_path(repo_path / "bindings.json")
         metadata = api_bindings_file.get("metadata", {})
         set_api_info(
             api_bindings_file["api_id"], metadata.get("customer", "Desconhecido")
@@ -185,7 +182,7 @@ def main() -> None:
         )
 
         logger.info("Step 5: POST /revisions call started")
-        # publish_response = publisher_service.publish_changes(final_json)
+        publish_response = publisher_service.publish_changes(final_json)
 
         logger.info("Step 6: Convert JSON file to YAML file")
         # generate_yaml_files(final_json, settings)
@@ -193,7 +190,7 @@ def main() -> None:
         logger.debug("POST call successfully completed")
         # print(json.dumps(publish_response, indent=2, ensure_ascii=False))
 
-        # logger.info(f"Revision {publish_response["id"]} created successfully")
+        logger.info(f"Revision {publish_response["id"]} created successfully")
         logger.info("Finished application")
 
 

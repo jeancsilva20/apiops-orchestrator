@@ -2,12 +2,15 @@ import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from apiops_orchestrator.application.services.file_import_service import (
-    FileImportService,
+from apiops_orchestrator.application.services.file_importer_service import (
+    FileImporterService,
 )
 from apiops_orchestrator.application.services.schema_validator import SchemaValidator
 from jsonschema import exceptions
 
+@pytest.fixture
+def target_path(tmp_path: Path) -> Path:
+    return tmp_path / "api.yaml"
 
 @pytest.fixture
 def schema_folder(tmp_path: Path) -> Path:
@@ -18,7 +21,7 @@ def schema_folder(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def file_importer_service_mock():
-    return MagicMock(spec=FileImportService)
+    return MagicMock(spec=FileImporterService)
 
 
 @pytest.fixture
@@ -28,7 +31,7 @@ def schema_validator(file_importer_service_mock, schema_folder):
     )
 
 
-def test_validate_success(schema_validator, file_importer_service_mock):
+def test_validate_success(schema_validator, file_importer_service_mock, target_path):
     schema_name = "my_schema.json"
     schema_content = {
         "type": "object",
@@ -40,13 +43,10 @@ def test_validate_success(schema_validator, file_importer_service_mock):
     yaml_data = {"name": "my-api", "version": 1}
     target_path = "success_file.yaml"  # Dummy path for the test
 
-    # Fixed: Added 'target_path' argument
     assert schema_validator.validate(yaml_data, schema_name, target_path) is True
 
 
-def test_validate_missing_required_property(
-        schema_validator, file_importer_service_mock
-):
+def test_validate_missing_required_property(schema_validator, file_importer_service_mock, target_path):
     schema_name = "my_schema.json"
     schema_content = {
         "type": "object",
@@ -58,7 +58,6 @@ def test_validate_missing_required_property(
     yaml_data = {"name": "my-api"}  # Missing 'version'
     target_path = "invalid_file.yaml"
 
-    # Fixed: Added 'target_path' argument
     with pytest.raises(
             exceptions.ValidationError,
             match="Schema validation failed for file.*version.*is a required property",
@@ -66,7 +65,7 @@ def test_validate_missing_required_property(
         schema_validator.validate(yaml_data, schema_name, target_path)
 
 
-def test_validate_invalid_type(schema_validator, file_importer_service_mock):
+def test_validate_invalid_type(schema_validator, file_importer_service_mock, target_path):
     schema_name = "my_schema.json"
     schema_content = {
         "type": "object",
@@ -78,7 +77,6 @@ def test_validate_invalid_type(schema_validator, file_importer_service_mock):
     yaml_data = {"name": "my-api", "version": "1.0"}  # 'version' should be a number
     target_path = "type_error_file.yaml"
 
-    # Fixed: Added 'target_path' argument
     with pytest.raises(
             exceptions.ValidationError,
             match="Schema validation failed for file.*is not of type 'number'",
@@ -86,7 +84,7 @@ def test_validate_invalid_type(schema_validator, file_importer_service_mock):
         schema_validator.validate(yaml_data, schema_name, target_path)
 
 
-def test_validate_non_existent_schema(schema_validator, file_importer_service_mock):
+def test_validate_non_existent_schema(schema_validator, file_importer_service_mock, target_path):
     file_importer_service_mock.load_file_path.side_effect = Exception("File not found")
     target_path = "dummy_path.yaml"
 
