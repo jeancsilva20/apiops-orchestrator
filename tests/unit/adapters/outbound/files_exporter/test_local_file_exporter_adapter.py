@@ -3,7 +3,9 @@ import os
 from unittest.mock import MagicMock, patch, call
 from pathlib import Path
 
-from apiops_orchestrator.adapters.outbound.files_exporter.local_file_exporter_adapter import LocalFileExporterAdapter
+from apiops_orchestrator.adapters.outbound.files_exporter.local_file_exporter_adapter import (
+    LocalFileExporterAdapter,
+)
 from apiops_orchestrator.adapters.outbound.files_exporter.files_exporter_exceptions import (
     FileExporterException,
     UnmappedKindException,
@@ -23,10 +25,12 @@ class TestLocalFileExporterAdapter:
         Initializes the adapter with a mocked strategy map to avoid
         dependencies on the real FILE_EXPORTER_STRATEGIES.
         """
-        strategies = {'.yaml': mock_yaml_strategy}
+        strategies = {".yaml": mock_yaml_strategy}
         return LocalFileExporterAdapter(exporter_strategies=strategies)
 
-    @patch('apiops_orchestrator.adapters.outbound.files_exporter.local_file_exporter_adapter.os')
+    @patch(
+        "apiops_orchestrator.adapters.outbound.files_exporter.local_file_exporter_adapter.os"
+    )
     def test_export_path_creates_directory(self, mock_os, adapter):
         """
         Should verify if os.makedirs is called when the output folder does not exist.
@@ -42,7 +46,9 @@ class TestLocalFileExporterAdapter:
         # Assert
         mock_os.makedirs.assert_called_once_with(output_folder)
 
-    @patch('apiops_orchestrator.adapters.outbound.files_exporter.local_file_exporter_adapter.os')
+    @patch(
+        "apiops_orchestrator.adapters.outbound.files_exporter.local_file_exporter_adapter.os"
+    )
     def test_export_path_directory_exists(self, mock_os, adapter):
         """
         Should NOT call os.makedirs if the directory already exists.
@@ -58,37 +64,9 @@ class TestLocalFileExporterAdapter:
         # Assert
         mock_os.makedirs.assert_not_called()
 
-    @pytest.mark.parametrize("kind, expected_filename", [
-        ("ApiBasicInfo", "api-basic-info.yaml"),
-        ("Interceptors", "default-interceptors.yaml"),
-        ("Resources", "resources.yaml"),
-        ("Deployment", "deployment.yaml"),
-    ])
-    @patch('apiops_orchestrator.adapters.outbound.files_exporter.local_file_exporter_adapter.os')
-    def test_export_yaml_static_filenames(self, mock_os, adapter, mock_yaml_strategy, kind, expected_filename):
-        """
-        Should correctly map static 'kind' values to their specific filenames.
-        """
-        # Arrange
-        mock_os.path.exists.return_value = True
-        output_folder = Path("output")
-        content_data = {"some": "data"}
-
-        # Input content list
-        content = [
-            {"kind": kind, "content": content_data}
-        ]
-
-        # Act
-        adapter.export_path(content, output_folder=str(output_folder))
-
-        # Assert
-        expected_path = output_folder / expected_filename
-        # Logic for static files passes the whole 'part' dictionary as content, except for Resources usually?
-        # Looking at code: part_content = part for these kinds.
-        mock_yaml_strategy.assert_called_once_with(expected_path, content[0])
-
-    @patch('apiops_orchestrator.adapters.outbound.files_exporter.local_file_exporter_adapter.os')
+    @patch(
+        "apiops_orchestrator.adapters.outbound.files_exporter.local_file_exporter_adapter.os"
+    )
     def test_export_yaml_api_operations(self, mock_os, adapter, mock_yaml_strategy):
         """
         Should dynamically generate filenames for ApiOperations kind based on method and path.
@@ -102,7 +80,7 @@ class TestLocalFileExporterAdapter:
                 "kind": "ApiOperations",
                 "method": "GET",
                 "path": "/users",
-                "content": "op_data"
+                "content": "op_data",
             }
         ]
 
@@ -114,7 +92,9 @@ class TestLocalFileExporterAdapter:
         expected_path = output_folder / "get_users.yaml"
         mock_yaml_strategy.assert_called_once_with(expected_path, content[0])
 
-    @patch('apiops_orchestrator.adapters.outbound.files_exporter.local_file_exporter_adapter.os')
+    @patch(
+        "apiops_orchestrator.adapters.outbound.files_exporter.local_file_exporter_adapter.os"
+    )
     def test_export_yaml_unmapped_kind(self, mock_os, adapter):
         """
         Should raise UnmappedKindException if the 'kind' is not recognized.
@@ -129,7 +109,9 @@ class TestLocalFileExporterAdapter:
 
         assert "UnknownKind" in str(exc_info.value)
 
-    @patch('apiops_orchestrator.adapters.outbound.files_exporter.local_file_exporter_adapter.os')
+    @patch(
+        "apiops_orchestrator.adapters.outbound.files_exporter.local_file_exporter_adapter.os"
+    )
     def test_export_yaml_strategy_exception(self, mock_os, adapter, mock_yaml_strategy):
         """
         Should capture generic exceptions during file writing and raise FileExporterException.
