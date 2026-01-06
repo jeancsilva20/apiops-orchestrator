@@ -1,9 +1,16 @@
 import logging
+import sys
 
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
+from apiops_orchestrator.domain.models.api_partial_model import Visibility
 from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
 from typing import Dict, Any
-from apiops_orchestrator.infrastructure.observability.logging import log_duration, set_span_id, clear_operation_context, set_status
+from apiops_orchestrator.infrastructure.observability.logging import (
+    log_duration,
+    set_span_id,
+    clear_operation_context,
+    set_status,
+)
 
 
 class PublisherService:
@@ -11,7 +18,9 @@ class PublisherService:
         self.publisher = publisher_port
         self.logger = logging.getLogger(__name__)
 
-    def _format_data(self, api_data: ApiFull, remote_api_data: Dict[str, Any]) -> ApiFull:
+    def _format_data(
+        self, api_data: ApiFull, remote_api_data: Dict[str, Any]
+    ) -> ApiFull:
         revisions = remote_api_data["revisions"]
 
         if "workflowId" in revisions[len(revisions) - 1]:
@@ -21,6 +30,10 @@ class PublisherService:
 
         api_data.api.lastRevision = remote_api_data["lastRevision"]
         api_data.api.creationDate = remote_api_data["creationDate"]
+
+        if "visibility" in remote_api_data and remote_api_data["visibility"]:
+            api_data.api.visibility = Visibility(**remote_api_data["visibility"])
+
         api_data.api.revisions = revisions
 
         return api_data

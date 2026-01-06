@@ -4,9 +4,7 @@ from dataclasses import asdict, is_dataclass
 from typing import List, Dict, Any
 from uuid import UUID
 
-from apiops_orchestrator.adapters.outbound.files_exporter.local_file_exporter_adapter import (
-    LocalFileExporterAdapter,
-)
+from apiops_orchestrator.domain.ports.file_exporter_port import PathExporterPort
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
 from apiops_orchestrator.domain.services.json_to_yaml_enum import JsonKind
@@ -17,10 +15,13 @@ class _YamlDocumentFactory:
 
     @staticmethod
     def create_document(
-        kind: str, spec: Dict[str, Any], version: str
+        kind: str, spec: Dict[str, Any], api_version: str
     ) -> Dict[str, Any]:
         """Create a standard YAML document with apiVersion, kind, and spec."""
-        return {"apiVersion": version, "kind": kind, "spec": spec}
+        if api_version:
+            return {"apiVersion": api_version, "kind": kind, "spec": spec}
+        else:
+            return {"kind": kind, "spec": spec}
 
 
 class JsonToYamlService:
@@ -32,12 +33,12 @@ class JsonToYamlService:
         self,
         json_full_object: ApiFull,
         settings: Settings,
-        local_file_exporter: LocalFileExporterAdapter,
+        file_exporter_port: PathExporterPort,
     ) -> None:
         self.json_full_object = json_full_object
         self.logger = logging.getLogger(__name__)
         self.settings = settings
-        self.local_file_exporter = local_file_exporter
+        self.file_exporter_port = file_exporter_port
 
         # Keys for Dictionary Lookup via .get()
         self.KIND_KEY = "kind"
@@ -52,7 +53,7 @@ class JsonToYamlService:
 
         try:
             # 1. Basic info
-            yaml_parts = [self._create_basic_info_part()]
+            yaml_parts = [self._create_api_basic_info_part()]
 
             # 2. All/all interceptors
             if self.json_full_object.interceptors:
@@ -63,7 +64,7 @@ class JsonToYamlService:
             # 3. Resources and Operations
             if self.json_full_object.resources:
                 resources_list, operations_files = (
-                    self._create_resources_and_ops_parts()
+                    self._create_resources_and_operations_parts()
                 )
 
                 # Adds resources.yaml (because it is an object list, not a unique dict with spec)
@@ -81,7 +82,7 @@ class JsonToYamlService:
             self.logger.error(f"Error building YAMLs", exc_info=e)
             raise
 
-    def _create_basic_info_part(self) -> Dict[str, Any]:
+    def _create_api_basic_info_part(self) -> Dict[str, Any]:
         self.logger.debug("Creating API basic information part")
         try:
             api_data = self._to_dict(self.json_full_object.api)
@@ -96,6 +97,8 @@ class JsonToYamlService:
                 "apiType",
                 "apiSwaggerConfiguration",
                 "lastRevision",
+                "apiTags",
+                "visibility",
             ]
             for field in fields_to_remove:
                 api_data.pop(field, None)
@@ -103,16 +106,12 @@ class JsonToYamlService:
 
             spec = {
                 "api": api_data,
-                "revision": {
-                    "workflowId": self.settings.WORKFLOW_ID,
-                    "workflowStageId": self.settings.WORKFLOW_STAGE_ID,
-                },
             }
 
             result = _YamlDocumentFactory.create_document(
                 kind=JsonKind.API_BASIC_INFO.value,
                 spec=spec,
-                version=self.settings.VERSION,
+                api_version=self.settings.API_VERSION,
             )
             self.logger.info("Basic information YAML document created successfully")
             return result
@@ -136,7 +135,7 @@ class JsonToYamlService:
             result = _YamlDocumentFactory.create_document(
                 kind=JsonKind.INTERCEPTORS.value,
                 spec=spec,
-                version=self.settings.VERSION,
+                api_version=self.settings.API_VERSION,
             )
             self.logger.info("Interceptors YAML document created successfully")
             return result
@@ -146,7 +145,7 @@ class JsonToYamlService:
             )
             raise
 
-    def _create_resources_and_ops_parts(self):
+    def _create_resources_and_operations_parts(self):
         self.logger.debug(
             f"Creating resources and operations parts for {len(self.json_full_object.resources)} resource(s)"
         )
@@ -209,7 +208,7 @@ class JsonToYamlService:
                 )
 
                 # Generates file name
-                file_name = self.local_file_exporter.generate_filename(
+                file_name = self.file_exporter_port.generate_filename(
                     op.method, op.path
                 )
                 self.logger.debug(f"Generated file name: {file_name}")
@@ -245,7 +244,7 @@ class JsonToYamlService:
                         "content": _YamlDocumentFactory.create_document(
                             kind=JsonKind.API_OPERATIONS.value,
                             spec=op_spec,
-                            version=self.settings.VERSION,
+                            api_version=self.settings.API_VERSION,
                         ),
                     }
                 )
@@ -282,7 +281,7 @@ class JsonToYamlService:
         )
         try:
             entry = {
-                "apiVersion": self.settings.VERSION,
+                "apiVersion": self.settings.API_VERSION,
                 "kind": JsonKind.RESOURCES.value,
                 "name": resource.name,
                 "description": getattr(resource, "description", None),
@@ -327,6 +326,9 @@ class JsonToYamlService:
             # Removes internal fields
             i_dict.pop("parent", None)
             i_dict.pop("revision", None)
+
+            # TODO: Iterar para remover Id e IdTemp
+            # TODO: Ajustar campo CONTENT dos JS Custom para ser referência e não script
 
             self.logger.debug("Interceptor prepared successfully")
             return i_dict

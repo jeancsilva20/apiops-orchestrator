@@ -143,7 +143,9 @@ def main() -> None:
         repo_validator = RepoValidator(settings.ARTIFACTS_FILE_FOLDER_VALIDATION_RULES)
         local_file_adapter = LocalFileLoaderAdapter()
         file_importer_service = FileImporterService(local_file_adapter)
-        api_bindings_file = file_importer_service.load_file_path(repo_path / "bindings.json")
+        api_bindings_file = file_importer_service.load_file_path(
+            repo_path / "bindings.json"
+        )
         metadata = api_bindings_file.get("metadata", {})
         set_api_info(
             api_bindings_file["api_id"], metadata.get("customer", "Desconhecido")
@@ -185,12 +187,12 @@ def main() -> None:
         publish_response = publisher_service.publish_changes(final_json)
 
         logger.info("Step 6: Convert JSON file to YAML file")
-        # generate_yaml_files(final_json, settings)
+        generate_yaml_files(final_json, settings)
 
         logger.debug("POST call successfully completed")
-        # print(json.dumps(publish_response, indent=2, ensure_ascii=False))
+        print(json.dumps(publish_response, indent=2, ensure_ascii=False))
 
-        logger.info(f"Revision {publish_response["id"]} created successfully")
+        #  logger.info(f"Revision {publish_response["id"]} created successfully")
         logger.info("Finished application")
 
 

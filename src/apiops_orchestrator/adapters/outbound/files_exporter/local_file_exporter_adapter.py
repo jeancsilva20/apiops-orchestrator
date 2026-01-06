@@ -70,8 +70,7 @@ class LocalFileExporterAdapter(PathExporterPort):
                 self.logger.error(f"Error creating file {file_name}", exc_info=e)
                 raise FileExporterException(str(full_path))
 
-    @staticmethod
-    def generate_filename(method: str, path: str) -> str:
+    def generate_filename(self, method: str, path: str) -> str:
         """
         Transforms path and method into file name
         """

@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     WORKFLOW_ID: str | None = None
     WORKFLOW_STAGE_ID: str | None = None
 
-    VERSION: str | None = None
+    API_VERSION: str | None = None
 
     api_tags: List[ApiTag] = []
 
