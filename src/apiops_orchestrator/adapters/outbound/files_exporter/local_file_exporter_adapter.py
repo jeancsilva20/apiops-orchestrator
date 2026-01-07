@@ -51,9 +51,7 @@ class LocalFileExporterAdapter(PathExporterPort):
                 file_name = JsonKindFileName.RESOURCES.value
                 part_content = part
             elif kind == JsonKind.API_OPERATIONS.value:
-                method = part.get("method")
-                path = part.get("path")
-                file_name = self.generate_filename(method, path)
+                file_name = part.get("metadata").get("fileName")
                 part_content = part
             else:
                 self.logger.warning(f"The kind is not mapped: {kind}.")

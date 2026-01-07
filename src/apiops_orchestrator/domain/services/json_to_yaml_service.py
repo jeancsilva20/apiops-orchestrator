@@ -69,7 +69,11 @@ class JsonToYamlService:
 
                 # Adds resources.yaml (because it is an object list, not a unique dict with spec)
                 yaml_parts.append(
-                    {"kind": JsonKind.RESOURCES.value, "content": resources_list}
+                    {
+                        "apiVersion": self.settings.API_VERSION,
+                        "kind": JsonKind.RESOURCES.value,
+                        "items": resources_list,
+                    }
                 )
 
                 # Adds operations files
@@ -207,6 +211,9 @@ class JsonToYamlService:
                     f"Processing operation {idx}/{len(operations_list)}: {op.method} {op.path}"
                 )
 
+                # Prepares operation content
+                op_data = self._to_dict(op)
+
                 # Generates file name
                 file_name = self.file_exporter_port.generate_filename(
                     op.method, op.path
@@ -217,9 +224,6 @@ class JsonToYamlService:
                 ops_refs.append(
                     {"method": op.method, "path": op.path, "file": file_name}
                 )
-
-                # Prepares operation content
-                op_data = self._to_dict(op)
 
                 # Special treatment for interceptors inside operation
                 if "interceptors" in op_data:
@@ -238,14 +242,10 @@ class JsonToYamlService:
                 op_spec = {"operation": [op_data]}
                 operation_files.append(
                     {
+                        "apiVersion": self.settings.API_VERSION,
                         "kind": JsonKind.API_OPERATIONS.value,
-                        "method": op.method,
-                        "path": op.path,
-                        "content": _YamlDocumentFactory.create_document(
-                            kind=JsonKind.API_OPERATIONS.value,
-                            spec=op_spec,
-                            api_version=self.settings.API_VERSION,
-                        ),
+                        "metadata": {"fileName": file_name},
+                        "spec": op_spec,
                     }
                 )
 
@@ -281,8 +281,6 @@ class JsonToYamlService:
         )
         try:
             entry = {
-                "apiVersion": self.settings.API_VERSION,
-                "kind": JsonKind.RESOURCES.value,
                 "name": resource.name,
                 "description": getattr(resource, "description", None),
                 "operations": ops_refs,
@@ -307,17 +305,14 @@ class JsonToYamlService:
             # Tries to convert string JSON to Dict
             if isinstance(content, str):
                 try:
-                    i_dict["content"] = json.loads(content)
+                    content = json.loads(content)
+                    i_dict["content"] = content
                     self.logger.debug("Interceptor JSON content converted successfully")
                 except (json.JSONDecodeError, TypeError) as e:
-                    # If it fails, keeps the string
                     self.logger.debug(
                         f"Failed to convert interceptor JSON, keeping as string: {str(e)}"
                     )
                     pass
-
-            # Update content variable after potential conversion
-            content = i_dict.get("content")
 
             # For "Custom" interceptors, content should be a reference to the script ID
             if i_dict.get("type") == "Custom" and isinstance(content, dict):

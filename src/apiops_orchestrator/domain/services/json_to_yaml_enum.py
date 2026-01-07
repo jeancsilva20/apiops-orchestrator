@@ -5,7 +5,7 @@ class JsonKind(Enum):
     API_BASIC_INFO = "ApiBasicInfo"
     INTERCEPTORS = "Interceptors"
     API_OPERATIONS = "ApiOperations"
-    RESOURCES = "Resources"
+    RESOURCES = "ResourcesList"
 
 
 class JsonKindFileName(Enum):

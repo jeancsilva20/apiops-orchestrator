@@ -69,18 +69,17 @@ class TestLocalFileExporterAdapter:
     )
     def test_export_yaml_api_operations(self, mock_os, adapter, mock_yaml_strategy):
         """
-        Should dynamically generate filenames for ApiOperations kind based on method and path.
+        Should read the filename from metadata for ApiOperations kind.
         """
         # Arrange
         mock_os.path.exists.return_value = True
         output_folder = Path("output")
-
+        operation_filename = "get_users.yaml"
         content = [
             {
                 "kind": "ApiOperations",
-                "method": "GET",
-                "path": "/users",
-                "content": "op_data",
+                "metadata": {"fileName": operation_filename},
+                "spec": {"operation": ["op_data"]},
             }
         ]
 
@@ -88,8 +87,7 @@ class TestLocalFileExporterAdapter:
         adapter.export_path(content, output_folder=str(output_folder))
 
         # Assert
-        # generate_filename("GET", "/users") -> "get_users.yaml"
-        expected_path = output_folder / "get_users.yaml"
+        expected_path = output_folder / operation_filename
         mock_yaml_strategy.assert_called_once_with(expected_path, content[0])
 
     @patch(
