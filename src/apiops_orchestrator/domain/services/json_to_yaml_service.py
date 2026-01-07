@@ -316,6 +316,17 @@ class JsonToYamlService:
                     )
                     pass
 
+            # Update content variable after potential conversion
+            content = i_dict.get("content")
+
+            # For "Custom" interceptors, content should be a reference to the script ID
+            if i_dict.get("type") == "Custom" and isinstance(content, dict):
+                if "id" in content:
+                    i_dict["content"] = content["id"]
+                    self.logger.debug(
+                        f"Set 'Custom' interceptor content to reference ID: {i_dict['content']}"
+                    )
+
             # If content is a numeric string like ("158"), converts it into int
             if isinstance(i_dict.get("content"), str) and i_dict["content"].isdigit():
                 i_dict["content"] = int(i_dict["content"])
@@ -326,9 +337,8 @@ class JsonToYamlService:
             # Removes internal fields
             i_dict.pop("parent", None)
             i_dict.pop("revision", None)
-
-            # TODO: Iterar para remover Id e IdTemp
-            # TODO: Ajustar campo CONTENT dos JS Custom para ser referência e não script
+            i_dict.pop("id", None)
+            i_dict.pop("idTemp", None)
 
             self.logger.debug("Interceptor prepared successfully")
             return i_dict
