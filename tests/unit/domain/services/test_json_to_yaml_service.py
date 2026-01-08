@@ -158,67 +158,78 @@ def api_full_object():
 
 
 class TestJsonToYamlService:
-        def test_build_yaml_parts_and_validate_schemas(
-            self,
-            api_full_object: ApiFull,
-            settings: Settings,
-            file_exporter_port: PathExporterPort,
-            schema_validator: SchemaValidator
-        ):
-            service = JsonToYamlService(
-                json_full_object=api_full_object,
-                settings=settings,
-                file_exporter_port=file_exporter_port
+    def test_build_yaml_parts_and_validate_schemas(
+        self,
+        api_full_object: ApiFull,
+        settings: Settings,
+        file_exporter_port: PathExporterPort,
+        schema_validator: SchemaValidator,
+    ):
+        service = JsonToYamlService(
+            json_full_object=api_full_object,
+            settings=settings,
+            file_exporter_port=file_exporter_port,
+        )
+
+        # Validator for schemas in src/
+        src_schema_map = {
+            JsonKind.API_BASIC_INFO.value: "api-basic-info.schema.json",
+            JsonKind.API_OPERATIONS.value: "api-operations.schema.json",
+        }
+
+        # A specific validator for our test-only schema
+        test_schema_folder = (
+            settings.PROJECT_ROOT / "tests" / "unit" / "domain" / "schemas"
+        )
+        adapter = LocalFileLoaderAdapter(loader_strategies=FILE_LOADER_STRATEGIES)
+        file_importer_service = FileImporterService(importer=adapter)
+        test_validator = SchemaValidator(
+            file_importer_service=file_importer_service,
+            schema_folder=test_schema_folder,
+        )
+
+        yaml_parts = service.build_yaml_parts()
+
+        assert len(yaml_parts) == 5
+
+        errors = []
+        for part in yaml_parts:
+            kind = part.get("kind")
+            file_name_for_logging = part.get("metadata", {}).get(
+                "fileName", f"{kind}.yaml"
             )
-    
-            # Validator for schemas in src/
-            src_schema_map = {
-                JsonKind.API_BASIC_INFO.value: "api-basic-info.schema.json",
-                JsonKind.API_OPERATIONS.value: "api-operations.schema.json",
-            }
-            
-            # A specific validator for our test-only schema
-            test_schema_folder = settings.PROJECT_ROOT / "tests" / "unit" / "domain" / "schemas"
-            adapter = LocalFileLoaderAdapter(loader_strategies=FILE_LOADER_STRATEGIES)
-            file_importer_service = FileImporterService(importer=adapter)
-            test_validator = SchemaValidator(file_importer_service=file_importer_service, schema_folder=test_schema_folder)
-    
-    
-            yaml_parts = service.build_yaml_parts()
-            
-            assert len(yaml_parts) == 5
-    
-            errors = []
-            for part in yaml_parts:
-                kind = part.get("kind")
-                file_name_for_logging = part.get("metadata", {}).get("fileName", f"{kind}.yaml")
-    
-                # Skip validation for ResourcesList due to schema mismatch
-                if kind == JsonKind.RESOURCES.value:
-                    continue
-    
-                validator_to_use = None
-                schema_name = None
-    
-                if kind == JsonKind.INTERCEPTORS.value:
-                    # Use the test validator for the interceptors schema
-                    validator_to_use = test_validator
-                    schema_name = "test-interceptors.schema.json"
-                else:
-                    # Use the main validator for all other schemas
-                    validator_to_use = schema_validator
-                    schema_name = src_schema_map.get(kind)
-                
-                assert schema_name is not None, f"Schema not found for kind: {kind}"
-                assert validator_to_use is not None, f"Validator not found for kind: {kind}"
-    
-                try:
-                    validator_to_use.validate(
-                        yaml_data=part,
-                        schema_name=schema_name,
-                        target_path=Path(file_name_for_logging)
-                    )
-                except Exception as e:
-                    errors.append(f"Validation failed for {file_name_for_logging} with schema {schema_name}: {e}")
-    
-            assert not errors, "All validated YAML parts should be valid against their schemas.\n" + "\n".join(errors)
+
+            # Skip validation for ResourcesList due to schema mismatch
+            if kind == JsonKind.RESOURCES.value:
+                continue
+
+            validator_to_use = None
+            schema_name = None
+
+            if kind == JsonKind.INTERCEPTORS.value:
+                # Use the test validator for the interceptors schema
+                validator_to_use = test_validator
+                schema_name = "test-interceptors.schema.json"
+            else:
+                # Use the main validator for all other schemas
+                validator_to_use = schema_validator
+                schema_name = src_schema_map.get(kind)
+
+            assert schema_name is not None, f"Schema not found for kind: {kind}"
+            assert validator_to_use is not None, f"Validator not found for kind: {kind}"
+
+            try:
+                validator_to_use.validate(
+                    yaml_data=part,
+                    schema_name=schema_name,
+                    target_path=Path(file_name_for_logging),
+                )
+            except Exception as e:
+                errors.append(
+                    f"Validation failed for {file_name_for_logging} with schema {schema_name}: {e}"
+                )
+
+        assert not errors, (
+            "All validated YAML parts should be valid against their schemas.\n"
+            + "\n".join(errors)
+        )
