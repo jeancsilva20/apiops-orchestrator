@@ -2,12 +2,13 @@ import json
 from pydantic import ValidationError
 from typing import List, Dict, Any, Callable
 
-from apiops_orchestrator.domain.services.yaml_to_json_exceptions import (
+from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
+from apiops_orchestrator.application.exceptions.yaml_to_json_exceptions import (
     InterceptorsNotFoundException,
     ResourcesListNotFoundException,
     ApiBasicInfoNotFoundException,
 )
-from apiops_orchestrator.domain.services.yaml_to_json_enum import YamlKind
+from apiops_orchestrator.application.enums.yaml_to_json_enum import YamlKind
 from apiops_orchestrator.domain.models.api_partial_model import (
     ApiBasicInfo,
     ApiPartialInfo,
@@ -26,14 +27,15 @@ from apiops_orchestrator.domain.models.resources_model import (
 from apiops_orchestrator.config.settings import Settings
 
 
-class YamlToJsonService:
+class ConversorService:
     """
     Service to build a complete API JSON structure from a list of YAML data parts.
     """
 
-    def __init__(self, yamls: List[Dict[str, Any]], settings: Settings):
+    def __init__(self, yamls: List[Dict[str, Any]], settings: Settings, manager_api: ManagerApiPort):
         self.yamls = yamls
         self.settings = settings
+        self.manager_api = manager_api
 
         self._api_partial_info: ApiPartialInfo | None = None
         self._interceptors: list[Interceptor] = []
@@ -81,12 +83,18 @@ class YamlToJsonService:
                 workflowStageId=self.settings.WORKFLOW_STAGE_ID,
             )
 
-            self._escape_interceptors_content(api_full)
-
+            self._escape_interceptors_content(api_full, self.manager_api)
             return api_full
 
         except ValidationError as e:
-            raise ValueError(f"YAML content validation failed: {e}") from e
+            errors = []
+            for error in e.errors():
+                field = ".".join(str(x) for x in error["loc"])
+                message = error["msg"]
+                errors.append(f"- {field}: {message}")
+
+            formatted_error = "\n".join(errors)
+            raise ValueError(f"YAML content validation failed:\n{formatted_error}") from e
         except (
             ValueError,
             KeyError,
@@ -175,7 +183,7 @@ class YamlToJsonService:
         return final_resources
 
     @staticmethod
-    def _escape_interceptors_content(api_full: ApiFull):
+    def _escape_interceptors_content(api_full: ApiFull, manager_api: ManagerApiPort):
         """
         Instance method to escape the content of non-custom interceptors.
         This method mutates the ApiFull object.
@@ -191,3 +199,5 @@ class YamlToJsonService:
                 interceptor.content, dict
             ):
                 interceptor.content = json.dumps(interceptor.content)
+            else:
+                interceptor.content = json.dumps(manager_api.get_custom_interceptor_by_id(interceptor.content))
