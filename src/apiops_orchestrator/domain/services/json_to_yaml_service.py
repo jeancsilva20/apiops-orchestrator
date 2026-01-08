@@ -70,7 +70,7 @@ class JsonToYamlService:
                 # Adds resources.yaml (because it is an object list, not a unique dict with spec)
                 yaml_parts.append(
                     {
-                        "apiVersion": self.settings.API_VERSION,
+                        "apiVersion": self.settings.KIND_VERSION,
                         "kind": JsonKind.RESOURCES.value,
                         "items": resources_list,
                     }
@@ -115,7 +115,7 @@ class JsonToYamlService:
             result = _YamlDocumentFactory.create_document(
                 kind=JsonKind.API_BASIC_INFO.value,
                 spec=spec,
-                api_version=self.settings.API_VERSION,
+                api_version=self.settings.KIND_VERSION,
             )
             self.logger.info("Basic information YAML document created successfully")
             return result
@@ -139,7 +139,7 @@ class JsonToYamlService:
             result = _YamlDocumentFactory.create_document(
                 kind=JsonKind.INTERCEPTORS.value,
                 spec=spec,
-                api_version=self.settings.API_VERSION,
+                api_version=self.settings.KIND_VERSION,
             )
             self.logger.info("Interceptors YAML document created successfully")
             return result
@@ -242,7 +242,7 @@ class JsonToYamlService:
                 op_spec = {"operation": [op_data]}
                 operation_files.append(
                     {
-                        "apiVersion": self.settings.API_VERSION,
+                        "apiVersion": self.settings.KIND_VERSION,
                         "kind": JsonKind.API_OPERATIONS.value,
                         "metadata": {"fileName": file_name},
                         "spec": op_spec,
