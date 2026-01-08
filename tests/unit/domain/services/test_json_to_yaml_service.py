@@ -93,7 +93,7 @@ class MockApiFull:
 @pytest.fixture
 def settings() -> Settings:
     mock_settings = MagicMock(spec=Settings)
-    mock_settings.API_VERSION = "api-management.sensedia.com/v1"
+    mock_settings.KIND_VERSION = "api-management.sensedia.com/v1"
     mock_settings.PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
     return mock_settings
 
