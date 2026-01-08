@@ -2,7 +2,7 @@ import json
 import yaml
 from pathlib import Path
 from typing import Any, Callable
-from apiops_orchestrator.adapters.inbound.files_importer.file_loader_enum import (
+from apiops_orchestrator.application.enums.file_type_enum import (
     FileTypeEnum,
 )
 

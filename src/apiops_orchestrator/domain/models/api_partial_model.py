@@ -3,6 +3,7 @@ from typing import Optional, List
 
 
 class ApiResponsible(BaseModel):
+    username: str
     groupName: str  # Perform a GET request
 
 

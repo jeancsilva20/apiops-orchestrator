@@ -41,6 +41,7 @@ def test_validate_success(schema_validator, file_importer_service_mock, target_p
     file_importer_service_mock.load_file_path.return_value = schema_content
 
     yaml_data = {"name": "my-api", "version": 1}
+    target_path = "success_file.yaml"  # Dummy path for the test
 
     assert schema_validator.validate(yaml_data, schema_name, target_path) is True
 
@@ -55,10 +56,11 @@ def test_validate_missing_required_property(schema_validator, file_importer_serv
     file_importer_service_mock.load_file_path.return_value = schema_content
 
     yaml_data = {"name": "my-api"}  # Missing 'version'
+    target_path = "invalid_file.yaml"
 
     with pytest.raises(
-        exceptions.ValidationError,
-        match="Schema validation failed for file.*version.*is a required property",
+            exceptions.ValidationError,
+            match="Schema validation failed for file.*version.*is a required property",
     ):
         schema_validator.validate(yaml_data, schema_name, target_path)
 
@@ -73,15 +75,19 @@ def test_validate_invalid_type(schema_validator, file_importer_service_mock, tar
     file_importer_service_mock.load_file_path.return_value = schema_content
 
     yaml_data = {"name": "my-api", "version": "1.0"}  # 'version' should be a number
+    target_path = "type_error_file.yaml"
 
     with pytest.raises(
-        exceptions.ValidationError,
-        match="Schema validation failed for file.*is not of type 'number'",
+            exceptions.ValidationError,
+            match="Schema validation failed for file.*is not of type 'number'",
     ):
         schema_validator.validate(yaml_data, schema_name, target_path)
 
 
 def test_validate_non_existent_schema(schema_validator, file_importer_service_mock, target_path):
     file_importer_service_mock.load_file_path.side_effect = Exception("File not found")
+    target_path = "dummy_path.yaml"
+
+    # Fixed: Added 'target_path' argument
     with pytest.raises(ValueError, match="Error reading schema file"):
         schema_validator.validate({}, "non_existent_schema.json", target_path)
