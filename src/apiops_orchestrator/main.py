@@ -190,7 +190,7 @@ def main() -> None:
         generate_yaml_files(final_json, settings)
 
         logger.debug("POST call successfully completed")
-        print(json.dumps(publish_response, indent=2, ensure_ascii=False))
+        # print(json.dumps(publish_response, indent=2, ensure_ascii=False))
 
         #  logger.info(f"Revision {publish_response["id"]} created successfully")
         logger.info("Finished application")
