@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Test Interceptors Schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "spec"],
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "api-management.sensedia.com/v1"
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["Interceptors"]
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interceptors"],
+      "properties": {
+        "interceptors": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  }
+}

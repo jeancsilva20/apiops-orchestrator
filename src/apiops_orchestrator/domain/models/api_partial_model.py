@@ -3,16 +3,17 @@ from typing import Optional, List
 
 
 class ApiResponsible(BaseModel):
-    groupName: str  # Buscar via GET
+    username: str
+    groupName: str  # Perform a GET request
 
 
 class GroupVisibility(BaseModel):
-    name: Optional[str] = ""  # Buscar via GET
+    name: Optional[str] = ""  # Perform a GET request
 
 
 class Visibility(BaseModel):
     visibilityType: Optional[str] = "GROUP"
-    groupVisibility: Optional[GroupVisibility] = None  # Buscar via GET
+    groupVisibility: Optional[GroupVisibility] = None  # Perform a GET request
 
 
 class ApiTag(BaseModel):
@@ -27,7 +28,7 @@ class ApiPartialInfo(BaseModel):
     basePath: str
     description: Optional[str] = "API Description"
     apiResponsible: ApiResponsible
-    visibility: Optional[Visibility] = None  # Copiar da resposta do GET
+    visibility: Optional[Visibility] = None  # Copy from the GET response.
     apiTags: Optional[List[ApiTag]] = []
     apiType: str = "REST"
     apiSwaggerConfiguration: dict = {
@@ -35,10 +36,10 @@ class ApiPartialInfo(BaseModel):
         "showApiBrowser": "false",
     }
 
-    # Placeholders até a implementação do GET ao MANAGER.
-    creationDate: Optional[str] = "creationDate"
-    revisions: Optional[str] = "revisions"
-    lastRevision: Optional[str] = "lastRevision"
+    # Placeholders until the implementation of GET in Sensedia APIM is completed.
+    creationDate: Optional[int] = "creationDate"
+    revisions: Optional[list[dict]] = "revisions"
+    lastRevision: Optional[dict] = "lastRevision"
 
     @field_validator("basePath")
     def _normalize_path(cls, v: str) -> str:

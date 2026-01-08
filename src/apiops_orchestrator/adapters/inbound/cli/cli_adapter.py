@@ -9,14 +9,14 @@ app = typer.Typer(
 @app.command("sync-openapi")
 def sync_openapi(
     repo: Path = typer.Option(
-        ..., "--repo", "-r", help="Caminho do Repositório da API"
+        ..., "--repo", "-r", help="API Repository Path"
     ),
-    env: str = typer.Option(..., "--env", "-e", help="Ambiente alvo (ex.: dev, hmg, prd)"),
+    env: str = typer.Option(..., "--env", "-e", help="Target environment (e.g., dev, hmg, prd)"),
     apply: bool = typer.Option(
-        False, "--apply/--no-apply", help="POST /revisions; se não, DRY-RUN."
+        False, "--apply/--no-apply", help="POST /revisions; otherwise, DRY-RUN."
     ),
     out_dir: Path | None = typer.Option(
-        None, "--out-dir", help="Diretório para salvar o plano gerado"
+        None, "--out-dir", help="Directory to save the generated plan"
     ),
 ) -> None:
     try:
@@ -25,8 +25,8 @@ def sync_openapi(
         rprint({"error": str(e)})
         raise typer.Exit(code=1)
 
-# Necessário ter outro comando para o typer reconhecer o sync_openapi, caso contrário, qualquer chamada direta ao arquivo main.py caira no sync-openapi, sem receber parametros
-# Considerando que será implementado outros comandos no futuro para substituir esse placeholder, não vejo problema.
+# Another command is required for Typer to recognize sync_openapi; otherwise, any direct call to main.py will fall back to sync-openapi without receiving parameters.
+# Considering that other commands will be implemented in the future to replace this placeholder, I don't see an issue..
 @app.command("placeholder")
 def placeholder() -> None:
     try:

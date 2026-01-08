@@ -27,7 +27,7 @@ class LocalFileLoaderAdapter(PathLoaderPort):
 
     def load_path(self, path: Path) -> Any | List[Any]:
         if not path.exists():
-            raise FileNotFoundError(path)
+            raise FileNotFoundError(f"File not found: {path}")
         if path.is_file():
             return self._load_single_file(path)
         return [
@@ -37,6 +37,7 @@ class LocalFileLoaderAdapter(PathLoaderPort):
         ]
 
     def _load_single_file(self, file_path: Path) -> Any:
+
         self._ensure_utf8_encoding(file_path)
 
         suffix = file_path.suffix.lower()
