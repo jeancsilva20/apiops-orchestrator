@@ -18,7 +18,7 @@ from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
 from apiops_orchestrator.domain.ports.file_exporter_port import PathExporterPort
 from apiops_orchestrator.domain.services.json_to_yaml_service import JsonToYamlService
-from apiops_orchestrator.domain.services.json_to_yaml_enum import JsonKind
+from apiops_orchestrator.application.enums.json_to_yaml_enum import JsonKind
 
 
 # Mock Data Structures that mimic the real Pydantic models
@@ -200,7 +200,7 @@ class TestJsonToYamlService:
             )
 
             # Skip validation for ResourcesList due to schema mismatch
-            if kind == JsonKind.RESOURCES.value:
+            if kind == JsonKind.RESOURCES_LIST.value:
                 continue
 
             validator_to_use = None

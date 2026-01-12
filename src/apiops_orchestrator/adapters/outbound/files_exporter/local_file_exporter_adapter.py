@@ -14,7 +14,7 @@ from apiops_orchestrator.adapters.outbound.files_exporter.files_exporter_excepti
 )
 
 from apiops_orchestrator.domain.ports.file_exporter_port import PathExporterPort
-from apiops_orchestrator.domain.services.json_to_yaml_enum import (
+from apiops_orchestrator.application.enums.json_to_yaml_enum import (
     JsonKind,
     JsonKindFileName,
 )
@@ -47,7 +47,7 @@ class LocalFileExporterAdapter(PathExporterPort):
             elif kind == JsonKind.INTERCEPTORS.value:
                 file_name = JsonKindFileName.INTERCEPTORS.value
                 part_content = part
-            elif kind == JsonKind.RESOURCES.value:
+            elif kind == JsonKind.RESOURCES_LIST.value:
                 file_name = JsonKindFileName.RESOURCES.value
                 part_content = part
             elif kind == JsonKind.API_OPERATIONS.value:

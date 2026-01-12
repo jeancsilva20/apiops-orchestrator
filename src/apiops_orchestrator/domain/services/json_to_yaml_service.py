@@ -7,7 +7,7 @@ from uuid import UUID
 from apiops_orchestrator.domain.ports.file_exporter_port import PathExporterPort
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
-from apiops_orchestrator.domain.services.json_to_yaml_enum import JsonKind
+from apiops_orchestrator.application.enums.json_to_yaml_enum import JsonKind
 
 
 class _YamlDocumentFactory:
@@ -71,7 +71,7 @@ class JsonToYamlService:
                 yaml_parts.append(
                     {
                         "apiVersion": self.settings.KIND_VERSION,
-                        "kind": JsonKind.RESOURCES.value,
+                        "kind": JsonKind.RESOURCES_LIST.value,
                         "items": resources_list,
                     }
                 )
