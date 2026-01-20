@@ -4,9 +4,7 @@ import sys
 from adapters.inbound.files_importer.local_file_importer_adapter import (
     LocalFileLoaderAdapter,
 )
-from apiops_orchestrator.adapters.outbound.files_exporter.local_file_exporter_adapter import (
-    LocalFileExporterAdapter,
-)
+
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
 from apiops_orchestrator.domain.services.json_to_yaml_service import JsonToYamlService
 from apiops_orchestrator.infrastructure.observability.logging import (
@@ -125,8 +123,7 @@ def generate_api_json(
 def generate_yaml_files(
     final_json: ApiFull, settings: Settings, versioner_service: VersionerService
 ):
-    local_file_adapter = LocalFileExporterAdapter()
-    service = JsonToYamlService(final_json, settings, local_file_adapter)
+    service = JsonToYamlService(final_json, settings)
     result = service.build_yaml_parts()
     versioner_service.version(result)
 
@@ -166,10 +163,7 @@ def main() -> None:
         )
         publisher_service = PublisherService(manager_adapter)
         repo_adapter = ApiRepoAdapter()
-        local_file_exporter_adapter = LocalFileExporterAdapter()
-        versioner_service = VersionerService(
-            manager_adapter, repo_adapter, settings
-        )
+        versioner_service = VersionerService(manager_adapter, repo_adapter, settings)
 
         schema_mapping = {
             "artifacts/templates/api-basic-info.yaml": "api-basic-info.schema.json",

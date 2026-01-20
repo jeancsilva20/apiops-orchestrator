@@ -43,7 +43,7 @@ class RevisionFileGenerator:
         """
         kind = api_part.get("kind")
         file_name = self._get_filename_from_object(api_part)
-        file_content_str = yaml.dump(api_part)
+        file_content_str = yaml.dump(api_part, sort_keys=False)
 
         if kind in [JsonKind.API_BASIC_INFO.value, JsonKind.INTERCEPTORS.value]:
             destination = tmp_dir_path / "templates"

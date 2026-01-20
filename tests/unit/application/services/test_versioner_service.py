@@ -11,11 +11,7 @@ class FakeSettings:
         self.PROJECT_ROOT = root
         self.API_REPO_FOLDER = "repo"
         self.revisions_folder = (
-            self.PROJECT_ROOT
-            / self.API_REPO_FOLDER
-            / "src"
-            / "apis"
-            / "revisions"
+            self.PROJECT_ROOT / self.API_REPO_FOLDER / "src" / "apis" / "revisions"
         )
 
 
@@ -40,11 +36,7 @@ def manager_adapter():
 def service(manager_adapter, repo_adapter, settings) -> VersionerService:
     # Make sure the base directories exist for the service to initialize
     (
-        settings.PROJECT_ROOT
-        / settings.API_REPO_FOLDER
-        / "src"
-        / "apis"
-        / "revisions"
+        settings.PROJECT_ROOT / settings.API_REPO_FOLDER / "src" / "apis" / "revisions"
     ).mkdir(parents=True, exist_ok=True)
     return VersionerService(manager_adapter, repo_adapter, settings)
 
@@ -56,7 +48,7 @@ def test_version_success_orchestration(service, manager_adapter):
     """
     # Arrange
     service._create_tmp_dir = Mock(return_value=".tmp_123")
-    service._finish_process_sucess = Mock()
+    service._finish_process_success = Mock()
     service._cleanup_on_error = Mock()
     service.file_generator = Mock()  # Directly mock the instance
     mock_file_generator_instance = service.file_generator
@@ -73,7 +65,7 @@ def test_version_success_orchestration(service, manager_adapter):
     mock_file_generator_instance.create_revision_files.assert_called_once_with(
         api_content, tmp_dir_path
     )
-    service._finish_process_sucess.assert_called_once_with(".tmp_123", "1")
+    service._finish_process_success.assert_called_once_with(".tmp_123", "1")
     service._cleanup_on_error.assert_not_called()
 
 
@@ -83,7 +75,7 @@ def test_version_failure_triggers_cleanup(service, manager_adapter):
     """
     # Arrange
     service._create_tmp_dir = Mock(return_value=".tmp_123")
-    service._finish_process_sucess = Mock()
+    service._finish_process_success = Mock()
     service._cleanup_on_error = Mock()
     service.file_generator = Mock()  # Directly mock the instance
     mock_file_generator_instance = service.file_generator
@@ -98,7 +90,7 @@ def test_version_failure_triggers_cleanup(service, manager_adapter):
 
     manager_adapter.get_api_by_id.assert_called_once()
     service._create_tmp_dir.assert_called_once_with("1")
-    service._finish_process_sucess.assert_not_called()
+    service._finish_process_success.assert_not_called()
     service._cleanup_on_error.assert_called_once_with(".tmp_123")
 
 
@@ -133,9 +125,7 @@ def test_create_tmp_dir_success(service, repo_adapter):
 
     # Assert
     assert tmp_dir_name.startswith(f".tmp_{new_revision_number}_")
-    repo_adapter.create_file.assert_called_once_with(
-        service.repo_path, ".lock", ANY
-    )
+    repo_adapter.create_file.assert_called_once_with(service.repo_path, ".lock", ANY)
     assert repo_adapter.create_dir.call_count == 4
     repo_adapter.create_dir.assert_any_call(service.revisions_folder, tmp_dir_name)
     repo_adapter.create_dir.assert_any_call(
@@ -185,7 +175,7 @@ def test_finish_process_sucess(service, repo_adapter):
     new_revision_number = "2"
 
     # Act
-    service._finish_process_sucess(tmp_dir_name, new_revision_number)
+    service._finish_process_success(tmp_dir_name, new_revision_number)
 
     # Assert
     repo_adapter.rename_dir.assert_called_once_with(

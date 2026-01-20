@@ -50,7 +50,7 @@ class VersionerService:
             self.file_generator.create_revision_files(api_content, tmp_dir_path)
             logger.info("Successfully created all revision files.")
 
-            self._finish_process_sucess(tmp_dir_name, new_revision_number)
+            self._finish_process_success(tmp_dir_name, new_revision_number)
             logger.info(f"Successfully finalized revision {new_revision_number}.")
 
             # Set tmp_dir_name to None to prevent cleanup of a successful revision
@@ -81,7 +81,7 @@ class VersionerService:
         except Exception as e:
             logger.error(f"Critical error during cleanup process: {e}", exc_info=True)
 
-    def _finish_process_sucess(self, tmp_dir_name: str, new_revision_number: str):
+    def _finish_process_success(self, tmp_dir_name: str, new_revision_number: str):
         self.repo.rename_dir(self.revisions_folder, tmp_dir_name, new_revision_number)
         self.repo.delete_file(self.repo_path, ".lock")
 

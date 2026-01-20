@@ -1,10 +1,8 @@
 import json
 import logging
-from dataclasses import asdict, is_dataclass
 from typing import List, Dict, Any
-from uuid import UUID
+import re
 
-from apiops_orchestrator.domain.ports.file_exporter_port import PathExporterPort
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
 from apiops_orchestrator.application.enums.json_to_yaml_enum import JsonKind
@@ -33,12 +31,10 @@ class JsonToYamlService:
         self,
         json_full_object: ApiFull,
         settings: Settings,
-        file_exporter_port: PathExporterPort,
     ) -> None:
         self.json_full_object = json_full_object
         self.logger = logging.getLogger(__name__)
         self.settings = settings
-        self.file_exporter_port = file_exporter_port
 
         # Keys for Dictionary Lookup via .get()
         self.KIND_KEY = "kind"
@@ -89,7 +85,7 @@ class JsonToYamlService:
     def _create_api_basic_info_part(self) -> Dict[str, Any]:
         self.logger.debug("Creating API basic information part")
         try:
-            api_data = self._to_dict(self.json_full_object.api)
+            api_data = self.json_full_object.api.model_dump()
             self.logger.debug("API data converted to dictionary")
 
             # Cleans unimportant properties
@@ -141,6 +137,7 @@ class JsonToYamlService:
                 spec=spec,
                 api_version=self.settings.KIND_VERSION,
             )
+
             self.logger.info("Interceptors YAML document created successfully")
             return result
         except Exception as e:
@@ -212,12 +209,10 @@ class JsonToYamlService:
                 )
 
                 # Prepares operation content
-                op_data = self._to_dict(op)
+                op_data = op.model_dump()
 
                 # Generates file name
-                file_name = self.file_exporter_port.generate_filename(
-                    op.method, op.path
-                )
+                file_name = self._generate_filename(op.method, op.path)
                 self.logger.debug(f"Generated file name: {file_name}")
 
                 # Creates reference for resources.yaml
@@ -299,9 +294,8 @@ class JsonToYamlService:
     def _prepare_interceptor(self, interceptor_obj: Any) -> Dict[str, Any]:
         self.logger.debug("Preparing interceptor")
         try:
-            i_dict = self._to_dict(interceptor_obj)
+            i_dict = interceptor_obj.model_dump()
             content = i_dict.get("content")
-
             # Tries to convert string JSON to Dict
             if isinstance(content, str):
                 try:
@@ -329,62 +323,28 @@ class JsonToYamlService:
                     f"Numeric content converted to integer: {i_dict['content']}"
                 )
 
+            # print(f"i_dict after content processing: {i_dict}")
+
             # Removes internal fields
             i_dict.pop("parent", None)
             i_dict.pop("revision", None)
             i_dict.pop("id", None)
             i_dict.pop("idTemp", None)
 
-            self.logger.debug("Interceptor prepared successfully")
             return i_dict
         except Exception as e:
             self.logger.error(f"Error preparing interceptor: {str(e)}", exc_info=True)
             raise
 
-    def _to_dict(self, obj: Any, _max_depth: int = 100, _current_depth: int = 0) -> Any:
+    @staticmethod
+    def _generate_filename(method: str, path: str) -> str:
         """
-        Convert objects to dictionaries recursively.
-
-        Handles:
-        - Dataclasses (using asdict)
-        - Objects with __dict__ attribute
-        - Lists and dicts (recursive conversion)
-        - Primitives (returned as-is)
+        Transforms path and method into file name
         """
-        if _current_depth > _max_depth:
-            self.logger.warning(f"Maximum recursion depth exceeded {_max_depth}")
-            raise RecursionError(
-                f"Profundidade máxima de recursão excedida {_max_depth}"
-            )
+        base_name = f"{str(method).lower()}{str(path).lower()}"
+        clean_name = base_name.replace("/", "_")
+        clean_name = re.sub(r'[<>:"\\|?*]', "", clean_name)
+        # Removes duplicated underscores in beginning or end after concatenation
+        clean_name = clean_name.strip("_")
 
-        # Handle dataclasses (fastest path for structured data)
-        if is_dataclass(obj) and not isinstance(obj, type):
-            try:
-                return asdict(obj)
-            except Exception as e:
-                self.logger.debug(
-                    f"Conversão de dataclass usando asdict falhou: {str(e)}"
-                )
-                # Fallback to __dict__ conversion
-                if hasattr(obj, "__dict__"):
-                    return self._to_dict(obj.__dict__, _max_depth, _current_depth + 1)
-
-        # Handle lists
-        if isinstance(obj, list):
-            return [self._to_dict(item, _max_depth, _current_depth + 1) for item in obj]
-
-        # Handle dictionaries
-        if isinstance(obj, dict):
-            return {
-                key: self._to_dict(value, _max_depth, _current_depth + 1)
-                for key, value in obj.items()
-            }
-
-        # Handle objects with __dict__ attribute
-        if hasattr(obj, "__dict__") and not isinstance(
-            obj, (str, int, float, bool, type(None), UUID)
-        ):
-            return self._to_dict(obj.__dict__, _max_depth, _current_depth + 1)
-
-        # Return primitives as-is (str, int, float, bool, None, UUID, etc.)
-        return obj
+        return f"{clean_name}.yaml"
