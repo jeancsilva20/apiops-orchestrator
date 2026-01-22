@@ -1,7 +1,12 @@
 from pathlib import Path
 from typing import Dict, List
 import logging
-from apiops_orchestrator.infrastructure.observability.logging import log_duration, set_span_id, clear_operation_context, set_status
+from apiops_orchestrator.infrastructure.observability.logging import (
+    log_duration,
+    set_span_id,
+    clear_operation_context,
+    set_status,
+)
 
 
 class RepoValidator:
@@ -9,9 +14,9 @@ class RepoValidator:
         """
         Example of rules:
         rules = {
-          "Templates": ["api-basic-info.yaml", "default-interceptors.yaml"],
-          "Resources": [],
-          "Env-Variables": []
+          "templates": ["api-basic-info.yaml", "default-interceptors.yaml"],
+          "resources": [],
+          "env-variables": []
         }
         """
         self.rules = rules
@@ -45,5 +50,3 @@ class RepoValidator:
                 raise ValueError(
                     "Artifact repository validation failed:\n" + "\n".join(errors)
                 )
-
-

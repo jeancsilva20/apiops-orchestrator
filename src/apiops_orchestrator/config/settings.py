@@ -60,10 +60,10 @@ class Settings(BaseSettings):
     ORCHEST_SCHEMA_FOLDER: str = "apiops_orchestrator/domain/schemas"
 
     ARTIFACTS_FILE_FOLDER_VALIDATION_RULES: dict = {
-        "Templates": [
+        "templates": [
             "api-basic-info.yaml",
             "default-interceptors.yaml",
         ],
-        "Resources": [],
-        "Env-Variables": [],
+        "resources": [],
+        "env-Variables": [],
     }
