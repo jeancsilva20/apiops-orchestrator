@@ -8,7 +8,7 @@ class ApiRepoAdapter(ApiRepoPort):
         self.logger = logging.getLogger(__name__)
 
     def create_dir(self, path: Path, dir_name: str) -> None:
-        path.joinpath(dir_name).mkdir()
+        path.joinpath(dir_name).mkdir(parents=True, exist_ok=True)
 
     def delete_dir(self, path: Path, dir_name: str) -> None:
         shutil.rmtree(path.joinpath(dir_name))
