@@ -1,8 +1,7 @@
 import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
-from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from typing import List, Any
 
 from apiops_orchestrator.application.services.file_importer_service import (
     FileImporterService,
@@ -16,78 +15,15 @@ from apiops_orchestrator.adapters.inbound.files_importer.local_file_importer_ada
 from apiops_orchestrator.application.services.schema_validator import SchemaValidator
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
-from apiops_orchestrator.domain.ports.file_exporter_port import PathExporterPort
+from apiops_orchestrator.domain.models.api_partial_model import (
+    ApiPartialInfo,
+    ApiResponsible,
+)
+from apiops_orchestrator.domain.models.interceptors_model import Interceptor
+from apiops_orchestrator.domain.models.resources_model import Resource
+from apiops_orchestrator.domain.models.api_operations_model import Operation
 from apiops_orchestrator.domain.services.json_to_yaml_service import JsonToYamlService
-from apiops_orchestrator.domain.services.json_to_yaml_enum import JsonKind
-
-
-# Mock Data Structures that mimic the real Pydantic models
-@dataclass
-class MockApiResponsible:
-    username: str
-    groupName: str
-
-
-@dataclass
-class MockInterceptor:
-    name: str
-    type: str = "Request"
-    flow: str = "Pre"
-    script: str = "console.log('test');"
-    content: Dict[str, Any] = field(default_factory=dict)
-    parent: Optional[Any] = None
-    revision: Optional[Any] = None
-    id: Optional[str] = None
-    idTemp: Optional[str] = None
-    position: int = 1
-    executionPoint: str = "MESSAGE_RECEIVED"
-    status: str = "ENABLED"
-
-
-@dataclass
-class MockOperation:
-    path: str
-    method: str
-    description: str
-    destination: str = "http://mock.destination"
-    interceptors: List[MockInterceptor] = field(default_factory=list)
-    id: Optional[str] = None
-
-
-@dataclass
-class MockResource:
-    name: str
-    description: str
-    operations: List[MockOperation] = field(default_factory=list)
-
-
-@dataclass
-class MockApiPartialInfo:
-    id: str
-    name: str
-    version: str
-    description: str
-    basePath: str
-    apiResponsible: MockApiResponsible = field(
-        default_factory=lambda: MockApiResponsible(
-            username="testuser", groupName="Test Group"
-        )
-    )
-    revisions: List[Any] = field(default_factory=list)
-    deployments: List[Any] = field(default_factory=list)
-    creationDate: int = 1672531200
-    apiType: str = "STANDARD"
-    apiSwaggerConfiguration: Optional[Any] = None
-    lastRevision: Optional[Any] = None
-    apiTags: List[str] = field(default_factory=list)
-    visibility: Optional[Any] = None
-
-
-@dataclass
-class MockApiFull:
-    api: MockApiPartialInfo
-    interceptors: List[MockInterceptor] = field(default_factory=list)
-    resources: List[MockResource] = field(default_factory=list)
+from apiops_orchestrator.application.enums.json_to_yaml_enum import JsonKind
 
 
 @pytest.fixture
@@ -96,18 +32,6 @@ def settings() -> Settings:
     mock_settings.KIND_VERSION = "api-management.sensedia.com/v1"
     mock_settings.PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
     return mock_settings
-
-
-@pytest.fixture
-def file_exporter_port() -> PathExporterPort:
-    mock_port = MagicMock(spec=PathExporterPort)
-
-    def generate_filename(method: str, path: str) -> str:
-        clean_path = path.replace("/", "_").strip("_").replace("{", "").replace("}", "")
-        return f"{method.lower()}_{clean_path}.yaml"
-
-    mock_port.generate_filename.side_effect = generate_filename
-    return mock_port
 
 
 @pytest.fixture
@@ -123,33 +47,56 @@ def schema_validator(settings) -> SchemaValidator:
 
 
 @pytest.fixture
-def api_full_object():
-    return MockApiFull(
-        api=MockApiPartialInfo(
+def api_full_object() -> ApiFull:
+    """Provides a test object using the real Pydantic models."""
+    return ApiFull(
+        api=ApiPartialInfo(
             id="123",
             name="Test API",
             version="1.0.0",
             description="A test API",
             basePath="/test",
+            apiResponsible=ApiResponsible(username="testuser", groupName="Test Group"),
+            creationDate=1672531200,  # Example integer timestamp
+            revisions=[],  # Empty list as expected type
+            lastRevision=None,  # None as expected for Optional[dict]
         ),
         interceptors=[
-            MockInterceptor(name="Global-Request-Interceptor", position=1),
+            Interceptor(
+                name="Global-Request-Interceptor",
+                position=1,
+                content={},
+                type="Request",
+                executionPoint="MESSAGE_RECEIVED",
+                status="ENABLED",
+            ),
         ],
         resources=[
-            MockResource(
+            Resource(
                 name="Users",
                 description="Resource for user operations",
                 operations=[
-                    MockOperation(
+                    Operation(
                         path="/users",
                         method="GET",
                         description="Get all users",
+                        destination="http://mock.destination",
                         interceptors=[
-                            MockInterceptor(name="Op-Specific-Interceptor", position=2)
+                            Interceptor(
+                                name="Op-Specific-Interceptor",
+                                position=2,
+                                content={},
+                                type="Request",
+                                executionPoint="MESSAGE_RECEIVED",
+                                status="ENABLED",
+                            )
                         ],
                     ),
-                    MockOperation(
-                        path="/users/{id}", method="POST", description="Create a user"
+                    Operation(
+                        path="/users/{id}",
+                        method="POST",
+                        description="Create a user",
+                        destination="http://mock.destination",
                     ),
                 ],
             )
@@ -162,13 +109,13 @@ class TestJsonToYamlService:
         self,
         api_full_object: ApiFull,
         settings: Settings,
-        file_exporter_port: PathExporterPort,
         schema_validator: SchemaValidator,
     ):
+        # The service now needs the file_exporter_port in its constructor.
+        # Let's mock it since we are not testing the file writing itself here.
         service = JsonToYamlService(
             json_full_object=api_full_object,
             settings=settings,
-            file_exporter_port=file_exporter_port,
         )
 
         # Validator for schemas in src/
@@ -190,6 +137,8 @@ class TestJsonToYamlService:
 
         yaml_parts = service.build_yaml_parts()
 
+        # The number of parts might change based on the real models, let's adjust.
+        # 1 basic-info, 1 interceptors, 1 resources, 2 operations = 5 parts. This seems right.
         assert len(yaml_parts) == 5
 
         errors = []
@@ -200,7 +149,7 @@ class TestJsonToYamlService:
             )
 
             # Skip validation for ResourcesList due to schema mismatch
-            if kind == JsonKind.RESOURCES.value:
+            if kind == JsonKind.RESOURCES_LIST.value:
                 continue
 
             validator_to_use = None

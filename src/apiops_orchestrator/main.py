@@ -4,9 +4,7 @@ import sys
 from adapters.inbound.files_importer.local_file_importer_adapter import (
     LocalFileLoaderAdapter,
 )
-from apiops_orchestrator.adapters.outbound.files_exporter.local_file_exporter_adapter import (
-    LocalFileExporterAdapter,
-)
+
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
 from apiops_orchestrator.domain.services.json_to_yaml_service import JsonToYamlService
 from apiops_orchestrator.infrastructure.observability.logging import (
@@ -29,6 +27,10 @@ from adapters.outbound.http.manager_api.manager_api_adapter import ManagerApiAda
 from config.settings import Settings
 from pathlib import Path
 from apiops_orchestrator.application.services.conversor_service import ConversorService
+from apiops_orchestrator.adapters.outbound.template_repo.api_repo_adapter import (
+    ApiRepoAdapter,
+)
+from apiops_orchestrator.application.services.versioner_service import VersionerService
 from typing import List, Dict
 
 
@@ -118,12 +120,12 @@ def generate_api_json(
     return result
 
 
-def generate_yaml_files(final_json: ApiFull, settings: Settings):
-    local_file_adapter = LocalFileExporterAdapter()
-    service = JsonToYamlService(final_json, settings, local_file_adapter)
+def generate_yaml_files(
+    final_json: ApiFull, settings: Settings, versioner_service: VersionerService
+):
+    service = JsonToYamlService(final_json, settings)
     result = service.build_yaml_parts()
-    # Output de teste
-    local_file_adapter.export_path(result, "teste")
+    versioner_service.version(result)
 
 
 def main() -> None:
@@ -141,8 +143,8 @@ def main() -> None:
         )  # This Path is the default for the pipeline. If you're running locally, change this Path to your local API Repository.
 
         repo_validator = RepoValidator(settings.ARTIFACTS_FILE_FOLDER_VALIDATION_RULES)
-        local_file_adapter = LocalFileLoaderAdapter()
-        file_importer_service = FileImporterService(local_file_adapter)
+        local_file_loader_adapter = LocalFileLoaderAdapter()
+        file_importer_service = FileImporterService(local_file_loader_adapter)
         api_bindings_file = file_importer_service.load_file_path(
             repo_path / "bindings.json"
         )
@@ -160,6 +162,8 @@ def main() -> None:
             settings=settings,
         )
         publisher_service = PublisherService(manager_adapter)
+        repo_adapter = ApiRepoAdapter()
+        versioner_service = VersionerService(manager_adapter, repo_adapter, settings)
 
         schema_mapping = {
             "artifacts/templates/api-basic-info.yaml": "api-basic-info.schema.json",
@@ -184,10 +188,10 @@ def main() -> None:
         )
 
         logger.info("Step 5: POST /revisions call started")
-        publish_response = publisher_service.publish_changes(final_json)
+        publisher_service.publish_changes(final_json)
 
         logger.info("Step 6: Convert JSON file to YAML file")
-        generate_yaml_files(final_json, settings)
+        generate_yaml_files(final_json, settings, versioner_service)
 
         logger.debug("POST call successfully completed")
         # print(json.dumps(publish_response, indent=2, ensure_ascii=False))

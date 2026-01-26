@@ -8,7 +8,7 @@ from apiops_orchestrator.application.exceptions.yaml_to_json_exceptions import (
     ResourcesListNotFoundException,
     ApiBasicInfoNotFoundException,
 )
-from apiops_orchestrator.application.enums.yaml_to_json_enum import YamlKind
+from apiops_orchestrator.application.enums.json_to_yaml_enum import JsonKind
 from apiops_orchestrator.domain.models.api_partial_model import (
     ApiBasicInfo,
     ApiPartialInfo,
@@ -32,7 +32,12 @@ class ConversorService:
     Service to build a complete API JSON structure from a list of YAML data parts.
     """
 
-    def __init__(self, yamls: List[Dict[str, Any]], settings: Settings, manager_api: ManagerApiPort):
+    def __init__(
+        self,
+        yamls: List[Dict[str, Any]],
+        settings: Settings,
+        manager_api: ManagerApiPort,
+    ):
         self.yamls = yamls
         self.settings = settings
         self.manager_api = manager_api
@@ -43,11 +48,11 @@ class ConversorService:
         self._resource_specs: list[ResourceSpec] = []
 
         # Maps kinds to processing methods
-        self._parsers: Dict[YamlKind, Callable[[Dict[str, Any]], None]] = {
-            YamlKind.API_BASIC_INFO: self._process_api_basic_info,
-            YamlKind.INTERCEPTORS: self._process_interceptors_file,
-            YamlKind.API_OPERATIONS: self._process_api_operations,
-            YamlKind.RESOURCES_LIST: self._process_resources_list,
+        self._parsers: Dict[JsonKind, Callable[[Dict[str, Any]], None]] = {
+            JsonKind.API_BASIC_INFO: self._process_api_basic_info,
+            JsonKind.INTERCEPTORS: self._process_interceptors_file,
+            JsonKind.API_OPERATIONS: self._process_api_operations,
+            JsonKind.RESOURCES_LIST: self._process_resources_list,
         }
 
         # Keys for Dictionary Lookup via .get()
@@ -66,7 +71,7 @@ class ConversorService:
                 if not kind_str:
                     raise ValueError(f"Kind field is required: {data}")
 
-                kind_value = YamlKind(kind_str)
+                kind_value = JsonKind(kind_str)
                 parser = self._parsers.get(kind_value)
                 if parser:
                     parser(data)
@@ -94,7 +99,9 @@ class ConversorService:
                 errors.append(f"- {field}: {message}")
 
             formatted_error = "\n".join(errors)
-            raise ValueError(f"YAML content validation failed:\n{formatted_error}") from e
+            raise ValueError(
+                f"YAML content validation failed:\n{formatted_error}"
+            ) from e
         except (
             ValueError,
             KeyError,
@@ -200,4 +207,6 @@ class ConversorService:
             ):
                 interceptor.content = json.dumps(interceptor.content)
             else:
-                interceptor.content = json.dumps(manager_api.get_custom_interceptor_by_id(interceptor.content))
+                interceptor.content = json.dumps(
+                    manager_api.get_custom_interceptor_by_id(interceptor.content)
+                )
