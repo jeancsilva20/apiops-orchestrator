@@ -19,6 +19,7 @@ from apiops_orchestrator.infrastructure.utils.critical_exception_handler import 
     critical_exception_handler,
 )
 from application.services.publisher_service import PublisherService
+from apiops_orchestrator.application.services.deployer_service import DeployerService
 from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
 from application.services.file_importer_service import FileImporterService
 from application.services.repo_validator import RepoValidator
@@ -162,6 +163,7 @@ def main() -> None:
             settings=settings,
         )
         publisher_service = PublisherService(manager_adapter)
+        deployer_service = DeployerService(manager_adapter)
         repo_adapter = ApiRepoAdapter()
         versioner_service = VersionerService(manager_adapter, repo_adapter, settings)
 
@@ -189,6 +191,9 @@ def main() -> None:
 
         logger.info("Step 5: POST /revisions call started")
         publisher_service.publish_changes(final_json)
+
+        logger.info("Step 5.1: POST /deployments call started")
+        deployer_service.deploy_revision(settings.ENVIRONMENT_ID)
 
         logger.info("Step 6: Convert JSON file to YAML file")
         generate_yaml_files(final_json, settings, versioner_service)

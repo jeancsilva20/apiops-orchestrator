@@ -24,6 +24,7 @@ class Settings(BaseSettings):
 
     # API Data
     API_ID: str
+    ENVIRONMENT_ID: int
 
     # Adaptive Governance Data
     WORKFLOW_ID: str | None = None

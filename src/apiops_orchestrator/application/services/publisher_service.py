@@ -57,3 +57,4 @@ class PublisherService:
         payload = formatted_api_data.model_dump(by_alias=True, exclude_none=True)
 
         return self.publisher.publish_api_changes(payload)
+

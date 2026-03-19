@@ -12,6 +12,11 @@ class ManagerApiPort(ABC):
         """Contract to publish new API revisions"""
         pass
 
+    @abstractmethod
+    def deploy_api(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Contract to deploy an API revision"""
+        pass
+
     def get_custom_interceptor_by_id(self, custom_interceptor_id: int) -> Dict[str, str] | None:
         """Get the content of a custom interceptor"""
         pass
