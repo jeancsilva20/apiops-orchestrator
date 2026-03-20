@@ -30,7 +30,7 @@ class DeployerService:
         with log_duration(__name__):
             self.logger.info(f"Retrieving API data to get last revision")
             remote_api_data = self.fetch_remote_api_data()
-            revision_id = remote_api_data["lastRevision"]
+            revision_id = remote_api_data["lastRevision"]["id"]
 
             payload = {
                 "environmentId": environment_id,
