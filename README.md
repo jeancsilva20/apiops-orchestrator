@@ -56,7 +56,7 @@ Before running, you **must** configure the path to the API repository and other 
     Create a `.env` file in the project root, copying the content of `.env.example`. This file will be used to set the environment variables required by the orchestrator.
 
 2.  **API Repository Path**
-    By default, the orchestrator looks for the API repository in the `./external-repo` folder. You can change this by setting the `API_REPO_FOLDER` variable in your `.env` file:
+    By default, the orchestrator looks for the API repository in the `./external-repo` folder. You can change this by setting the `API_REPO_FOLDER` variable in the 'settings.py' file:
     ```env
     API_REPO_FOLDER="C:\path\to\your\api-repo"
     ```
