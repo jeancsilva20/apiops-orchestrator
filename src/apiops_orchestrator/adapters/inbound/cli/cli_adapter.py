@@ -4,7 +4,7 @@ from rich import print as rprint
 
 app = typer.Typer(
     name="sen",
-    help="APIOps CLI - compose/validate/plan/apply para Sensedia Manager API",
+    help=" APIOps CLI - Framework GitOps to automate, standardize and manage your APIs.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -33,7 +33,9 @@ def version_callback(value: bool):
 
 @app.callback()
 def main_callback(
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Aumenta nivel de log."),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Aumenta nivel de log."
+    ),
     version: bool = typer.Option(
         None,
         "--version",
