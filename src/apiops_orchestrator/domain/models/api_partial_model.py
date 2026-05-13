@@ -37,9 +37,15 @@ class ApiPartialInfo(BaseModel):
     }
 
     # Placeholders until the implementation of GET in Sensedia APIM is completed.
-    creationDate: Optional[int] = "creationDate"
-    revisions: Optional[list[dict]] = "revisions"
-    lastRevision: Optional[dict] = "lastRevision"
+    creationDate: Optional[int] = (
+        "creationDate"  # TODO: Puxar do arquivo? Não vai ser mais fazendo GET no manager.
+    )
+    revisions: Optional[list[dict]] = (
+        "revisions"  # TODO: Puxar das pastas, não vai ser mais fazendo GET no manager.
+    )
+    lastRevision: Optional[dict] = (
+        "lastRevision"  # TODO: Puxar das pastas, não vai ser mais fazendo GET no manager.
+    )
 
     @field_validator("basePath")
     def _normalize_path(cls, v: str) -> str:

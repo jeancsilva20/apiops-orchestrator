@@ -13,7 +13,7 @@ load_dotenv(dotenv_path=dotenv_path)
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=str(dotenv_path), env_file_encoding="utf-8"
+        env_file=str(dotenv_path), env_file_encoding="utf-8", extra="ignore"
     )
 
     HOST: str
@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     API_REPO_REVISIONS_PATH: str = (
         "src/api/revisions"  # This is where folders 1, 2, 3 etc… are located.
     )
+    # New Layout Folders
+    API_REPO_API_INFO_FOLDER: str = "api-info"
+    API_REPO_ENVIRONMENTS_FOLDER: str = "environments"
+    API_REPO_REVISIONS_FOLDER: str = "revisions"
+
     ORCHEST_SCHEMA_FOLDER: str = "apiops_orchestrator/domain/schemas"
 
     ARTIFACTS_FILE_FOLDER_VALIDATION_RULES: dict = {
@@ -66,4 +71,10 @@ class Settings(BaseSettings):
         ],
         "Resources": [],
         "Env-Variables": [],
+    }
+
+    NEW_STRUCTURE_VALIDATION_RULES: dict = {
+        "api-info": ["api-basic-info.yaml"],
+        "environments": [],
+        "revisions": [],
     }
