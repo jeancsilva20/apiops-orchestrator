@@ -40,7 +40,7 @@ class ApiPartialInfo(BaseModel):
     # Placeholders until the implementation of GET in Sensedia APIM is completed.
     creationDate: Optional[int] = None
     revisions: Optional[List[dict]] = []
-    lastRevision: Optional[dict] = None
+    lastRevision: Optional[dict] = {}
 
     @field_validator("basePath")
     def _normalize_path(cls, v: str) -> str:
