@@ -41,6 +41,7 @@ class ConversorService:
         self._interceptors: list[Interceptor] = []
         self._operations_by_file: dict[str, Operation] = {}
         self._resource_specs: list[ResourceSpec] = []
+        self._revision_number: int = 999
 
         # Maps kinds to processing methods
         self._parsers: Dict[YamlKind, Callable[[Dict[str, Any]], None]] = {
@@ -48,6 +49,7 @@ class ConversorService:
             YamlKind.INTERCEPTORS: self._process_interceptors_file,
             YamlKind.API_OPERATIONS: self._process_api_operations,
             YamlKind.RESOURCES_LIST: self._process_resources_list,
+            YamlKind.REVISION_INFO: self._process_revision_info,
         }
 
         # Keys for Dictionary Lookup via .get()
@@ -77,6 +79,7 @@ class ConversorService:
 
             api_full = ApiFull(
                 api=self._api_partial_info,
+                revisionNumber=self._revision_number,
                 interceptors=self._interceptors,
                 resources=final_resources,
                 workflowId=self.settings.WORKFLOW_ID,
@@ -139,6 +142,9 @@ class ConversorService:
     def _process_resources_list(self, data: Dict[str, Any]):
         parsed = ResourcesSpecList(**data)
         self._resource_specs.extend(parsed.items)
+
+    def _process_revision_info(self, data: Dict[str, Any]):
+        self._revision_number = data.get("revisionNumber", 999)
 
     def _validate_presence_of_required_parts(self):
         if self._api_partial_info is None:

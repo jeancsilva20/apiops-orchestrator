@@ -1,5 +1,6 @@
 from pydantic import BaseModel, field_validator
 from typing import Optional, List
+from datetime import datetime
 
 
 class ApiResponsible(BaseModel):
@@ -32,20 +33,14 @@ class ApiPartialInfo(BaseModel):
     apiTags: Optional[List[ApiTag]] = []
     apiType: str = "REST"
     apiSwaggerConfiguration: dict = {
-        "showAppRegister": "false",
-        "showApiBrowser": "false",
+        "showAppRegister": False,
+        "showApiBrowser": False,
     }
 
     # Placeholders until the implementation of GET in Sensedia APIM is completed.
-    creationDate: Optional[int] = (
-        "creationDate"  # TODO: Puxar do arquivo? Não vai ser mais fazendo GET no manager.
-    )
-    revisions: Optional[list[dict]] = (
-        "revisions"  # TODO: Puxar das pastas, não vai ser mais fazendo GET no manager.
-    )
-    lastRevision: Optional[dict] = (
-        "lastRevision"  # TODO: Puxar das pastas, não vai ser mais fazendo GET no manager.
-    )
+    creationDate: Optional[int] = None
+    revisions: Optional[List[dict]] = []
+    lastRevision: Optional[dict] = None
 
     @field_validator("basePath")
     def _normalize_path(cls, v: str) -> str:
@@ -53,6 +48,23 @@ class ApiPartialInfo(BaseModel):
         if not s.startswith("/"):
             s = "/" + s
         return s
+
+    @field_validator("creationDate", mode="before")
+    def _parse_creation_date(cls, v):
+        from datetime import date as dt_date
+        if isinstance(v, (datetime, dt_date)):
+            # If it's just a date, convert to datetime first
+            if isinstance(v, dt_date) and not isinstance(v, datetime):
+                v = datetime.combine(v, datetime.min.time())
+            return int(v.timestamp() * 1000)
+        if isinstance(v, str):
+            try:
+                # Try YYYY-MM-DD
+                dt = datetime.strptime(v, "%Y-%m-%d")
+                return int(dt.timestamp() * 1000)
+            except ValueError:
+                return v
+        return v
 
 
 class ApiBasicInfo(BaseModel):

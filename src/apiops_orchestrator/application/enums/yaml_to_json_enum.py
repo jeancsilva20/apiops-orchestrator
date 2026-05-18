@@ -7,3 +7,4 @@ class YamlKind(Enum):
     API_OPERATIONS = "ApiOperations"
     RESOURCES_LIST = "ResourcesList"
     ENVIRONMENT = "Environment"
+    REVISION_INFO = "RevisionInfo"

@@ -44,11 +44,12 @@ def main():
         settings=settings,
     )
 
-    print(result)
+    # print(result)
 
     service = ConversorService(result, settings, manager_adapter)
-    json = service.build_api_json()
-    print(json)
+    api_full = service.build_api_json()
+    print(api_full.model_dump_json(indent=4))
+    # TODO revisionNumber geral não está 999
 
     try:
         app()
