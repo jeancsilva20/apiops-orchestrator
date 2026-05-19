@@ -49,7 +49,6 @@ def main():
     service = ConversorService(result, settings, manager_adapter)
     api_full = service.build_api_json()
     print(api_full.model_dump_json(indent=4))
-    # TODO revisionNumber geral não está 999
 
     try:
         app()

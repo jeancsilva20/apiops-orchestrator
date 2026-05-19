@@ -464,3 +464,28 @@ def test_complex_scenario_multiple_interceptors(complex_yamls, settings, manager
     assert len(result.interceptors) == 1  # Global interceptor
     assert len(result.resources[0].operations[0].interceptors) == 1  # Op1 interceptor
     assert len(result.resources[1].operations[0].interceptors) == 1  # Op2 interceptor
+
+
+def test_revision_number_is_always_999(
+    minimal_api_basic_info,
+    minimal_interceptors,
+    minimal_api_operations,
+    minimal_resources_list,
+    manager_api_adapter,
+    settings,
+):
+    """
+    Tests that revisionNumber is always 999, even if a RevisionInfo document is provided.
+    """
+    yamls = [
+        minimal_api_basic_info,
+        minimal_interceptors,
+        minimal_api_operations,
+        minimal_resources_list,
+        {"kind": "RevisionInfo", "revisionNumber": 123},
+    ]
+    service = ConversorService(yamls, settings, manager_api_adapter)
+    result = service.build_api_json()
+
+    assert result.revisionNumber == 999
+

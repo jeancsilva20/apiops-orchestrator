@@ -49,7 +49,6 @@ class ConversorService:
             YamlKind.INTERCEPTORS: self._process_interceptors_file,
             YamlKind.API_OPERATIONS: self._process_api_operations,
             YamlKind.RESOURCES_LIST: self._process_resources_list,
-            YamlKind.REVISION_INFO: self._process_revision_info,
         }
 
         # Keys for Dictionary Lookup via .get()
@@ -142,9 +141,6 @@ class ConversorService:
     def _process_resources_list(self, data: Dict[str, Any]):
         parsed = ResourcesSpecList(**data)
         self._resource_specs.extend(parsed.items)
-
-    def _process_revision_info(self, data: Dict[str, Any]):
-        self._revision_number = data.get("revisionNumber", 999)
 
     def _validate_presence_of_required_parts(self):
         if self._api_partial_info is None:
