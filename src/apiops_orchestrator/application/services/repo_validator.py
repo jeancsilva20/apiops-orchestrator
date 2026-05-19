@@ -78,7 +78,7 @@ class RepoValidator:
                                         errors.append(
                                             f"Mandatory file missing in resource {res_dir.name} in revision {rev.name}: resource.yaml"
                                         )
-                                    
+
                                     ops_dir = res_dir / "operations"
                                     if not ops_dir.exists() or not ops_dir.is_dir():
                                         errors.append(

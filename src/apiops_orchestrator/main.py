@@ -18,38 +18,38 @@ from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
 
 
+repo_path = Path(
+    r"C:\Users\Sensedia\Downloads\Projetos\Nexus\apiops-orchestrator\apiops_newstruct"
+)
+
+revision = 1
+
+settings = Settings()
+validator = RepoValidator(settings.NEW_STRUCTURE_VALIDATION_RULES)
+validator.validate_new_structure(repo_path)
+
+reader = NewStructureRepositoryReader(settings)
+result = reader.load_normalized_documents(repo_path, revision_number=revision)
+
+auth_adapter = SensediaAuthenticationAdapter(
+    base_path="user-management/v1", max_retries=3, settings=settings
+)
+token = auth_adapter.authenticate()
+
+manager_adapter = ManagerApiAdapter(
+    token=token,
+    base_path="/api-manager/api/v3/",
+    max_retries=3,
+    api_id=settings.API_ID,
+    settings=settings,
+)
+
+service = ConversorService(result, settings, manager_adapter)
+api_full = service.build_api_json()
+rprint(api_full.model_dump_json(indent=4))
+
+
 def main():
-    # Test orchestrations (Internal use only)
-    # Do not leave in main.py
-    settings = Settings()
-    repo_path = Path(
-        r"C:\Users\Sensedia\Downloads\Projetos\Nexus\apiops-orchestrator\apiops_newstruct"
-    )
-    validator = RepoValidator(settings.NEW_STRUCTURE_VALIDATION_RULES)
-    validator.validate_new_structure(repo_path)
-
-    reader = NewStructureRepositoryReader(settings)
-    result = reader.load_normalized_documents(repo_path)
-
-    auth_adapter = SensediaAuthenticationAdapter(
-        base_path="user-management/v1", max_retries=3, settings=settings
-    )
-    token = auth_adapter.authenticate()
-
-    manager_adapter = ManagerApiAdapter(
-        token=token,
-        base_path="/api-manager/api/v3/",
-        max_retries=3,
-        api_id=settings.API_ID,
-        settings=settings,
-    )
-
-    # print(result)
-
-    service = ConversorService(result, settings, manager_adapter)
-    api_full = service.build_api_json()
-    print(api_full.model_dump_json(indent=4))
-
     try:
         app()
     except CliError as e:

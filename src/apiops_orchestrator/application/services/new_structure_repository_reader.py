@@ -15,17 +15,16 @@ class NewStructureRepositoryReader:
     ) -> List[Dict[str, Any]]:
         # 1. Resolve revision
         if revision_number is None:
-            revision_number = self._get_latest_revision(repo_path)
+            revision_number = self._get_latest_revision(
+                repo_path
+            )  # TODO: Alterar para dar erro quando não receber revision_number
 
         self.logger.info(f"Loading revision {revision_number} from {repo_path}")
 
         documents = []
 
         # 0. Revision info (Top level)
-        documents.append({
-            "kind": "RevisionInfo",
-            "revisionNumber": revision_number
-        })
+        documents.append({"kind": "RevisionInfo", "revisionNumber": revision_number})
 
         # 2. ApiBasicInfo
         api_info_path = (
@@ -73,7 +72,9 @@ class NewStructureRepositoryReader:
         with open(path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f)
 
-    def _normalize_api_basic_info(self, data: Dict[str, Any], repo_path: Path) -> Dict[str, Any]:
+    def _normalize_api_basic_info(
+        self, data: Dict[str, Any], repo_path: Path
+    ) -> Dict[str, Any]:
         new_spec = {"api": data.get("spec", {})}
         # Remove fields that are not used by the script
         for field in ["id", "lastUpdate"]:
