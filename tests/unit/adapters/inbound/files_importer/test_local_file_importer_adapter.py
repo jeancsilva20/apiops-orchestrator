@@ -3,7 +3,7 @@ from pathlib import Path
 import yaml
 import json
 
-from apiops_orchestrator.adapters.inbound.files_importer.local_file_importer_adapter import (
+from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_importer_adapter import (
     LocalFileLoaderAdapter,
     InvalidFileFormatError,
     InvalidFileEncodingError,

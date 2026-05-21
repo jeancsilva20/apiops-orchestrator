@@ -9,6 +9,9 @@ from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter 
 from apiops_orchestrator.adapters.outbound.http.user_management_api.sensedia_authentication_adapter import (
     SensediaAuthenticationAdapter,
 )
+from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_importer_adapter import (
+    LocalFileImporterAdapter,
+)
 from apiops_orchestrator.application.services.conversor_service import ConversorService
 from apiops_orchestrator.application.services.new_structure_repository_reader import (
     NewStructureRepositoryReader,
@@ -28,8 +31,9 @@ settings = Settings()
 validator = RepoValidator(settings.NEW_STRUCTURE_VALIDATION_RULES)
 validator.validate_new_structure(repo_path)
 
-reader = NewStructureRepositoryReader(settings)
-result = reader.load_normalized_documents(repo_path, revision_number=revision)
+importer = LocalFileImporterAdapter()
+reader = NewStructureRepositoryReader(settings, importer)
+result = reader.load_normalized_documents(str(repo_path), revision_number=revision)
 
 auth_adapter = SensediaAuthenticationAdapter(
     base_path="user-management/v1", max_retries=3, settings=settings

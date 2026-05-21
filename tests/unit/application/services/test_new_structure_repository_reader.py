@@ -6,6 +6,9 @@ from apiops_orchestrator.application.services.new_structure_repository_reader im
 )
 from apiops_orchestrator.application.enums.yaml_to_json_enum import YamlKind
 from apiops_orchestrator.config.settings import Settings
+from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_importer_adapter import (
+    LocalFileImporterAdapter,
+)
 
 
 @pytest.fixture
@@ -17,12 +20,19 @@ def settings():
         OAUTH_CLIENT_SECRET="secret",
         REQUEST_TIMEOUT=30,
         API_ID="123",
+        API_REPO_API_INFO_FOLDER="api-info",
+        API_REPO_REVISIONS_FOLDER="revisions",
     )
 
 
 @pytest.fixture
-def reader(settings):
-    return NewStructureRepositoryReader(settings)
+def file_loader():
+    return LocalFileImporterAdapter()
+
+
+@pytest.fixture
+def reader(settings, file_loader):
+    return NewStructureRepositoryReader(settings, file_loader)
 
 
 def create_fake_repo(repo_path: Path):
