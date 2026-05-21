@@ -8,3 +8,4 @@ class YamlKind(Enum):
     RESOURCES_LIST = "ResourcesList"
     ENVIRONMENT = "Environment"
     REVISION_INFO = "RevisionInfo"
+
