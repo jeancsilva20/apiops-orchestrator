@@ -41,6 +41,7 @@ class ConversorService:
         self._interceptors: list[Interceptor] = []
         self._operations_by_file: dict[str, Operation] = {}
         self._resource_specs: list[ResourceSpec] = []
+        self._revision_number: int = 999
 
         # Maps kinds to processing methods
         self._parsers: Dict[YamlKind, Callable[[Dict[str, Any]], None]] = {
@@ -77,6 +78,7 @@ class ConversorService:
 
             api_full = ApiFull(
                 api=self._api_partial_info,
+                revisionNumber=self._revision_number,
                 interceptors=self._interceptors,
                 resources=final_resources,
                 workflowId=self.settings.WORKFLOW_ID,

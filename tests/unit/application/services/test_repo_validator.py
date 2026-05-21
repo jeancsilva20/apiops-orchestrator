@@ -14,6 +14,17 @@ def repo_validator():
     return RepoValidator(rules=RULES)
 
 
+@pytest.fixture
+def new_repo_validator():
+    return RepoValidator(
+        rules={
+            "api-info": ["api-basic-info.yaml"],
+            "environments": [],
+            "revisions": [],
+        }
+    )
+
+
 def create_folder_structure(base_path: Path, structure: dict):
     for name, content in structure.items():
         path = base_path / name
@@ -155,3 +166,136 @@ def test_validate_multiple_errors(repo_validator, tmp_path):
             f"Mandatory folder missing: {artifacts_path / skipped_folder}"
             in error_message
         )
+
+
+def test_validate_new_structure_success(new_repo_validator, tmp_path):
+    # api-info
+    api_info_dir = tmp_path / "api-info"
+    api_info_dir.mkdir()
+    (api_info_dir / "api-basic-info.yaml").touch()
+
+    # environments
+    environments_dir = tmp_path / "environments"
+    environments_dir.mkdir()
+
+    # revisions
+    revisions_dir = tmp_path / "revisions"
+    revisions_dir.mkdir()
+    rev1 = revisions_dir / "1"
+    rev1.mkdir()
+    (rev1 / "revision.yaml").touch()
+    (rev1 / "revision-flow.yaml").touch()
+
+    # resources
+    res_dir = rev1 / "resources"
+    res_dir.mkdir()
+    cep_dir = res_dir / "cep"
+    cep_dir.mkdir()
+    (cep_dir / "resource.yaml").touch()
+
+    # operations
+    ops_dir = cep_dir / "operations"
+    ops_dir.mkdir()
+    (ops_dir / "get_cep.yaml").touch()
+
+    try:
+        new_repo_validator.validate_new_structure(tmp_path)
+    except ValueError:
+        pytest.fail("validate_new_structure raised ValueError unexpectedly!")
+
+
+def test_validate_new_structure_missing_operation(new_repo_validator, tmp_path):
+    # api-info
+    api_info_dir = tmp_path / "api-info"
+    api_info_dir.mkdir()
+    (api_info_dir / "api-basic-info.yaml").touch()
+
+    # environments
+    environments_dir = tmp_path / "environments"
+    environments_dir.mkdir()
+
+    # revisions
+    revisions_dir = tmp_path / "revisions"
+    revisions_dir.mkdir()
+    rev1 = revisions_dir / "1"
+    rev1.mkdir()
+    (rev1 / "revision.yaml").touch()
+    (rev1 / "revision-flow.yaml").touch()
+
+    # resources
+    res_dir = rev1 / "resources"
+    res_dir.mkdir()
+    cep_dir = res_dir / "cep"
+    cep_dir.mkdir()
+    (cep_dir / "resource.yaml").touch()
+    
+    # operations folder exists but is empty
+    ops_dir = cep_dir / "operations"
+    ops_dir.mkdir()
+
+    with pytest.raises(ValueError) as excinfo:
+        new_repo_validator.validate_new_structure(tmp_path)
+
+    assert "must contain at least one operation" in str(excinfo.value)
+
+
+def test_validate_new_structure_missing_api_info(new_repo_validator, tmp_path):
+    # Missing api-info folder
+    revisions_dir = tmp_path / "revisions"
+    revisions_dir.mkdir()
+    rev1 = revisions_dir / "1"
+    rev1.mkdir()
+
+    with pytest.raises(ValueError) as excinfo:
+        new_repo_validator.validate_new_structure(tmp_path)
+
+    assert "Mandatory folder missing" in str(excinfo.value)
+    assert "api-info" in str(excinfo.value)
+
+
+def test_validate_new_structure_missing_revisions(new_repo_validator, tmp_path):
+    # Missing revisions folder
+    api_info_dir = tmp_path / "api-info"
+    api_info_dir.mkdir()
+    (api_info_dir / "api-basic-info.yaml").touch()
+
+    with pytest.raises(ValueError) as excinfo:
+        new_repo_validator.validate_new_structure(tmp_path)
+
+    assert "Mandatory folder missing" in str(excinfo.value)
+    assert "revisions" in str(excinfo.value)
+
+
+def test_validate_new_structure_no_numeric_revisions(new_repo_validator, tmp_path):
+    api_info_dir = tmp_path / "api-info"
+    api_info_dir.mkdir()
+    (api_info_dir / "api-basic-info.yaml").touch()
+
+    revisions_dir = tmp_path / "revisions"
+    revisions_dir.mkdir()
+    (revisions_dir / "not_a_number").mkdir()
+
+    with pytest.raises(ValueError) as excinfo:
+        new_repo_validator.validate_new_structure(tmp_path)
+
+    assert "No numeric revisions found in 'revisions' folder." in str(excinfo.value)
+
+
+def test_validate_new_structure_missing_revision_files(new_repo_validator, tmp_path):
+    api_info_dir = tmp_path / "api-info"
+    api_info_dir.mkdir()
+    (api_info_dir / "api-basic-info.yaml").touch()
+
+    revisions_dir = tmp_path / "revisions"
+    revisions_dir.mkdir()
+    rev1 = revisions_dir / "1"
+    rev1.mkdir()
+    # Missing revision.yaml and revision-flow.yaml
+
+    with pytest.raises(ValueError) as excinfo:
+        new_repo_validator.validate_new_structure(tmp_path)
+
+    assert "Mandatory file missing in revision 1: revision.yaml" in str(excinfo.value)
+    assert "Mandatory file missing in revision 1: revision-flow.yaml" in str(
+        excinfo.value
+    )
