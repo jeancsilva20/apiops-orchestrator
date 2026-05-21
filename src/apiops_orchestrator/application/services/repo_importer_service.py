@@ -9,6 +9,9 @@ from apiops_orchestrator.domain.ports.local_file_importer_port import (
 
 
 class RepoImporterService:
+    """
+    Imports and organizes the API Repository for use in the Conversor Service.
+    """
     def __init__(self, settings: Settings, importer: LocalFileImporterPort):
         self.settings = settings
         self.importer = importer
