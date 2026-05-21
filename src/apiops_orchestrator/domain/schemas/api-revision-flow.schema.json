@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RevisionFlow Schema",
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "spec"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "api-management.sensedia.com/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "RevisionFlow"
+    },
+    "spec": {
+      "type": "object",
+      "required": [
+        "destination"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "destination": {
+          "type": "string"
+        },
+        "timeout": {
+          "type": [
+            "string",
+            "integer",
+            "null"
+          ]
+        },
+        "interceptors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "position",
+              "type",
+              "content",
+              "executionPoint",
+              "status"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "position": {
+                "type": [
+                  "integer",
+                  "string"
+                ]
+              },
+              "type": {
+                "type": "string"
+              },
+              "content": {
+                "anyOf": [
+                  {
+                    "type": "object"
+                  },
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "executionPoint": {
+                "type": "string",
+                "enum": [
+                  "FIRST",
+                  "SECOND"
+                ]
+              },
+              "status": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

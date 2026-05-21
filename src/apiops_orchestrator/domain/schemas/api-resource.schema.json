@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Resource Schema",
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "items"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "api-management.sensedia.com/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "Resource"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "destination"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "destination": {
+            "type": "string"
+          },
+          "timeout": {
+            "type": [
+              "string",
+              "integer",
+              "null"
+            ]
+          },
+          "interceptors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "position",
+                "type",
+                "content",
+                "executionPoint",
+                "status"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "position": {
+                  "type": [
+                    "integer",
+                    "string"
+                  ]
+                },
+                "type": {
+                  "type": "string"
+                },
+                "content": {
+                  "anyOf": [
+                    {
+                      "type": "object"
+                    },
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "executionPoint": {
+                  "type": "string",
+                  "enum": [
+                    "FIRST",
+                    "SECOND"
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

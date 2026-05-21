@@ -3,9 +3,12 @@ import os
 from typing import List, Dict, Any, Optional
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.application.enums.yaml_to_json_enum import YamlKind
-from apiops_orchestrator.domain.ports.local_file_importer_port import LocalFileImporterPort
+from apiops_orchestrator.domain.ports.local_file_importer_port import (
+    LocalFileImporterPort,
+)
 
-class NewStructureRepositoryReader:
+
+class RepoImporterService:
     def __init__(self, settings: Settings, importer: LocalFileImporterPort):
         self.settings = settings
         self.importer = importer
@@ -119,9 +122,7 @@ class NewStructureRepositoryReader:
                             for op_file in self.importer.glob_files(ops_dir, "*.yaml"):
                                 op_data = self.importer.read(op_file)
 
-                                for op in op_data.get("spec", {}).get(
-                                    "operation", []
-                                ):
+                                for op in op_data.get("spec", {}).get("operation", []):
                                     ops_refs.append(
                                         {
                                             "method": op.get("method"),

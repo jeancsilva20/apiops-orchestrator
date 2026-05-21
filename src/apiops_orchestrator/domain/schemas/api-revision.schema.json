@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Revision Schema",
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "spec"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "api-management.sensedia.com/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "Revision"
+    },
+    "spec": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "revisionId",
+            "revisionNumber"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "revisionId": {
+              "type": "integer"
+            },
+            "revisionNumber": {
+              "type": "integer"
+            },
+            "revisionDate": {
+              "type": "string"
+            },
+            "lastUpdate": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "revisionId",
+              "revisionNumber"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "revisionId": {
+                "type": "integer"
+              },
+              "revisionNumber": {
+                "type": "integer"
+              },
+              "revisionDate": {
+                "type": "string"
+              },
+              "lastUpdate": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,8 +1,8 @@
 import pytest
 import yaml
 from pathlib import Path
-from apiops_orchestrator.application.services.new_structure_repository_reader import (
-    NewStructureRepositoryReader,
+from apiops_orchestrator.application.services.repo_importer_service import (
+    RepoImporterService,
 )
 from apiops_orchestrator.application.enums.yaml_to_json_enum import YamlKind
 from apiops_orchestrator.config.settings import Settings
@@ -32,7 +32,7 @@ def file_loader():
 
 @pytest.fixture
 def reader(settings, file_loader):
-    return NewStructureRepositoryReader(settings, file_loader)
+    return RepoImporterService(settings, file_loader)
 
 
 def create_fake_repo(repo_path: Path):
