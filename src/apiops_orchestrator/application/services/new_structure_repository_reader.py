@@ -5,6 +5,9 @@ from typing import List, Dict, Any, Optional
 from apiops_orchestrator.config.settings import Settings
 
 
+from apiops_orchestrator.application.enums.yaml_to_json_enum import YamlKind
+
+
 class NewStructureRepositoryReader:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -15,16 +18,16 @@ class NewStructureRepositoryReader:
     ) -> List[Dict[str, Any]]:
         # 1. Resolve revision
         if revision_number is None:
-            revision_number = self._get_latest_revision(
-                repo_path
-            )  # TODO: Alterar para dar erro quando não receber revision_number
+            raise ValueError("revision_number must be provided")
 
         self.logger.info(f"Loading revision {revision_number} from {repo_path}")
 
         documents = []
 
         # 0. Revision info (Top level)
-        documents.append({"kind": "RevisionInfo", "revisionNumber": revision_number})
+        documents.append(
+            {"kind": YamlKind.REVISION_INFO.value, "revisionNumber": revision_number}
+        )
 
         # 2. ApiBasicInfo
         api_info_path = (
@@ -86,7 +89,7 @@ class NewStructureRepositoryReader:
 
         return {
             "apiVersion": data.get("apiVersion"),
-            "kind": "ApiBasicInfo",
+            "kind": YamlKind.API_BASIC_INFO.value,
             "spec": new_spec,
         }
 
@@ -94,7 +97,7 @@ class NewStructureRepositoryReader:
         interceptors = data.get("spec", {}).get("interceptors", [])
         return {
             "apiVersion": data.get("apiVersion"),
-            "kind": "Interceptors",
+            "kind": YamlKind.INTERCEPTORS.value,
             "spec": {"interceptors": interceptors},
         }
 
@@ -143,7 +146,7 @@ class NewStructureRepositoryReader:
 
         return {
             "apiVersion": api_version,
-            "kind": "ResourcesList",  # TODO, mudar para usar o enum.
+            "kind": YamlKind.RESOURCES_LIST.value,
             "items": items,
         }
 
