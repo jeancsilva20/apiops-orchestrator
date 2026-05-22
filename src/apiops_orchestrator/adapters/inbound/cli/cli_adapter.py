@@ -11,7 +11,7 @@ app = typer.Typer(
 
 
 class CliError(Exception):
-    """Exceção base para erros da CLI que devem ser exibidos de forma amigável."""
+    """Basic exception for friendly CLI errors."""
 
     def __init__(self, message: str, exit_code: int = 1):
         self.message = message
@@ -34,14 +34,14 @@ def version_callback(value: bool):
 @app.callback()
 def main_callback(
     verbose: bool = typer.Option(
-        False, "--verbose", "-v", help="Aumenta nivel de log."
+        False, "--verbose", "-v", help="Increases verbosity in logs."
     ),
     version: bool = typer.Option(
         None,
         "--version",
         callback=version_callback,
         is_eager=True,
-        help="Exibe versao da CLI.",
+        help="Shows CLI version.",
     ),
 ):
     """
