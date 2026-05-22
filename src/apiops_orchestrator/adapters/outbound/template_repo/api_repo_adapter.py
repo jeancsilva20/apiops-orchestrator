@@ -5,6 +5,7 @@ from apiops_orchestrator.domain.ports.api_repo_port import ApiRepoPort
 
 
 class ApiRepoAdapter(ApiRepoPort):
+    """ApiRepoAdapter"""
     def __init__(self):
         self.logger = logging.getLogger(__name__)
 
