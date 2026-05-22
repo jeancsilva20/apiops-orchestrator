@@ -44,9 +44,9 @@ The APIOps Orchestrator is a Python tool for composing, validating and processin
     poetry install
     ```
 
-### 2. Configuration
+### 2. Configuration (Optional for tests)
 
-Before running, you **must** configure the path to the API repository that will be processed.
+This step is optional if you only want to run tests. Before running the main script, you can configure the path to the API repository that will be processed.
 
 1.  **Environment Variables (.env)**
     Create a `.env` file in the project root, copying the content of `.env.example`. This file will be used to set the environment variables required by the orchestrator.
@@ -69,9 +69,9 @@ The script will print the location of the artifacts folder, validate its structu
 
 ### Tests
 
-To run the unit tests:
+Ensure you have followed the **Setup** steps first. To run the unit tests using Poetry:
 ```bash
-pytest
+poetry run pytest
 ```
 
 ## Folder Structure
