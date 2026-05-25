@@ -2,120 +2,59 @@ import pytest
 from pathlib import Path
 import yaml
 import json
-
 from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_importer_adapter import (
-    LocalFileLoaderAdapter,
-    InvalidFileFormatError,
-    InvalidFileEncodingError,
+    LocalFileImporterAdapter,
 )
 
-
-# Fixture for the adapter instance
 @pytest.fixture
 def adapter():
-    return LocalFileLoaderAdapter()
+    return LocalFileImporterAdapter()
 
-
-def test_load_single_yaml_file(adapter, tmp_path: Path):
-    """Tests loading a single, valid YAML file."""
-    content = {"name": "test-api", "version": "1.0"}
-    file_path = tmp_path / "config.yaml"
+def test_read_yaml(adapter, tmp_path: Path):
+    content = {"key": "value"}
+    file_path = tmp_path / "test.yaml"
     with open(file_path, "w", encoding="utf-8") as f:
         yaml.dump(content, f)
-
-    result = adapter.load_path(file_path)
+    
+    result = adapter.read(str(file_path))
     assert result == content
 
-
-def test_load_single_json_file(adapter, tmp_path: Path):
-    """Tests loading a single, valid JSON file."""
-    content = {"name": "test-api", "version": "1.0"}
-    file_path = tmp_path / "config.json"
+def test_read_json(adapter, tmp_path: Path):
+    content = {"key": "value"}
+    file_path = tmp_path / "test.json"
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(content, f)
-
-    result = adapter.load_path(file_path)
+    
+    result = adapter.read(str(file_path))
     assert result == content
 
-
-def test_load_single_txt_file(adapter, tmp_path: Path):
-    """Tests loading a single, valid TXT file."""
-    content = "This is a simple text file."
-    file_path = tmp_path / "readme.txt"
-    file_path.write_text(content, encoding="utf-8")
-
-    result = adapter.load_path(file_path)
-    assert result == content
-
-
-def test_load_path_not_found(adapter):
-    """Tests that FileNotFoundError is raised for a non-existent path."""
-    non_existent_path = Path("/non/existent/path/file.yaml")
+def test_read_not_found(adapter):
     with pytest.raises(FileNotFoundError):
-        adapter.load_path(non_existent_path)
+        adapter.read("non_existent.yaml")
 
-
-def test_load_unsupported_file_directly(adapter, tmp_path: Path):
-    """Tests that an error is raised when loading an unsupported file type directly."""
-    file_path = tmp_path / "document.docx"
+def test_exists(adapter, tmp_path: Path):
+    file_path = tmp_path / "test.txt"
     file_path.touch()
-    with pytest.raises(InvalidFileFormatError):
-        adapter.load_path(file_path)
+    
+    assert adapter.exists(str(file_path)) is True
+    assert adapter.exists(str(tmp_path / "missing.txt")) is False
 
+def test_list_directories(adapter, tmp_path: Path):
+    (tmp_path / "dir1").mkdir()
+    (tmp_path / "dir2").mkdir()
+    (tmp_path / "file.txt").touch()
+    
+    dirs = adapter.list_directories(str(tmp_path))
+    assert len(dirs) == 2
+    assert any("dir1" in d for d in dirs)
+    assert any("dir2" in d for d in dirs)
 
-def test_load_directory_with_multiple_file_types(adapter, tmp_path: Path):
-    """Tests loading a directory with a mix of supported and unsupported files."""
-    # Create a nested directory structure
-    sub_dir = tmp_path / "sub"
-    sub_dir.mkdir()
-
-    # Supported files
-    (tmp_path / "config.yml").write_text("key: value")
-    (tmp_path / "data.json").write_text('{"id": 123}')
-    (sub_dir / "info.txt").write_text("some info")
-
-    # Unsupported file (should be ignored)
-    (tmp_path / "archive.zip").touch()
-    (sub_dir / "image.png").touch()
-
-    results = adapter.load_path(tmp_path)
-
-    # The results can be in any order, so we check for presence and length
-    assert len(results) == 3
-    assert {"key": "value"} in results
-    assert {"id": 123} in results
-    assert "some info" in results
-
-
-def test_load_empty_directory(adapter, tmp_path: Path):
-    """Tests loading an empty directory, which should return an empty list."""
-    results = adapter.load_path(tmp_path)
-    assert results == []
-
-
-def test_load_malformed_yaml_file(adapter, tmp_path: Path):
-    """Tests loading a malformed YAML file."""
-    file_path = tmp_path / "malformed.yaml"
-    file_path.write_text("key: value:\n  - item1")
-
-    with pytest.raises(yaml.YAMLError):
-        adapter.load_path(file_path)
-
-
-def test_load_malformed_json_file(adapter, tmp_path: Path):
-    """Tests loading a malformed JSON file."""
-    file_path = tmp_path / "malformed.json"
-    file_path.write_text('{"key": "value",}')  # Trailing comma is invalid
-
-    with pytest.raises(json.JSONDecodeError):
-        adapter.load_path(file_path)
-
-
-def test_load_file_with_encoding_error(adapter, tmp_path: Path):
-    """Tests loading a file with a different encoding."""
-    file_path = tmp_path / "encoding.txt"
-    # Write with an encoding that is not default utf-8
-    file_path.write_text("ação", encoding="latin-1")
-
-    with pytest.raises(InvalidFileEncodingError):
-        adapter.load_path(file_path)
+def test_glob_files(adapter, tmp_path: Path):
+    (tmp_path / "test1.yaml").touch()
+    (tmp_path / "test2.yaml").touch()
+    (tmp_path / "other.txt").touch()
+    
+    files = adapter.glob_files(str(tmp_path), "*.yaml")
+    assert len(files) == 2
+    assert any("test1.yaml" in f for f in files)
+    assert any("test2.yaml" in f for f in files)

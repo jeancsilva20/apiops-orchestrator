@@ -46,8 +46,9 @@ class SchemaValidator:
                 else:
                     message = e.message
                 field_path = ".".join(str(p) for p in e.path)
+                field_msg = f" for field '{field_path}'" if field_path else ""
                 set_status("FAILURE")
                 raise exceptions.ValidationError(
-                    f"Schema validation failed for file {str(target_path)} {f"for field '{field_path}'" if field_path else ""}: {message}"
+                    f"Schema validation failed for file {str(target_path)}{field_msg}: {message}"
                 )
             return True

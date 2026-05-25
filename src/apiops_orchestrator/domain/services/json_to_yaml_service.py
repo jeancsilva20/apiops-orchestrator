@@ -97,7 +97,6 @@ class JsonToYamlService:
                 "revisions",
                 "deployments",
                 "creationDate",
-                "id",
                 "apiType",
                 "apiSwaggerConfiguration",
                 "lastRevision",
@@ -108,9 +107,7 @@ class JsonToYamlService:
                 api_data.pop(field, None)
             self.logger.debug(f"Removed {len(fields_to_remove)} unnecessary properties")
 
-            spec = {
-                "api": api_data,
-            }
+            spec = api_data
 
             result = _YamlDocumentFactory.create_document(
                 kind=JsonKind.API_BASIC_INFO.value,
