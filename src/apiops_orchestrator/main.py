@@ -1,25 +1,29 @@
 import sys
-import typer
 from pathlib import Path
+
+import typer
 from rich import print as rprint
+
 from apiops_orchestrator.adapters.inbound.cli.cli_adapter import app, CliError
+from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_importer_adapter import (
+    LocalFileImporterAdapter,
+)
 from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter import (
     ManagerApiAdapter,
 )
 from apiops_orchestrator.adapters.outbound.http.user_management_api.sensedia_authentication_adapter import (
     SensediaAuthenticationAdapter,
 )
-from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_importer_adapter import (
-    LocalFileImporterAdapter,
+from apiops_orchestrator.application.services.api_listing_service import (
+    ApiListingService,
 )
 from apiops_orchestrator.application.services.conversor_service import ConversorService
 from apiops_orchestrator.application.services.repo_importer_service import (
     RepoImporterService,
 )
 from apiops_orchestrator.application.services.repo_validator import RepoValidator
-from apiops_orchestrator.application.services.schema_validator import SchemaValidator
 from apiops_orchestrator.config.settings import Settings
-from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
+from apiops_orchestrator.application.services.schema_validator import SchemaValidator
 
 
 repo_path = Path(
@@ -91,8 +95,18 @@ rprint(api_full.model_dump_json(indent=4))
 
 
 def main():
+    """
+    Composition Root: Orchestrates the instantiation of adapters and services,
+    and injects them into the CLI adapter.
+    """
     try:
-        app()
+        # 1. Initialize Application Services
+        api_listing_service = ApiListingService(manager_adapter)
+
+        # 2. Inject Services into CLI Context and Run
+        # Typer allows passing an object (obj) that will be available in the Context (ctx.obj)
+        app(obj={"api_listing_service": api_listing_service})
+
     except CliError as e:
         rprint(f"[bold red]Error:[/bold red] {e.message}")
         sys.exit(e.exit_code)

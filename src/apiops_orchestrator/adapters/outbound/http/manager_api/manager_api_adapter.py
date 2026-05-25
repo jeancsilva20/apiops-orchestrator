@@ -32,9 +32,15 @@ class ManagerApiAdapter(ManagerApiPort):
             **kwargs
         )
 
-    def get_api_by_id(self) -> Dict[str, Any]:
+    def get_apis(self) -> list[Dict[str, Any]]:
+        """GET to retrieve all APIs"""
+        endpoint = "apis"
+        return self._request("GET", endpoint)
+
+    def get_api_by_id(self, api_id: int | None = None) -> Dict[str, Any]:
         """GET to retrieve the API data"""
-        endpoint = f"apis/{self.api_id}"
+        target_id = api_id if api_id is not None else self.api_id
+        endpoint = f"apis/{target_id}"
         return self._request("GET", endpoint)
 
     def get_custom_interceptor_by_id(self, custom_interceptor_id: int) -> Dict[str, str] | None:

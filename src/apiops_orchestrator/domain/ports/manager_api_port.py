@@ -3,7 +3,12 @@ from typing import Dict, Any
 
 class ManagerApiPort(ABC):
     @abstractmethod
-    def get_api_by_id(self) -> Dict[str, Any]:
+    def get_apis(self) -> list[Dict[str, Any]]:
+        """Contract to search all APIs"""
+        pass
+
+    @abstractmethod
+    def get_api_by_id(self, api_id: int | None = None) -> Dict[str, Any]:
         """Contract to search data from the API by ID"""
         pass
 
