@@ -1,7 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "sandbox:/template-schemas/basic-api-info.schema.json",
-  "title": "Basic API Info Template",
+  "title": "ApiBasicInfo Schema",
   "type": "object",
   "required": [
     "apiVersion",
@@ -12,103 +11,71 @@
   "properties": {
     "apiVersion": {
       "type": "string",
-      "pattern": "api-management.sensedia.com/v1"
+      "const": "api-management.sensedia.com/v1"
     },
     "kind": {
       "type": "string",
-      "const": "ApiBasicInfo",
-      "enum": [
-        "ApiBasicInfo"
-      ],
-      "description": "Resource kind. Must be exactly 'ApiBasicInfo'."
+      "const": "ApiBasicInfo"
     },
     "spec": {
       "type": "object",
       "required": [
-        "api"
+        "id",
+        "name",
+        "version",
+        "basePath"
       ],
       "additionalProperties": false,
       "properties": {
-        "api": {
+        "id": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "basePath": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "creationDate": {
+          "type": "string"
+        },
+        "lastUpdate": {
+          "type": "string"
+        },
+        "apiResponsible": {
           "type": "object",
-          "required": [
-            "name",
-            "version",
-            "basePath"
-          ],
           "additionalProperties": false,
           "properties": {
-            "name": {
-              "type": "string",
-              "minLength": 1
-            },
-            "version": {
-              "type": "string",
-              "minLength": 1
-            },
-            "basePath": {
-              "type": "string",
-              "pattern": "^/"
-            },
-            "description": {
+            "username": {
               "type": "string"
             },
-            "apiResponsible": {
+            "groupName": {
+              "type": "string"
+            }
+          }
+        },
+        "visibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "groupVisibility": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "username": {
-                  "type": "string"
-                },
-                "groupName": {
+                "name": {
                   "type": "string"
                 }
-              }
-            },
-            "visibility": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "groupVisibility": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "name": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            },
-            "environments": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "id"
-                ],
-                "additionalProperties": false,
-                "properties": {
-                  "id": {
-                    "type": "integer",
-                    "minimum": 1
-                  }
-                }
-              }
-            },
-            "apiTags": {
-              "type": [
-                "array",
-                "null"
-              ],
-              "items": {
-                "type": "string"
               }
             }
           }
         }
       }
     }
-  },
-  "$comment": "Kind locked to 'ApiBasicInfo' as requested."
+  }
 }

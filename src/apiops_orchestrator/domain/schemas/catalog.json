@@ -1,9 +1,11 @@
 {
   "version": "1.0.0",
   "schemas": {
-    "ApiBasicInfo": "sandbox:/template-schemas/basic-api-info.schema.json",
-    "Interceptors": "sandbox:/template-schemas/default-interceptors.schema.json",
-    "ApiOperations": "sandbox:/template-schemas/api-operations.schema.json",
-    "Environment": "sandbox:/template-schemas/environment-variables.schema.json"
+    "ApiBasicInfo": "api-basic-info.schema.json",
+    "ApiOperations": "api-operations.schema.json",
+    "Resource": "api-resource.schema.json",
+    "Environment": "api-environment.schema.json",
+    "RevisionFlow": "api-revision-flow.schema.json",
+    "Revision": "api-revision.schema.json"
   }
 }

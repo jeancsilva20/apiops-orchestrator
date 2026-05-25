@@ -9,11 +9,15 @@ from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter 
 from apiops_orchestrator.adapters.outbound.http.user_management_api.sensedia_authentication_adapter import (
     SensediaAuthenticationAdapter,
 )
+from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_importer_adapter import (
+    LocalFileImporterAdapter,
+)
 from apiops_orchestrator.application.services.conversor_service import ConversorService
-from apiops_orchestrator.application.services.new_structure_repository_reader import (
-    NewStructureRepositoryReader,
+from apiops_orchestrator.application.services.repo_importer_service import (
+    RepoImporterService,
 )
 from apiops_orchestrator.application.services.repo_validator import RepoValidator
+from apiops_orchestrator.application.services.schema_validator import SchemaValidator
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
 
@@ -28,8 +32,45 @@ settings = Settings()
 validator = RepoValidator(settings.NEW_STRUCTURE_VALIDATION_RULES)
 validator.validate_new_structure(repo_path)
 
-reader = NewStructureRepositoryReader(settings)
-result = reader.load_normalized_documents(repo_path, revision_number=revision)
+importer = LocalFileImporterAdapter()
+
+# --- Schema Validation ---
+schema_folder = settings.PROJECT_ROOT / "src" / settings.ORCHEST_SCHEMA_FOLDER
+schema_validator = SchemaValidator(importer, schema_folder)
+
+catalog_path = schema_folder / "catalog.json"
+# Using LocalFileImporterAdapter to read catalog.json (which is JSON)
+# Note: read() uses yaml.safe_load which works for JSON too
+catalog_data = importer.read(str(catalog_path))
+kind_to_schema = catalog_data.get("schemas", {})
+
+
+def validate_recursively(path: Path):
+    for item in path.iterdir():
+        if item.is_dir():
+            validate_recursively(item)
+        elif item.suffix in [".yaml", ".yml"]:
+            try:
+                data = importer.read(str(item))
+                if not data:
+                    continue
+                kind = data.get("kind")
+                if kind and kind in kind_to_schema:
+                    schema_name = kind_to_schema[kind]
+                    rprint(
+                        f"[bold blue]Validating:[/bold blue] {item.relative_to(repo_path)} (Kind: {kind})"
+                    )
+                    schema_validator.validate(data, schema_name, item)
+            except Exception as e:
+                rprint(f"[bold yellow]Skipping/Error in {item.name}:[/bold yellow] {e}")
+
+
+rprint("[bold green]Starting Schema Validation...[/bold green]")
+validate_recursively(repo_path)
+rprint("[bold green]Schema Validation completed successfully![/bold green]")
+
+reader = RepoImporterService(settings, importer)
+result = reader.load_normalized_documents(str(repo_path), revision_number=revision)
 
 auth_adapter = SensediaAuthenticationAdapter(
     base_path="user-management/v1", max_retries=3, settings=settings

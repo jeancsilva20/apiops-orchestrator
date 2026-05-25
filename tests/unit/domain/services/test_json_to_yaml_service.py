@@ -7,10 +7,10 @@ from typing import List, Optional, Dict, Any
 from apiops_orchestrator.application.services.file_importer_service import (
     FileImporterService,
 )
-from apiops_orchestrator.adapters.inbound.files_importer.file_loader_strategy import (
+from apiops_orchestrator.adapters.inbound.local_files_importer.file_loader_strategy import (
     FILE_LOADER_STRATEGIES,
 )
-from apiops_orchestrator.adapters.inbound.files_importer.local_file_importer_adapter import (
+from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_importer_adapter import (
     LocalFileLoaderAdapter,
 )
 from apiops_orchestrator.application.services.schema_validator import SchemaValidator
