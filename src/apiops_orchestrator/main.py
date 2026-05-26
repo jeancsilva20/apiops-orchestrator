@@ -149,7 +149,8 @@ def bootstrap():
     logger = logging.getLogger(__name__)
     logger.info("Initialized application")
 
-    repo_path = settings.PROJECT_ROOT / settings.API_REPO_FOLDER
+    ##repo_path = settings.PROJECT_ROOT / settings.API_REPO_FOLDER
+    repo_path = settings.PROJECT_ROOT
 
     local_file_loader_adapter = LocalFileLoaderAdapter()
     file_importer_service = FileImporterService(local_file_loader_adapter)
@@ -202,7 +203,7 @@ def create_revision():
 
     schema_mapping = {
         "artifacts/templates/api-basic-info.yaml": "api-basic-info.schema.json",
-        "artifacts/templates/default-interceptors.yaml": "mag-default-interceptors.schema.json",
+        "artifacts/templates/default-interceptors.yaml": "mag-gestaoapolice-interceptors.schema.json",
     }
 
     with log_duration(__name__):
@@ -233,6 +234,7 @@ def create_revision():
             settings,
             logger,
         )
+        print(final_json)
 
         logger.info("Step 5: POST /revisions call started")
         services["publisher_service"].publish_changes(final_json)

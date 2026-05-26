@@ -27,9 +27,9 @@
       "properties": {
         "interceptors": {
           "type": "array",
-          "minItems": 10,
-          "maxItems": 10,
-          "items": false,
+          "minItems": 3,
+          "maxItems": 40,
+          "items": {},
           "prefixItems": [
             {
               "type": "object",

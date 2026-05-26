@@ -1,0 +1,323 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MAG Seguros | GestaoApolice Default Interceptors",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "spec"
+  ],
+  "properties": {
+    "apiVersion": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "Interceptors"
+      ]
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "interceptors"
+      ],
+      "properties": {
+        "interceptors": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 40,
+          "items": {},
+          "prefixItems": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "position", "content", "executionPoint", "status"],
+              "properties": {
+                "type": {"type": "string", "const": "Rate limit"},
+                "position": {
+                  "anyOf": [
+                    {"type": "integer", "const": 1},
+                    {"type": "string", "const": "1"}
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": ["quota", "interval", "limitBy", "soft", "softvalue", "ignoreBodyValidationMultiPartFormData"],
+                  "properties": {
+                    "quota": {"type": ["integer", "number", "string"]},
+                    "interval": {"type": "string"},
+                    "limitBy": {"type": "string"},
+                    "soft": {"type": "boolean"},
+                    "rateLimitHeader": {"type": "boolean"},
+                    "softvalue": {"type": ["integer", "number", "string"]},
+                    "ignoreBodyValidationMultiPartFormData": {"type": "boolean"},
+                    "noHeaderBehavior": {"type": ["string", "null"]},
+                    "headerKey": {"type": ["string", "null"]}
+                  }
+                },
+                "executionPoint": {"type": "string", "const": "FIRST"},
+                "status": {"type": "string", "const": "REFERENCE"}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "position", "content", "executionPoint", "status"],
+              "properties": {
+                "type": {"type": "string", "const": "Transaction ID"},
+                "position": {
+                  "anyOf": [
+                    {"type": "integer", "const": 2},
+                    {"type": "string", "const": "2"}
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": ["location", "name"],
+                  "properties": {
+                    "location": {"type": "string"},
+                    "name": {"type": "string"}
+                  }
+                },
+                "executionPoint": {"type": "string", "const": "FIRST"},
+                "status": {"type": "string", "const": "REFERENCE"}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "position", "content", "executionPoint", "status"],
+              "properties": {
+                "type": {"type": "string", "const": "Log obfuscation"},
+                "position": {
+                  "anyOf": [
+                    {"type": "integer", "const": 3},
+                    {"type": "string", "const": "3"}
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": ["location", "attr", "regexToReplace", "replaceChar", "ignoreBodyValidationMultiPartFormData"],
+                  "properties": {
+                    "location": {"type": "string", "const": "HEADER"},
+                    "attr": {"type": "string"},
+                    "regexToReplace": {"type": "string"},
+                    "replaceChar": {"type": "string"},
+                    "ignoreBodyValidationMultiPartFormData": {"type": "boolean"}
+                  }
+                },
+                "executionPoint": {"type": "string", "const": "FIRST"},
+                "status": {"type": "string", "const": "REFERENCE"}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "position", "content", "executionPoint", "status"],
+              "properties": {
+                "type": {"type": "string", "const": "Log"},
+                "position": {
+                  "anyOf": [
+                    {"type": "integer", "const": 4},
+                    {"type": "string", "const": "4"}
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": ["acceptedTerms", "encryptContent", "encryptPathAndParameters"],
+                  "properties": {
+                    "acceptedTerms": {"type": "boolean"},
+                    "encryptContent": {"type": "boolean"},
+                    "encryptPathAndParameters": {"type": "boolean"}
+                  }
+                },
+                "executionPoint": {"type": "string", "const": "FIRST"},
+                "status": {"type": "string", "const": "REFERENCE"}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "position", "content", "executionPoint", "status"],
+              "properties": {
+                "type": {"type": "string", "const": "Payload size"},
+                "position": {
+                  "anyOf": [
+                    {"type": "integer", "const": 5},
+                    {"type": "string", "const": "5"}
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": ["maxSize"],
+                  "properties": {
+                    "maxSize": {"type": "string"}
+                  }
+                },
+                "executionPoint": {"type": "string", "const": "FIRST"},
+                "status": {"type": "string", "const": "REFERENCE"}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "position", "content", "executionPoint", "status"],
+              "properties": {
+                "type": {"type": "string", "const": "XSS threat protection"},
+                "position": {
+                  "anyOf": [
+                    {"type": "integer", "const": 6},
+                    {"type": "string", "const": "6"}
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": ["regexList"],
+                  "properties": {
+                    "regexList": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {"type": "object"}
+                    },
+                    "ignoreBodyValidationMultiPartFormData": {"type": "boolean"}
+                  }
+                },
+                "executionPoint": {"type": "string", "const": "FIRST"},
+                "status": {"type": "string", "const": "REFERENCE"}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "position", "content", "executionPoint", "status"],
+              "properties": {
+                "type": {"type": "string", "const": "SQL threat protection"},
+                "position": {
+                  "anyOf": [
+                    {"type": "integer", "const": 7},
+                    {"type": "string", "const": "7"}
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": [
+                    "sqlThreatProtectionHeaders",
+                    "sqlThreatProtectionQueryParams",
+                    "sqlThreatProtectionBody",
+                    "sqlThreatProtectionCookies",
+                    "sqlThreatProtectionPathParams"
+                  ],
+                  "properties": {
+                    "sqlThreatProtectionHeaders": {"type": "boolean"},
+                    "sqlThreatProtectionQueryParams": {"type": "boolean"},
+                    "sqlThreatProtectionBody": {"type": "boolean"},
+                    "sqlThreatProtectionCookies": {"type": "boolean"},
+                    "sqlThreatProtectionPathParams": {"type": "boolean"}
+                  }
+                },
+                "executionPoint": {"type": "string", "const": "FIRST"},
+                "status": {"type": "string", "const": "REFERENCE"}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "position", "content", "executionPoint", "status"],
+              "properties": {
+                "type": {"type": "string", "const": "Custom"},
+                "position": {
+                  "anyOf": [
+                    {"type": "integer", "const": 8},
+                    {"type": "string", "const": "8"}
+                  ]
+                },
+                "content": {"type": "integer"},
+                "executionPoint": {"type": "string", "const": "FIRST"},
+                "status": {"type": "string", "const": "REFERENCE"}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "position", "content", "executionPoint", "status"],
+              "properties": {
+                "type": {"type": "string", "const": "Client ID validation"},
+                "position": {
+                  "anyOf": [
+                    {"type": "integer", "const": 9},
+                    {"type": "string", "const": "9"}
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": ["responseContentType", "location", "name"],
+                  "properties": {
+                    "responseContentType": {"type": "string"},
+                    "location": {"type": "string"},
+                    "name": {"type": "string"},
+                    "ignoreBodyValidationMultiPartFormData": {"type": "boolean"}
+                  }
+                },
+                "executionPoint": {"type": "string", "const": "FIRST"},
+                "status": {"type": "string", "const": "REFERENCE"}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "position", "content", "executionPoint", "status"],
+              "properties": {
+                "type": {"type": "string", "const": "Log"},
+                "position": {
+                  "anyOf": [
+                    {"type": "integer", "const": 10},
+                    {"type": "string", "const": "10"}
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": ["acceptedTerms", "encryptContent", "encryptPathAndParameters"],
+                  "properties": {
+                    "acceptedTerms": {"type": "boolean"},
+                    "encryptContent": {"type": "boolean"},
+                    "encryptPathAndParameters": {"type": "boolean"}
+                  }
+                },
+                "executionPoint": {"type": "string", "const": "FIRST"},
+                "status": {"type": "string", "const": "REFERENCE"}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "position", "content", "executionPoint", "status"],
+              "properties": {
+                "type": {"type": "string", "const": "Log"},
+                "position": {
+                  "anyOf": [
+                    {"type": "integer", "const": 11},
+                    {"type": "string", "const": "11"}
+                  ]
+                },
+                "content": {
+                  "type": "object",
+                  "required": ["acceptedTerms", "encryptContent", "encryptPathAndParameters"],
+                  "properties": {
+                    "acceptedTerms": {"type": "boolean"},
+                    "encryptContent": {"type": "boolean"},
+                    "encryptPathAndParameters": {"type": "boolean"}
+                  }
+                },
+                "executionPoint": {"type": "string", "const": "SECOND"},
+                "status": {"type": "string", "const": "REFERENCE"}
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}
