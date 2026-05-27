@@ -21,8 +21,8 @@ jobs:
     steps:
       - name: Echo envs
         run: |
-          echo "HAS_TESTS=${ HAS_TESTS }"
-          echo "BYPASS_TESTS=${ BYPASS_TESTS }"
+          echo "HAS_TESTS=${HAS_TESTS}"
+          echo "BYPASS_TESTS=${BYPASS_TESTS}"
 
       - name: Checkout
         uses: actions/checkout@v4
