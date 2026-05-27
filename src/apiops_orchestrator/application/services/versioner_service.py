@@ -29,7 +29,8 @@ class VersionerService:
         self.repo = repo_adapter
         self.manager = manager_adapter
         self.settings = settings
-        self.repo_path = settings.PROJECT_ROOT / settings.API_REPO_FOLDER
+        #self.repo_path = settings.PROJECT_ROOT / settings.API_REPO_FOLDER
+        self.repo_path = settings.PROJECT_ROOT
         self.revisions_folder = self.repo_path / "src" / "apis" / "revisions"
         self.file_generator = RevisionFileGenerator(repo_adapter)
 
