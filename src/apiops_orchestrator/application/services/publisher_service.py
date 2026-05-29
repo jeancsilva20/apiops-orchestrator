@@ -34,6 +34,9 @@ class PublisherService:
         if "visibility" in remote_api_data and remote_api_data["visibility"]:
             api_data.api.visibility = Visibility(**remote_api_data["visibility"])
 
+        if "environments" in remote_api_data:
+            api_data.api.environments = remote_api_data["environments"]
+
         api_data.api.revisions = revisions
 
         return api_data
@@ -57,4 +60,3 @@ class PublisherService:
         payload = formatted_api_data.model_dump(by_alias=True, exclude_none=True)
 
         return self.publisher.publish_api_changes(payload)
-

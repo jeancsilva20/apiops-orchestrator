@@ -234,10 +234,12 @@ def create_revision():
             settings,
             logger,
         )
-        print(final_json)
 
         logger.info("Step 5: POST /revisions call started")
         services["publisher_service"].publish_changes(final_json)
+
+        logger.info("Step 6: Convert JSON file to YAML file")
+        generate_yaml_files(final_json, settings, services["versioner_service"])
 
         logger.info("Finished: Revision created successfully.")
 
@@ -257,11 +259,8 @@ def deploy():
             logger,
         )
 
-        logger.info("Step 5.1: POST /deployments call started")
+        logger.info("Step 7: POST /deployments call started")
         services["deployer_service"].deploy_revision(settings.ENVIRONMENT_ID)
-
-        logger.info("Step 6: Convert JSON file to YAML file")
-        generate_yaml_files(final_json, settings, services["versioner_service"])
 
         logger.info("Finished: Deployment completed successfully.")
 

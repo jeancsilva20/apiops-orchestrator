@@ -40,6 +40,7 @@ class ApiPartialInfo(BaseModel):
     creationDate: Optional[int] = "creationDate"
     revisions: Optional[list[dict]] = "revisions"
     lastRevision: Optional[dict] = "lastRevision"
+    environments: Optional[List[dict]] = []
 
     @field_validator("basePath")
     def _normalize_path(cls, v: str) -> str:

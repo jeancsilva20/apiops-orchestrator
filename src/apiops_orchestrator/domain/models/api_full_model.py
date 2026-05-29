@@ -8,8 +8,8 @@ from .interceptors_model import Interceptor
 class ApiFull(BaseModel):
     api: ApiPartialInfo
     revisionNumber: int = 999
-    #workflowId: Optional[int] = None
-    #workflowStageId: Optional[int] = None
+    # workflowId: Optional[int] = None # MAG Não tem AG
+    # workflowStageId: Optional[int] = None # MAG Não tem AG
     lifeCycle: str = "AVAILABLE"
     interceptors: List[Interceptor] = []
     resources: List[Resource] = []
