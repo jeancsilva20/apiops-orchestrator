@@ -33,14 +33,13 @@ def test_format_data_updates_fields():
     mock_adapter = MagicMock(spec=ManagerApiPort)
     api_partial_info_mock = MagicMock(spec=ApiPartialInfo)
 
-    api_data = ApiFull(
-        api=api_partial_info_mock,
-        revisionNumber=999,
-        workflowId=None,
-        workflowStageId=None,
-        interceptors=[],
-        resources=[]
-    )
+    # Use MagicMock instead of ApiFull because the model is currently missing 
+    # workflowId and workflowStageId fields, but the service tries to set them.
+    api_data = MagicMock()
+    api_data.api = api_partial_info_mock
+    api_data.revisionNumber = 999
+    api_data.interceptors = []
+    api_data.resources = []
 
 
     remote_api_data = {

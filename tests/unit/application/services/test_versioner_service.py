@@ -36,7 +36,7 @@ def manager_adapter():
 def service(manager_adapter, repo_adapter, settings) -> VersionerService:
     # Make sure the base directories exist for the service to initialize
     (
-        settings.PROJECT_ROOT / settings.API_REPO_FOLDER / "src" / "apis" / "revisions"
+        settings.PROJECT_ROOT / "src" / "apis" / "revisions"
     ).mkdir(parents=True, exist_ok=True)
     return VersionerService(manager_adapter, repo_adapter, settings)
 
