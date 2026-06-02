@@ -149,8 +149,8 @@ def bootstrap():
     logger = logging.getLogger(__name__)
     logger.info("Initialized application")
 
-    ##repo_path = settings.PROJECT_ROOT / settings.API_REPO_FOLDER
-    repo_path = settings.PROJECT_ROOT
+    repo_path = settings.PROJECT_ROOT / settings.API_REPO_FOLDER
+    # repo_path = settings.PROJECT_ROOT
 
     local_file_loader_adapter = LocalFileLoaderAdapter()
     file_importer_service = FileImporterService(local_file_loader_adapter)

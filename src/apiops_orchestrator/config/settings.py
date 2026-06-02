@@ -53,7 +53,7 @@ class Settings(BaseSettings):
 
     # Use the previously defined PROJECT_ROOT.
     PROJECT_ROOT: Path = PROJECT_ROOT
-    API_REPO_FOLDER: Path = "./external-repo"
+    API_REPO_FOLDER: Path = "./api-gateway"
     PROJECT_SRC_DIR: Path = PROJECT_ROOT / "src"
     API_REPO_ARTIFACTS_PATH: str = (
         "artifacts"  # This is where the developer makes changes.
