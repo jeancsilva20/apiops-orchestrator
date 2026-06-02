@@ -5,15 +5,16 @@ from apiops_orchestrator.domain.models.api_partial_model import ApiTag
 import os
 from dotenv import load_dotenv
 
-#PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-#dotenv_path = PROJECT_ROOT / ".env"
-#load_dotenv(dotenv_path=dotenv_path)
+# PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+# dotenv_path = PROJECT_ROOT / ".env"
+# load_dotenv(dotenv_path=dotenv_path)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 dotenv_path = PROJECT_ROOT / ".env"
 # Load dotenv (non-overriding), then pydantic-settings will also read env_file below.
 load_dotenv(dotenv_path=dotenv_path, override=False)
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
