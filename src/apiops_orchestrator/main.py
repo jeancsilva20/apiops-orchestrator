@@ -107,8 +107,6 @@ def main():
         # Typer allows passing an object (obj) that will be available in the Context (ctx.obj)
         app(obj={"api_listing_service": api_listing_service})
 
-        # TODO: Ajustar para ser sen api list
-
     except CliError as e:
         rprint(f"[bold red]Error:[/bold red] {e.message}")
         sys.exit(e.exit_code)

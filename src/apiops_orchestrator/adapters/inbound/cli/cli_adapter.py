@@ -13,15 +13,23 @@ from apiops_orchestrator.adapters.outbound.http.user_management_api.sensedia_aut
 )
 from apiops_orchestrator.config.settings import Settings
 
-app = typer.Typer(
-    name="sen",
-    help=" APIOps CLI - Framework GitOps to automate, standardize and manage your APIs.",
+main_app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
 
+sen_app = typer.Typer(
+    name="sen",
+    help=" APIOps CLI - Framework GitOps to automate, standardize and manage your APIs.",
+    no_args_is_help=True,
+)
+
 api_app = typer.Typer(name="api", help="Manage APIs.")
-app.add_typer(api_app)
+sen_app.add_typer(api_app)
+
+main_app.add_typer(sen_app)
+
+app = main_app
 
 
 class CliError(Exception):
