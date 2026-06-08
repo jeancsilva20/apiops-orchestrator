@@ -36,7 +36,7 @@ def test_api_list_success():
         {"id": 2, "name": "API 2", "basePath": "/api2"}
     ]
     
-    result = runner.invoke(app, ["api", "list"], obj={"api_listing_service": mock_service})
+    result = runner.invoke(app, ["sen", "api", "list"], obj={"api_listing_service": mock_service})
     
     assert result.exit_code == 0
     assert "id, name, basePath" in result.output
@@ -52,7 +52,7 @@ def test_api_list_with_id():
         {"id": 123, "name": "API 123", "basePath": "/api123", "description": "Desc"}
     ]
     
-    result = runner.invoke(app, ["api", "list", "--id", "123"], obj={"api_listing_service": mock_service})
+    result = runner.invoke(app, ["sen", "api", "list", "--id", "123"], obj={"api_listing_service": mock_service})
     
     assert result.exit_code == 0
     assert "id, name, basePath, description" in result.output
@@ -67,7 +67,7 @@ def test_api_list_verbose():
         {"id": 1, "name": "API 1", "basePath": "/api1", "version": "v1", "description": "Desc"}
     ]
     
-    result = runner.invoke(app, ["api", "list", "--verbose"], obj={"api_listing_service": mock_service})
+    result = runner.invoke(app, ["sen", "api", "list", "--verbose"], obj={"api_listing_service": mock_service})
     
     assert result.exit_code == 0
     assert "id, name, basePath, version, description" in result.output
@@ -79,7 +79,7 @@ def test_api_list_no_apis():
     mock_service = MagicMock()
     mock_service.list_apis.return_value = []
     
-    result = runner.invoke(app, ["api", "list"], obj={"api_listing_service": mock_service})
+    result = runner.invoke(app, ["sen", "api", "list"], obj={"api_listing_service": mock_service})
     
     assert result.exit_code == 0
     assert "No APIs found." in result.output
