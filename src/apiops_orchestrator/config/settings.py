@@ -17,7 +17,6 @@ class Settings(BaseSettings):
     )
 
     HOST: str
-    AUTHORIZATION: str
     OAUTH_CLIENT_ID: str
     OAUTH_CLIENT_SECRET: str
     REQUEST_TIMEOUT: int
