@@ -69,10 +69,6 @@ def validate_recursively(path: Path):
                 rprint(f"[bold yellow]Skipping/Error in {item.name}:[/bold yellow] {e}")
 
 
-rprint("[bold green]Starting Schema Validation...[/bold green]")
-validate_recursively(repo_path)
-rprint("[bold green]Schema Validation completed successfully![/bold green]")
-
 reader = RepoImporterService(settings, importer)
 result = reader.load_normalized_documents(str(repo_path), revision_number=revision)
 
@@ -89,6 +85,9 @@ manager_adapter = ManagerApiAdapter(
     settings=settings,
 )
 
+rprint("[bold green]Starting Schema Validation...[/bold green]")
+validate_recursively(repo_path)
+rprint("[bold green]Schema Validation completed successfully![/bold green]")
 service = ConversorService(result, settings, manager_adapter)
 api_full = service.build_api_json()
 rprint(api_full.model_dump_json(indent=4))

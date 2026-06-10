@@ -5,13 +5,8 @@ from rich import print as rprint
 from apiops_orchestrator.application.services.api_listing_service import (
     ApiListingService,
 )
-from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter import (
-    ManagerApiAdapter,
-)
-from apiops_orchestrator.adapters.outbound.http.user_management_api.sensedia_authentication_adapter import (
-    SensediaAuthenticationAdapter,
-)
-from apiops_orchestrator.config.settings import Settings
+from apiops_orchestrator.adapters.inbound.cli.output_format import OutputFormat
+from apiops_orchestrator.adapters.inbound.cli.output_display import display_output
 
 main_app = typer.Typer(
     no_args_is_help=True,
@@ -24,8 +19,8 @@ sen_app = typer.Typer(
     no_args_is_help=True,
 )
 
-api_app = typer.Typer(name="api", help="Manage APIs.")
-sen_app.add_typer(api_app)
+list_app = typer.Typer(name="list", help="List resources.")
+sen_app.add_typer(list_app)
 
 main_app.add_typer(sen_app)
 
@@ -41,11 +36,14 @@ class CliError(Exception):
         super().__init__(self.message)
 
 
-@api_app.command("list")
+@list_app.command("api")
 def list_apis(
     ctx: typer.Context,
     api_id: Optional[int] = typer.Option(None, "--id", help="Filter by API ID."),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show more details."),
+    output: OutputFormat = typer.Option(
+        OutputFormat.TEXT, "--output", "-o", help="Output format (text, json, yaml)."
+    ),
 ):
     """
     List APIs from Sensedia Manager.
@@ -64,36 +62,41 @@ def list_apis(
             rprint("[yellow]No APIs found.[/yellow]")
             return
 
-        if api_id is not None and verbose:
-            # Header: id, name, basepath, description, environments, revisions
-            rprint(
-                "[bold cyan]id, name, basePath, description, environments count, revisions count[/bold cyan]"
-            )
-            for api in apis:
-                env_count = len(api.get("environments", []))
-                rev_count = len(api.get("revisions", []))
+        def print_text():
+            if api_id is not None and verbose:
+                # Header: id, name, basepath, description, environments, revisions
                 rprint(
-                    f"{api.get('id')}, {api.get('name')}, {api.get('basePath')}, {api.get('description')}, {env_count}, {rev_count}"
+                    "[bold cyan]id, name, basePath, description, environments count, revisions count[/bold cyan]"
                 )
-        elif api_id is not None:
-            # Header: id, name, basepath, description
-            rprint("[bold cyan]id, name, basePath, description[/bold cyan]")
-            for api in apis:
+                for api in apis:
+                    env_count = len(api.get("environments", []))
+                    rev_count = len(api.get("revisions", []))
+                    rprint(
+                        f"{api.get('id')}, {api.get('name')}, {api.get('basePath')}, {api.get('description')}, {env_count}, {rev_count}"
+                    )
+            elif api_id is not None:
+                # Header: id, name, basepath, description
+                rprint("[bold cyan]id, name, basePath, description[/bold cyan]")
+                for api in apis:
+                    rprint(
+                        f"{api.get('id')}, {api.get('name')}, {api.get('basePath')}, {api.get('description')}"
+                    )
+            elif verbose:
+                # Header: id, name, basepath, version, description
                 rprint(
-                    f"{api.get('id')}, {api.get('name')}, {api.get('basePath')}, {api.get('description')}"
+                    "[bold cyan]id, name, basePath, version, description,[/bold cyan]"
                 )
-        elif verbose:
-            # Header: id, name, basepath, version, description
-            rprint("[bold cyan]id, name, basePath, version, description,[/bold cyan]")
-            for api in apis:
-                rprint(
-                    f"{api.get('id')}, {api.get('name')}, {api.get('basePath')}, {api.get('version')}, {api.get('description')}"
-                )
-        else:
-            # Header: id, name, basepath
-            rprint("[bold cyan]id, name, basePath[/bold cyan]")
-            for api in apis:
-                rprint(f"{api.get('id')}, {api.get('name')}, {api.get('basePath')}")
+                for api in apis:
+                    rprint(
+                        f"{api.get('id')}, {api.get('name')}, {api.get('basePath')}, {api.get('version')}, {api.get('description')}"
+                    )
+            else:
+                # Header: id, name, basepath
+                rprint("[bold cyan]id, name, basePath[/bold cyan]")
+                for api in apis:
+                    rprint(f"{api.get('id')}, {api.get('name')}, {api.get('basePath')}")
+
+        display_output(apis, output_format=output, text_callback=print_text)
 
     except Exception as e:
         if isinstance(e, typer.Exit):
