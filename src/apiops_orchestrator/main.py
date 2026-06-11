@@ -75,7 +75,6 @@ def import_repository_files(
     artifact_folder = repo_path / settings.API_REPO_ARTIFACTS_PATH
     try:
         files = file_importer_service.load_file_path(artifact_folder)
-        # print(files)
         set_status("SUCCESS")
         clear_operation_context()
         return files
