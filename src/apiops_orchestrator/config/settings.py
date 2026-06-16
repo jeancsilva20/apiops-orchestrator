@@ -22,11 +22,11 @@ class Settings(BaseSettings):
     REQUEST_TIMEOUT: int
 
     # API Data
-    API_ID: str
+    API_ID: int
 
     # Adaptive Governance Data
-    WORKFLOW_ID: str | None = None
-    WORKFLOW_STAGE_ID: str | None = None
+    WORKFLOW_ID: int | None = None
+    WORKFLOW_STAGE_ID: int | None = None
 
     KIND_VERSION: str | None = None
 
