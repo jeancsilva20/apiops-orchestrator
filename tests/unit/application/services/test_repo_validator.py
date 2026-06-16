@@ -45,10 +45,19 @@ def test_validate_artifact_struct_success(repo_validator, tmp_path):
         for filename in required_files:
             (folder_path / filename).touch()
 
+    # Create revisions folder to satisfy validate_new_structure
+    revisions_path = artifacts_path / "revisions"
+    revisions_path.mkdir()
+    rev1_path = revisions_path / "1"
+    rev1_path.mkdir()
+    (rev1_path / "revision.yaml").touch()
+    (rev1_path / "revision-flow.yaml").touch()
+    (rev1_path / "resources").mkdir()
+
     try:
-        repo_validator.validate_artifact_struct(artifacts_path)
+        repo_validator.validate_new_structure(artifacts_path)
     except ValueError:
-        pytest.fail("validate_artifact_struct raised ValueError unexpectedly!")
+        pytest.fail("validate_new_structure raised ValueError unexpectedly!")
 
 
 def test_validate_artifact_struct_non_existent_path(repo_validator):
@@ -56,9 +65,9 @@ def test_validate_artifact_struct_non_existent_path(repo_validator):
 
     with pytest.raises(
         ValueError,
-        match="Folder 'artifacts' not found.",
+        match="Repository folder not found",
     ):
-        repo_validator.validate_artifact_struct(non_existent_artifacts_path)
+        repo_validator.validate_new_structure(non_existent_artifacts_path)
 
 
 def test_validate_missing_required_folder(repo_validator, tmp_path):
@@ -77,7 +86,7 @@ def test_validate_missing_required_folder(repo_validator, tmp_path):
                 (folder_path / filename).touch()
 
     with pytest.raises(ValueError) as excinfo:
-        repo_validator.validate_artifact_struct(artifacts_path)
+        repo_validator.validate_new_structure(artifacts_path)
 
     assert "Mandatory folder missing" in str(excinfo.value)
     assert str(artifacts_path / folder_to_skip) in str(excinfo.value)
@@ -108,7 +117,7 @@ def test_validate_missing_required_file(repo_validator, tmp_path):
             (folder_path / filename).touch()
 
     with pytest.raises(ValueError) as excinfo:
-        repo_validator.validate_artifact_struct(artifacts_path)
+        repo_validator.validate_new_structure(artifacts_path)
 
     assert "Mandatory file missing" in str(excinfo.value)
     assert str(artifacts_path / folder_with_missing_file / file_to_skip) in str(
@@ -153,10 +162,10 @@ def test_validate_multiple_errors(repo_validator, tmp_path):
             (folder_path / filename).touch()
 
     with pytest.raises(ValueError) as excinfo:
-        repo_validator.validate_artifact_struct(artifacts_path)
+        repo_validator.validate_new_structure(artifacts_path)
 
     error_message = str(excinfo.value)
-    assert "Artifact repository validation failed:" in error_message
+    assert "Repository validation (new structure) failed:" in error_message
     assert (
         f"Mandatory file missing: {artifacts_path / folder_for_missing_file / file_to_skip}"
         in error_message

@@ -4,14 +4,8 @@ from unittest.mock import MagicMock
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 
-from apiops_orchestrator.application.services.file_importer_service import (
-    FileImporterService,
-)
-from apiops_orchestrator.adapters.inbound.local_files_importer.file_loader_strategy import (
-    FILE_LOADER_STRATEGIES,
-)
 from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_importer_adapter import (
-    LocalFileLoaderAdapter,
+    LocalFileImporterAdapter,
 )
 from apiops_orchestrator.application.services.schema_validator import SchemaValidator
 from apiops_orchestrator.config.settings import Settings
@@ -30,17 +24,10 @@ class MockApiResponsible:
 
 @dataclass
 class MockInterceptor:
-    name: str
     type: str = "Request"
-    flow: str = "Pre"
-    script: str = "console.log('test');"
     content: Dict[str, Any] = field(default_factory=dict)
-    parent: Optional[Any] = None
-    revision: Optional[Any] = None
-    id: Optional[str] = None
-    idTemp: Optional[str] = None
     position: int = 1
-    executionPoint: str = "MESSAGE_RECEIVED"
+    executionPoint: str = "FIRST"
     status: str = "ENABLED"
 
 
@@ -63,7 +50,7 @@ class MockResource:
 
 @dataclass
 class MockApiPartialInfo:
-    id: str
+    id: int
     name: str
     version: str
     description: str
@@ -112,13 +99,12 @@ def file_exporter_port() -> PathExporterPort:
 
 @pytest.fixture
 def schema_validator(settings) -> SchemaValidator:
-    adapter = LocalFileLoaderAdapter(loader_strategies=FILE_LOADER_STRATEGIES)
-    file_importer_service = FileImporterService(importer=adapter)
+    adapter = LocalFileImporterAdapter()
     schema_folder = (
         settings.PROJECT_ROOT / "src" / "apiops_orchestrator" / "domain" / "schemas"
     )
     return SchemaValidator(
-        file_importer_service=file_importer_service, schema_folder=schema_folder
+        file_importer=adapter, schema_folder=schema_folder
     )
 
 
@@ -126,14 +112,14 @@ def schema_validator(settings) -> SchemaValidator:
 def api_full_object():
     return MockApiFull(
         api=MockApiPartialInfo(
-            id="123",
+            id=123,
             name="Test API",
             version="1.0.0",
             description="A test API",
             basePath="/test",
         ),
         interceptors=[
-            MockInterceptor(name="Global-Request-Interceptor", position=1),
+            MockInterceptor(position=1),
         ],
         resources=[
             MockResource(
@@ -145,7 +131,7 @@ def api_full_object():
                         method="GET",
                         description="Get all users",
                         interceptors=[
-                            MockInterceptor(name="Op-Specific-Interceptor", position=2)
+                            MockInterceptor(position=2)
                         ],
                     ),
                     MockOperation(
@@ -181,10 +167,9 @@ class TestJsonToYamlService:
         test_schema_folder = (
             settings.PROJECT_ROOT / "tests" / "unit" / "domain" / "schemas"
         )
-        adapter = LocalFileLoaderAdapter(loader_strategies=FILE_LOADER_STRATEGIES)
-        file_importer_service = FileImporterService(importer=adapter)
+        adapter = LocalFileImporterAdapter()
         test_validator = SchemaValidator(
-            file_importer_service=file_importer_service,
+            file_importer=adapter,
             schema_folder=test_schema_folder,
         )
 

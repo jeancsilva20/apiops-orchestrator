@@ -23,7 +23,7 @@ class ApiTag(BaseModel):
 
 
 class ApiPartialInfo(BaseModel):
-    id: str
+    id: int
     name: str
     version: str
     basePath: str

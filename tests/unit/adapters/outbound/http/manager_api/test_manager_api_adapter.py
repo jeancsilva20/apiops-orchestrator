@@ -60,3 +60,38 @@ def test_get_custom_interceptor_by_id_success(mock_settings):
         result = adapter.get_custom_interceptor_by_id(8)
 
         assert result == api_response
+
+def test_get_apis_success(mock_settings):
+    adapter = ManagerApiAdapter(token="token123", base_path="/api-manager/api/v3/", max_retries=3, api_id=123,
+                                settings=mock_settings)
+    expected_response = [{"id": 1, "name": "API 1"}, {"id": 2, "name": "API 2"}]
+
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.return_value = expected_response
+        result = adapter.get_apis()
+
+        assert result == expected_response
+        mock_request.assert_called_once_with(
+            method="GET",
+            url="http://urltest.com/api-manager/api/v3/apis",
+            headers={"Authorization": "Bearer token123", "Content-Type": "application/json"},
+            max_retries=3
+        )
+
+def test_get_api_by_id_with_param_success(mock_settings):
+    adapter = ManagerApiAdapter(token="token123", base_path="/api-manager/api/v3/", max_retries=3, api_id=123,
+                                settings=mock_settings)
+    api_id = 456
+    expected_response = {"id": api_id, "name": "API 456"}
+
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.return_value = expected_response
+        result = adapter.get_api_by_id(api_id=api_id)
+
+        assert result == expected_response
+        mock_request.assert_called_once_with(
+            method="GET",
+            url=f"http://urltest.com/api-manager/api/v3/apis/{api_id}",
+            headers={"Authorization": "Bearer token123", "Content-Type": "application/json"},
+            max_retries=3
+        )
