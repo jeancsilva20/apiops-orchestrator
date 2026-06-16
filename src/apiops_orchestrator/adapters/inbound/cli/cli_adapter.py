@@ -15,7 +15,7 @@ main_app = typer.Typer(
 
 sen_app = typer.Typer(
     name="sen",
-    help=" APIOps CLI - Framework GitOps to automate, standardize and manage your APIs.",
+    help="APIOps CLI - Framework GitOps to automate, standardize and manage your APIs.",
     no_args_is_help=True,
 )
 
@@ -117,7 +117,7 @@ def version_callback(value: bool):
         raise typer.Exit()
 
 
-@app.callback()
+@sen_app.callback()
 def main_callback(
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Increases verbosity in logs."
