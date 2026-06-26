@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 import requests
 from apiops_orchestrator.application.services.publisher_service import PublisherService
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
-from apiops_orchestrator.domain.models.api_partial_model import ApiPartialInfo
+from apiops_orchestrator.domain.models.api_partial_model import ApiPartialInfo, ApiRevision
 from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
 
 
@@ -60,4 +60,56 @@ def test_format_data_updates_fields():
     assert updated.workflowStageId == 7
     assert updated.api.lastRevision == 99
     assert updated.api.creationDate == 123456789
-    assert updated.api.revisions == remote_api_data["revisions"]
+    expected_revisions = [ApiRevision(**r) for r in remote_api_data["revisions"]]
+    assert updated.api.revisions == expected_revisions
+
+
+def test_format_data_forces_empty_fields_in_revisions():
+    mock_adapter = MagicMock(spec=ManagerApiPort)
+    api_partial_info_mock = MagicMock(spec=ApiPartialInfo)
+
+    api_data = MagicMock()
+    api_data.api = api_partial_info_mock
+
+    remote_api_data = {
+        "revisions": [
+            {
+                "id": 1,
+                "interceptors": [{"some": "interceptor"}],
+                "apiBroken": True,
+                "deployments": [{"some": "deployment"}],
+                "resources": [{"some": "resource"}],
+                "workflowId": 100,
+                "workflowStageId": 200,
+            }
+        ],
+        "lastRevision": {
+            "id": 1,
+            "interceptors": [{"some": "interceptor"}],
+            "apiBroken": True,
+            "deployments": [{"some": "deployment"}],
+            "resources": [{"some": "resource"}],
+            "workflowId": 100,
+            "workflowStageId": 200,
+        },
+        "creationDate": 123456789,
+    }
+
+    obj = PublisherService(mock_adapter)
+    updated = obj._format_data(api_data, remote_api_data)
+
+    # Check lastRevision
+    assert isinstance(updated.api.lastRevision, ApiRevision)
+    assert updated.api.lastRevision.interceptors == []
+    assert updated.api.lastRevision.deployments == []
+    assert updated.api.lastRevision.resources == []
+    assert updated.api.lastRevision.apiBroken is False
+
+    # Check revisions
+    assert len(updated.api.revisions) == 1
+    rev = updated.api.revisions[0]
+    assert isinstance(rev, ApiRevision)
+    assert rev.interceptors == []
+    assert rev.deployments == []
+    assert rev.resources == []
+    assert rev.apiBroken is False
