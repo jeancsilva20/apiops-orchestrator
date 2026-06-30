@@ -1,0 +1,193 @@
+name: Workflow Python (PR)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: unit-tests-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    env:
+      HAS_TESTS: ${{ vars.has_tests || 'true' }}
+      BYPASS_TESTS: ${{ vars.bypass_tests || 'false' }}
+    steps:
+      - name: Echo envs
+        run: |
+          echo "HAS_TESTS=${HAS_TESTS}"
+          echo "BYPASS_TESTS=${BYPASS_TESTS}"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Install dependencies
+        run: poetry install --no-interaction
+
+      - name: Run unit tests
+        id: pytest
+        if: ${{ env.HAS_TESTS == 'true' }}
+        continue-on-error: ${{ env.BYPASS_TESTS == 'true' }}
+        run: |
+          mkdir -p test-results
+          poetry run pytest tests/unit -v --tb=short --junitxml=test-results/junit.xml 2>&1 | tee test-results/output.txt
+
+      - name: Build test report
+        id: report
+        if: ${{ always() && env.HAS_TESTS == 'true' }}
+        run: |
+          python3 <<'PY' >> "$GITHUB_ENV"
+          import os
+          import xml.etree.ElementTree as ET
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          junit_path = Path("test-results/junit.xml")
+          exit_code = os.environ.get("PYTEST_EXIT_CODE", "1")
+
+          if not junit_path.exists():
+              run_url = (
+                  f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/"
+                  f"{os.environ['GITHUB_RUN_ID']}"
+              )
+              report = "\n".join([
+                  "## Resultado dos testes unitários",
+                  "",
+                  "❌ **Status:** Reprovado",
+                  "",
+                  "Os testes não foram executados ou o relatório JUnit não foi gerado.",
+                  "",
+                  f"_Última execução — [ver workflow]({run_url})_",
+              ])
+              print("TEST_REPORT<<EOF")
+              print(report)
+              print("EOF")
+              raise SystemExit(0)
+
+          total = failed = errors = skipped = 0
+          duration = 0.0
+          failure_lines = []
+
+          root = ET.parse(junit_path).getroot()
+          suites = root.findall("testsuite")
+          if root.tag == "testsuite":
+              suites = [root]
+          elif root.tag == "testsuites" and not suites:
+              suites = root.findall(".//testsuite")
+
+          for suite in suites:
+              total += int(suite.attrib.get("tests", 0))
+              failed += int(suite.attrib.get("failures", 0))
+              errors += int(suite.attrib.get("errors", 0))
+              skipped += int(suite.attrib.get("skipped", 0))
+              duration += float(suite.attrib.get("time", 0) or 0)
+
+              for case in suite.findall("testcase"):
+                  for node in list(case.findall("failure")) + list(case.findall("error")):
+                      name = case.attrib.get("name", "?")
+                      cls = case.attrib.get("classname", "")
+                      raw = (node.attrib.get("message") or node.text or "").strip()
+                      msg = (raw.splitlines()[0] if raw else "sem mensagem")[:240]
+                      failure_lines.append(f"- `{cls}::{name}` — {msg}")
+
+          passed = max(total - failed - errors - skipped, 0)
+          ok = exit_code == "0" and failed == 0 and errors == 0
+          status = "Aprovado" if ok else "Reprovado"
+          icon = "✅" if ok else "❌"
+
+          run_url = (
+              f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/"
+              f"{os.environ['GITHUB_RUN_ID']}"
+          )
+          ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+          lines = [
+              "## Resultado dos testes unitários",
+              "",
+              f"**Status:** {icon} {status}",
+              "",
+              "| Métrica | Valor |",
+              "| --- | ---: |",
+              f"| Total | {total} |",
+              f"| Passou | {passed} |",
+              f"| Falhou | {failed} |",
+              f"| Erros | {errors} |",
+              f"| Ignorados | {skipped} |",
+              f"| Duração (s) | {duration:.2f} |",
+              "",
+              f"_Última execução: {ts} — [ver workflow]({run_url})_",
+          ]
+
+          if failure_lines:
+              lines.extend(["", "### Falhas", "", *failure_lines[:30]])
+              if len(failure_lines) > 30:
+                  lines.append(f"_… e mais {len(failure_lines) - 30} falha(s)._")
+
+          report = "\n".join(lines)
+          print("TEST_REPORT<<EOF")
+          print(report)
+          print("EOF")
+          PY
+
+      - name: Update PR body with test results
+        if: ${{ always() && env.HAS_TESTS == 'true' }}
+        uses: actions/github-script@v7
+        env:
+          TEST_REPORT: ${{ env.TEST_REPORT }}
+        with:
+          script: |
+            const markerStart = "<!-- unit-tests-report:start -->";
+            const markerEnd = "<!-- unit-tests-report:end -->";
+            const report = process.env.TEST_REPORT || "## Resultado dos testes unitários\n\nRelatório indisponível.";
+            const section = `${markerStart}\n${report}\n${markerEnd}`;
+
+            const { owner, repo } = context.repo;
+            const pull_number = context.payload.pull_request.number;
+
+            const { data: pr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number,
+            });
+
+            let body = pr.body ?? "";
+            const pattern = new RegExp(
+              `${markerStart.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[\\s\\S]*?${markerEnd.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+              "m",
+            );
+
+            if (pattern.test(body)) {
+              body = body.replace(pattern, section);
+            } else {
+              body = body.trim() ? `${body.trim()}\n\n${section}` : section;
+            }
+
+            await github.rest.pulls.update({
+              owner,
+              repo,
+              pull_number,
+              body,
+            });
+
+      - name: Upload test artifact
+        if: ${{ always() && env.HAS_TESTS == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results-${{ github.run_id }}
+          path: test-results/**
+          if-no-files-found: warn
+          retention-days: 7
