@@ -1,6 +1,4 @@
-import json
 import logging
-import sys
 
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
 from apiops_orchestrator.domain.models.api_partial_model import Visibility, ApiRevision
