@@ -1,8 +1,7 @@
 import logging
-import sys
 
 from apiops_orchestrator.domain.models.api_full_model import ApiFull
-from apiops_orchestrator.domain.models.api_partial_model import Visibility
+from apiops_orchestrator.domain.models.api_partial_model import Visibility, ApiRevision
 from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
 from typing import Dict, Any
 from apiops_orchestrator.infrastructure.observability.logging import (
@@ -21,15 +20,36 @@ class PublisherService:
     def _format_data(
         self, api_data: ApiFull, remote_api_data: Dict[str, Any]
     ) -> ApiFull:
-        revisions = remote_api_data["revisions"]
+        revisions_raw = remote_api_data.get("revisions", [])
 
-        if "workflowId" in revisions[len(revisions) - 1]:
-            api_data.workflowId = revisions[len(revisions) - 1]["workflowId"]
-        if "workflowStageId" in revisions[len(revisions) - 1]:
-            api_data.workflowStageId = revisions[len(revisions) - 1]["workflowStageId"]
+        # Filter/convert each revision dict to ApiRevision, keeping only specified fields
+        revisions = []
+        for r in revisions_raw:
+            if isinstance(r, dict):
+                revisions.append(ApiRevision(**r))
+            else:
+                revisions.append(r)
 
-        api_data.api.lastRevision = remote_api_data["lastRevision"]
-        api_data.api.creationDate = remote_api_data["creationDate"]
+        if revisions:
+            last_rev = revisions[-1]
+            if isinstance(last_rev, ApiRevision):
+                if last_rev.workflowId is not None:
+                    api_data.workflowId = last_rev.workflowId
+                if last_rev.workflowStageId is not None:
+                    api_data.workflowStageId = last_rev.workflowStageId
+            elif isinstance(last_rev, dict):
+                if "workflowId" in last_rev:
+                    api_data.workflowId = last_rev["workflowId"]
+                if "workflowStageId" in last_rev:
+                    api_data.workflowStageId = last_rev["workflowStageId"]
+
+        last_revision_raw = remote_api_data.get("lastRevision")
+        if isinstance(last_revision_raw, dict):
+            api_data.api.lastRevision = ApiRevision(**last_revision_raw)
+        else:
+            api_data.api.lastRevision = last_revision_raw
+
+        api_data.api.creationDate = remote_api_data.get("creationDate")
 
         if "visibility" in remote_api_data and remote_api_data["visibility"]:
             api_data.api.visibility = Visibility(**remote_api_data["visibility"])
