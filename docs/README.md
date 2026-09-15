@@ -1,0 +1,54 @@
+# Documentação do apiops-orchestrator
+
+Índice da documentação interna do orquestrador. Última atualização: **2026-09-15**.
+
+> **Relação com a documentação canônica do projeto:** os documentos oficiais de visão, conhecimento e decisões vivem em
+> `Plataforma-Sensedia/API Ops - docs/Docs revisados/`. Os arquivos desta pasta registram as decisões e o
+> entendimento técnico **do código orquestrador** de forma versionada junto ao repositório. Em caso de conflito,
+> prevalece a documentação canônica e este conjunto deve ser reconciliado (ver `auth/divergencias-abertas.md`).
+
+---
+
+## Estrutura
+
+| Caminho | Conteúdo |
+|---|---|
+| [`adr/`](adr/) | Architecture Decision Records — uma decisão por documento, formato MADR, PT-BR |
+| [`auth/`](auth/) | Módulo de autenticação: doc canônica, contrato da API de auth, exploração empírica e divergências abertas |
+| [`features/`](features/) | Especificações de features (feature atual: `sen login`) |
+
+## ADRs
+
+| ID | Título | Status |
+|----|--------|--------|
+| [0001](adr/0001-autenticacao-cli-base64-passthrough.md) | Autenticação da CLI via pass-through de Base64 | Aceito |
+| [0002](adr/0002-ciclo-de-vida-de-tokens-dev-x-superadmin.md) | Ciclo de vida de tokens: dev × superadmin | Aceito |
+| [0003](adr/0003-autorizacao-por-acao-endpoint-validation.md) | Autorização por ação via endpoint `/oauth2/token/validation` | Aceito |
+| [0004](adr/0004-variavel-de-ambiente-sen-credentials.md) | Variável de ambiente `SEN_CREDENTIALS` | Aceito |
+| [0005](adr/0005-padrao-de-logs-de-autenticacao.md) | Padrão de logs de autenticação herdado da observabilidade | Aceito |
+
+## Autenticação
+
+| Documento | Conteúdo |
+|-----------|----------|
+| [authenticator-module.md](auth/authenticator-module.md) | Síntese canônica do módulo (objetivo, camadas, fluxos, validações, permissões) |
+| [api-orq-auth-contrato.md](auth/api-orq-auth-contrato.md) | Contrato conhecido da API de autenticação do orquestrador (`/orq-auth/v1`) |
+| [exploracao-empirica-2026-09.md](auth/exploracao-empirica-2026-09.md) | Diário datado da exploração read-only (rotas OAuth2, API 400, validações) |
+| [divergencias-abertas.md](auth/divergencias-abertas.md) | Divergências entre fontes + pré-requisitos externos |
+
+## Features
+
+| Documento | Conteúdo |
+|-----------|----------|
+| [sen-login.md](features/sen-login.md) | Spec da feature `sen login`: TDDs, decisões travadas, fases e critérios de aceite |
+
+---
+
+## Processo
+
+- **Uma decisão por ADR.** Facilita divisão em SDDs pequenas e validação.
+- **Regra de processo do projeto:** toda decisão concluída deve passar por **validação de um segundo agente revisor**
+  antes de ser consolidada como normativa (conforme backlog/delivery e README da documentação canônica).
+- Fontes são **citadas explicitamente** (Confluence, agendas de reunião, código da branch `develop`,
+  documentação canônica) para permitir auditoria.
+- Nenhum segredo, credencial ou token real é registrado nesta pasta.
