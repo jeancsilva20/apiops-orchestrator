@@ -41,6 +41,18 @@
 | Documento | Conteúdo |
 |-----------|----------|
 | [sen-login.md](features/sen-login.md) | Spec da feature `sen login`: TDDs, decisões travadas, fases e critérios de aceite |
+| [`feat-command-sen-list/`](feat-command-sen-list/) | Incremento `sen list` — pasta espelhando o ramo (convenção de organização) |
+
+## Ramo `feat/command-sen-list` (incremento em curso)
+
+| Documento | Conteúdo |
+|-----------|----------|
+| [features/sen-list.md](feat-command-sen-list/features/sen-list.md) | Spec do `sen list`: decisões seladas, grades com dados reais, mapa de fontes vivas e critérios de aceite |
+| [sen-login-incremento-teams-jwt.md](feat-command-sen-list/sen-login-incremento-teams-jwt.md) | Incremento do login: teams do usuário no `extra_info` do JWT (requisito ao time de `/orq-auth`) |
+| [adr/0006-composition-root-lazy-cli.md](feat-command-sen-list/adr/0006-composition-root-lazy-cli.md) | ADR 0006 — composition root lazy: `sen` standalone, `--help` sem `.env`, entry-point |
+| [backlog/sen-list-despriorizacoes.md](feat-command-sen-list/backlog/sen-list-despriorizacoes.md) | Despriorizações legítimas (JSON -o, YAML, filtros, stage-name, audit) com contratos à espera |
+
+> **Convenção de organização:** cada incremento de feature/documentação ganha uma pasta `docs/<nome-do-ramo>/`, espelhando o nome da branch. Documentos pré-existentes ficam onde estão (nenhuma migração).
 
 ---
 
