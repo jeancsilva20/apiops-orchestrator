@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     # API Data
     API_ID: int
 
+    # Auth da CLI (sen login) — obrigatórias, sem fallback/default
+    SEN_CREDENTIALS: str | None = None
+    AUTH_HOST: str
+    AUTH_LOGIN_PATH: str
+
     # Adaptive Governance Data
     WORKFLOW_ID: int | None = None
     WORKFLOW_STAGE_ID: int | None = None

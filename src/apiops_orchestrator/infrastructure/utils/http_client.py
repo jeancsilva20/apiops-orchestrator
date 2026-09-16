@@ -21,12 +21,15 @@ class HttpClient:
             headers=None,
             max_retries: int = 3,
             interval: float = 5,
+            report_client_errors: bool = True,
             **kwargs,
     ):
         """
-        Send an http request and retries in case of 5xx errors
+        Send an http request and retries in case of 5xx errors.
 
-        Returns: JSON or text
+        report_client_errors: when True (legacy default), prints the RFC 7807 body of
+        4xx responses to stderr; callers owning their own error UX (e.g. sen login)
+        pass False to keep messages exclusive to the service layer.
         """
         logger = logging.getLogger(__name__)
         set_span_id()
@@ -70,10 +73,11 @@ class HttpClient:
                         if 400 <= status_code < 500:
                             logger.debug(f"Client Error ({status_code}): {e}")
 
-                            rfc_error = HttpErrorMapper.map_to_rfc7807(e.response)
+                            if report_client_errors:
+                                rfc_error = HttpErrorMapper.map_to_rfc7807(e.response)
 
-                            error_console.print("\n[bold red] Error in Request:[/bold red]")
-                            error_console.print_json(data=rfc_error)
+                                error_console.print("\n[bold red] Error in Request:[/bold red]")
+                                error_console.print_json(data=rfc_error)
 
                             clear_operation_context()
                             raise typer.Exit(code=1)
