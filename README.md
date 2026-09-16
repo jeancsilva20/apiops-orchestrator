@@ -36,6 +36,7 @@ Authenticates the user against the Orchestrator Auth API and saves the session l
 poetry run python src/apiops_orchestrator/main.py sen login
 ```
 
+The session file is stored at the **project root** as `.sen_session` (hidden, owner-only, git-ignored — see ADR 0006).
 Full behavior (credential sources, endpoint variables, exit codes, session file and privacy) is documented in
 [`docs/features/sen-login.md`](docs/features/sen-login.md).
 

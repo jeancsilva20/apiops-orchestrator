@@ -103,7 +103,7 @@ Comportamentos entregues:
 | Endpoint | `AUTH_HOST` + `AUTH_LOGIN_PATH` obrigatórios; não configurados → erro antes de rede |
 | Exit codes | `0` sucesso · `1` indisponibilidade/genérica · `2` credencial não encontrada · `3` recusada (4xx) · `4` protocolo · `5` persistência |
 | Erro HTTP 4xx | **sem corpo cru/JSON** na tela (HttpClient com `report_client_errors=False`); mensagem única categorizada |
-| Sessão | JSON em `%TEMP%/.sen_session` (arquivo oculto, escrita atômica, permissões de dono) com `expires_at` |
+| Sessão | JSON em `<raiz do projeto>/.sen_session` (arquivo oculto, escrita atômica, permissões de dono; fora do Git via `.gitignore` — ADR 0006) com `expires_at` |
 | Consumo futuro | `SessionStore().load()` → `LoginSession` \| `None` (ausente/expirada) |
 | Logs | eventos `auth.login.started/success/failure` no padrão de observabilidade; nenhum segredo impresso |
 | Esteira | modo bare (`python main.py`) preservado via gate por argv em `main.py` |

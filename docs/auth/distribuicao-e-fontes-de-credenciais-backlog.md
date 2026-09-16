@@ -22,7 +22,7 @@ Definir, por ambiente, **de onde vêm as credenciais da CLI** (`SEN_CREDENTIALS`
 | Ambiente | Origem da credencial | Pasta/arquivo | Observação |
 |---|---|---|---|
 | **Esteira (CI/CD)** | Secrets (GitHub/Bitbucket) → **env vars do processo** | **nenhuma** (nada persistido — ADR 0002) | aposentar o `printf "> .env"` do `bitbucket-pipelines.yml` |
-| **Dev com repo (poetry)** | `.env` na **raiz do projeto** | raiz do clone | comportamento atual mantido |
+| **Dev com repo (poetry)** | `.env` na **raiz do projeto** | raiz do clone | comportamento atual mantido; **sessão** também na raiz ([ADR 0006](../adr/0006-armazenamento-da-sessao-raiz-do-projeto.md)) |
 | **Dev com wheel (pip)** | `.env` do **CWD** (onde roda `sen`) → fallback `~/.sen/.env` | pasta de uso | **nunca** dentro de `src/`/site-packages (secrets não podem ser empacotadas no artefato) |
 
 ## 4. Ajustes a especificar (inputs para a próxima spec)
