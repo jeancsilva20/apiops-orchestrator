@@ -64,12 +64,17 @@ A URL da requisição de login SHALL ser construída exclusivamente a partir das
 
 ### Requirement: Sessão persistida em arquivo e legível por execuções posteriores
 
-A sessão SHALL ser persistida em um **arquivo oculto** (nome iniciado por ponto) no diretório temporário do sistema operacional, com escrita atômica (arquivo provisório + renomeação) e permissões restritivas ao usuário corrente. O arquivo SHALL conter `access_token`, `token_type`, `expires_at` (calculado a partir de `expires_in` no momento da recepção), `user_groups`, `user_email` e `username`, de modo que execuções subsequentes da aplicação consigam carregar e avaliar a sessão.
+A sessão SHALL ser persistida em um **arquivo oculto** (nome iniciado por ponto) na **raiz do projeto** — o diretório raiz do repositório sobre o qual a aplicação está executando, derivado da configuração da aplicação (e não do diretório corrente do shell) —, com escrita atômica (arquivo provisório + renomeação) e permissões restritivas ao usuário corrente. O arquivo SHALL estar **excluído do rastreamento de versionamento** (ver requirement "Sessão excluída do rastreamento de versionamento"). O arquivo SHALL conter `access_token`, `token_type`, `expires_at` (calculado a partir de `expires_in` no momento da recepção), `user_groups`, `user_email` e `username`, de modo que execuções subsequentes da aplicação consigam carregar e avaliar a sessão.
 
 #### Scenario: Escrita segura com conteúdo completo
 
 - **WHEN** o login é concluído com sucesso
-- **THEN** o arquivo de sessão é criado via escrita atômica (não é possível observar arquivo parcialmente escrito), o nome inicia com ponto, as permissões restringem leitura ao usuário corrente e o conteúdo contém todos os campos listados, incluindo `expires_at`
+- **THEN** o arquivo de sessão é criado na raiz do projeto via escrita atômica (não é possível observar arquivo parcialmente escrito), o nome inicia com ponto, as permissões restringem leitura ao usuário corrente e o conteúdo contém todos os campos listados, incluindo `expires_at`
+
+#### Scenario: Local independente do diretório corrente
+
+- **WHEN** o usuário executa `sen login` a partir de qualquer subdiretório do projeto (ex.: `src/`) ou de fora dele
+- **THEN** a sessão é gravada na mesma **raiz do projeto** (configuração da aplicação), e não no diretório corrente
 
 #### Scenario: Leitura por execução posterior
 
@@ -104,3 +109,22 @@ O `sen login` SHALL seguir os padrões atuais da aplicação: tratamento de requ
 
 - **WHEN** o login falha em qualquer etapa (rede, protocolo, persistência)
 - **THEN** as mensagens de erro identificam a categoria e, no máximo, metadados seguros (status HTTP, etapa da falha), nunca o conteúdo do cabeçalho de credencial ou do token
+
+### Requirement: Sessão excluída do rastreamento de versionamento
+
+Por conviver com a árvore do projeto, o arquivo de sessão SHALL estar protegido contra ingresso no versionamento: o repositório SHALL manter um padrão `.sen_session*` no `.gitignore` cobrindo o arquivo e suas variantes provisórias, garantindo que a sessão nunca seja commitada nem propagada por operações Git.
+
+#### Scenario: Estado do Git limpo com sessão presente
+
+- **WHEN** existe arquivo de sessão válido na raiz do projeto e o usuário executa `git status`
+- **THEN** o arquivo de sessão (e seus provisórios) não aparecem como modificados/não rastreados
+
+#### Scenario: Cobertura de variantes provisórias
+
+- **WHEN** a pasta raiz contém resíduos de escrita (ex.: `.sen_session.<sufixo>.tmp`)
+- **THEN** o padrão de `.gitignore` definido cobre essas variantes, mantendo o repositório limpo
+
+#### Scenario: Repositório livre de sessão histórica
+
+- **WHEN** o repositório é clonado ou navegado em qualquer commit
+- **THEN** não existe arquivo de sessão trackeado em nenhuma revisão (a exclusão previne, não exige remoção retroativa)
