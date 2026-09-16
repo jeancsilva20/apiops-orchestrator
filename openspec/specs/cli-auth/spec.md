@@ -12,7 +12,7 @@ A CLI SHALL disponibilizar o comando `sen login`, que realiza a autenticação c
 #### Scenario: Login bem-sucedido
 
 - **WHEN** o usuário executa `sen login` com credencial válida e a API de autenticação responde com uma sessão válida
-- **THEN** a CLI exibe um resumo da sessão (username, e-mail, grupos e prazo de expiração) sem exibir qualquer valor de token ou segredo, grava a sessão em arquivo local e encerra com exit code `0`
+- **THEN** a CLI exibe um resumo da sessão (username, e-mail e prazo de expiração) sem exibir grupos, sem exibir qualquer valor de token ou segredo, grava a sessão em arquivo local — incluindo `user_groups` — e encerra com exit code `0`
 
 #### Scenario: Credencial não encontrada
 
