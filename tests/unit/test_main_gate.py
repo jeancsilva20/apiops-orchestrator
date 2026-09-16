@@ -1,10 +1,12 @@
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
 import apiops_orchestrator.main as main_mod
 from apiops_orchestrator.adapters.inbound.cli.cli_adapter import CliError
+from apiops_orchestrator.config.settings import Settings
 
 
 class RecordingApp:
@@ -13,6 +15,25 @@ class RecordingApp:
 
     def __call__(self, obj=None):
         self.calls.append(obj)
+
+
+def _stub_settings(project_root: Path):
+    settings = Settings.__new__(Settings)
+    object.__setattr__(settings, "PROJECT_ROOT", project_root)
+    object.__setattr__(settings, "AUTH_HOST", "https://auth.example.com")
+    object.__setattr__(settings, "AUTH_LOGIN_PATH", "/cli-2/orq-auth/v1/oauth2/token")
+    object.__setattr__(settings, "SEN_CREDENTIALS", None)
+    return settings
+
+
+def test_login_service_factory_uses_project_root_for_session_store(tmp_path):
+    settings = _stub_settings(project_root=tmp_path)
+
+    factory = main_mod.build_login_service_factory(settings)
+    service = factory()
+
+    assert service.session_store.session_path == tmp_path / ".sen_session"
+    assert service.session_store.directory == tmp_path
 
 
 @pytest.fixture

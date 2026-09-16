@@ -44,7 +44,7 @@ def build_login_service_factory(settings: Settings):
     def factory() -> LoginService:
         return LoginService(
             auth_adapter=OrchestratorAuthAdapter(settings=settings, max_retries=3),
-            session_store=SessionStore(),
+            session_store=SessionStore(directory=settings.PROJECT_ROOT),
             settings=settings,
         )
 

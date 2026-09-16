@@ -157,6 +157,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# CLI local session (sen login) — nunca versionar (ADR 0006)
+.sen_session*
+
 # Spyder project settings
 .spyderproject
 .spyproject
