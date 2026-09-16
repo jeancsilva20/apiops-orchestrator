@@ -62,7 +62,6 @@ def login(ctx: typer.Context):
     )
     rprint("[bold green]Login realizado com sucesso.[/bold green]")
     rprint(f"Usuário: {session.username} ({session.user_email})")
-    rprint(f"Grupos: {', '.join(session.user_groups)}")
     rprint(f"Sessão expira em: {expires_at}")
 
 

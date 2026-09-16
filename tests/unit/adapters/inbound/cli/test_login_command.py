@@ -44,10 +44,25 @@ def test_login_success_prints_summary_without_secrets():
     assert "Login realizado com sucesso." in result.output
     assert "isaac.machado" in result.output
     assert "isaac.machado@sensedia.com" in result.output
-    assert "APIOps, Lab-tech" in result.output
     assert "Sessão expira em" in result.output
+    assert "APIOps, Lab-tech" not in result.output
+    assert "Grupos" not in result.output
     assert TOKEN not in result.output
     assert CREDENTIAL not in result.output
+
+
+def test_login_success_session_still_carries_groups():
+    captured = {}
+
+    class RecordingService:
+        def login(self):
+            session = _session()
+            captured["session"] = session
+            return session
+
+    result = runner.invoke(app, ["sen", "login"], obj={"login_service_factory": lambda: RecordingService()})
+    assert result.exit_code == 0
+    assert captured["session"].user_groups == ["APIOps", "Lab-tech"]
 
 
 def test_login_service_missing_from_context_exits_one():
