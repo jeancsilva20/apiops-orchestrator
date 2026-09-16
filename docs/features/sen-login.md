@@ -78,3 +78,32 @@ interceptor Consult, migração da esteira).
 5. Token expirado: guard interpoe re-login orientado;
 6. Logs seguem padrão JSON da observabilidade com eventos `auth.*` (`--verbose` não muda formato);
 7. Suite `pytest` existente permanece 100% verde + novos testes unitários de guard/storage/adapters/CLI.
+
+## Implantação da fase 1 (implementada 16/09/2026 — change `add-sen-login`)
+
+Uso:
+
+```powershell
+# credencial: APENAS o blob Base64(client_id:secret), sem prefixo "Basic"
+[Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("<client_id>:<secret>"))
+
+# variáveis obrigatórias no .env da raiz (ver .env.example):
+SEN_CREDENTIALS="<blob>"
+AUTH_HOST="https://api-consulting.sensedia.com"      # sem fallback para HOST
+AUTH_LOGIN_PATH="/cli-2/orq-auth/v1/oauth2/token"    # sem default em código
+
+poetry run python src/apiops_orchestrator/main.py sen login
+```
+
+Comportamentos entregues:
+
+| Aspecto | Comportamento |
+|---|---|
+| Credencial | única fonte `SEN_CREDENTIALS` (sem fallback legado); ausente → erro pré-rede, exit **2** |
+| Endpoint | `AUTH_HOST` + `AUTH_LOGIN_PATH` obrigatórios; não configurados → erro antes de rede |
+| Exit codes | `0` sucesso · `1` indisponibilidade/genérica · `2` credencial não encontrada · `3` recusada (4xx) · `4` protocolo · `5` persistência |
+| Erro HTTP 4xx | **sem corpo cru/JSON** na tela (HttpClient com `report_client_errors=False`); mensagem única categorizada |
+| Sessão | JSON em `%TEMP%/.sen_session` (arquivo oculto, escrita atômica, permissões de dono) com `expires_at` |
+| Consumo futuro | `SessionStore().load()` → `LoginSession` \| `None` (ausente/expirada) |
+| Logs | eventos `auth.login.started/success/failure` no padrão de observabilidade; nenhum segredo impresso |
+| Esteira | modo bare (`python main.py`) preservado via gate por argv em `main.py` |
