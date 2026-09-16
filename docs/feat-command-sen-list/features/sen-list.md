@@ -4,7 +4,7 @@
 |---|---|
 | Ramo | `feat/command-sen-list` (incremento sobre `feat/comand-sen-login`) |
 | Data | 2026-09-15 |
-| Estado | **Decisões seladas** (grill completo) · grades em validação externa (Paulo, thread `C09H2QVGJD7`, disparo 16/09 10:00) |
+| Estado | **Decisões seladas** (grill 15/09 + validação externa do Paulo em 16/09 — 5 votos incorporados, ver §2) |
 | Pré-requisito | `sen login` antecede esta feature (sequenciamento decidido) |
 | Fontes primárias | Sessão de grill 15/09/2026 · sondas read-only em produção (comprovadas inline) · `auth/api-orq-auth-contrato.md` · `docs/features/sen-login.md` |
 
@@ -19,15 +19,15 @@
 3. **Teams do usuário passam a viajar no JWT** (`extra_info.teams`, além de `permissions`) — decisão adicional à feature de login, capturada em [`sen-login-incremento-teams-jwt.md`](../sen-login-incremento-teams-jwt.md). Uso futuro: parâmetro de filtragem client-side (evolução posterior; não é escopo desta fatia).
 4. **MD-1 — Normalização de username:** a CLI converte `email@dominio` → `username bare` antes de qualquer chamada a grupos/validação. Evidência: `isaac.machado@sensedia.com → 404`; `isaac.machado → 200`.
 
-## 2. Decisões seladas (grill 15/09)
+## 2. Decisões seladas (grill 15/09 + validação Paulo 16/09)
 
 | # | Decisão | Detalhe |
 |---|---|---|
 | **A1** | `sen list api` — substantivo no **singular** | Escola gh (verbo + recurso singular); consistente com futuras `sen list revision …` |
 | **A2** | Lookup por flag: `sen list api --id <api_id>` | Mantém padrão vivo (cli_adapter atual) e docs/TDD existentes. **Princípio arquitetural herdado: comandos mutantes (publish/deploy) EXIGEM `--id` explícito — nunca inferência** |
 | **A3-1** | Saída de máquina: conjunto completo por padrão | Flags `--limit`/`--offset` **sempre explícitas**. Micro-regras: **1a** ordenação client-side por `id` asc (determinismo/diff); **1b** `--limit ≤ 0` → erro amigável, `exit 1`; **1c** `--offset` além do total → lista vazia, `exit 0` |
-| **A3-2** | Saída humana (TEXT): janela default **10** | Rodapé `mostrando X de N · próxima: sen list api --offset 10`. A janela pertence ao olho humano, nunca ao dado |
-| **A3-3** | `--term "autenticacao"` — filtro client-side | Campos `name` + `description`; **case-insensitive + accent-folded** (`autenticação` casa `Autenticacao`); **mutuamente exclusivo com `--id`** (erro imediato); janela aplica-se **após** o filtro |
+| **A3-2** | Janelamento: `--limit`/`--offset` **sempre explícitos em TODAS as saídas** (humana e máquina) *(revogado o default silencioso — voto Paulo 16/09)* | Caso **desnudo** (`sen list api` sem flags): aplica **default anunciado** — executa com `--limit 10 --offset 0` e exibe rodapé `usando padrões: --limit 10 --offset 0 · detalhes: sen list api --help` |
+| **A3-3** | `--query "autenticacao"` — filtro client-side *(flag renomeada de `--term` — voto Paulo 16/09)* | Campos `name` + `description`; **case-insensitive + accent-folded** (`autenticação` casa `Autenticacao`); **mutuamente exclusiva com `--id`** (erro imediato); janela aplica-se **após** o filtro |
 | **A3-4** | Fora desta fatia → backlog | Busca server-side, `--domain`, `--tag` (ver `backlog/sen-list-despriorizacoes.md`) |
 | **B2** | `-o json` **despriorizado** | Canal de máquina vai a backlog **herdando** o contrato já negociado (full-set default, janelas explícitas, campos mínimos `id, name, internal_name, version, state, owners[]`). A esteira não perde nada: recebe `API_ID` explícito (regra A2) |
 | **C2** | Grades canônicas (§3) | Colunas 100% respaldadas por payload real (mapa em §4) |
@@ -41,36 +41,37 @@
 |---|---|
 | **D2** | Esteira PoC passa a falhar rápido (`sen create revision` inexistente) — ganho: não gasta auth/conversão |
 | **D3** | Fluxo legacy (validação de estrutura + normalização + `ApiFull`) → `scripts/generate_api_json.py`, fora do pacote |
-| **E1** | Tabela mínima de erros RFC7807→humano: `401` credenciais · `403` sem permissão · `404` API não encontrada · `--term` vazio → dica útil · rede caída; todos `exit 1`, sem stacktrace |
+| **E1** | Tabela mínima de erros RFC7807→humano: `401` credenciais · `403` sem permissão · `404` API não encontrada · `--query` vazio → dica útil · rede caída; todos `exit 1`, sem stacktrace |
 | **E2** | Aceite inclui smoke real (somente GETs, HOST default do projeto) |
 | **E3** | Unit tests com mocks na **port** + smoke manual documentado; sem integração real em CI |
 
 ## 3. Grades aprovadas (dados reais)
 
-**1) Listagem** — `sen list api`
+**1) Listagem** — `sen list api --limit 10 --offset 0` *(sem flags ⇒ default anunciado, selo Paulo-5)*
 
 ```
   ID   │ NAME                    │ VERSION │ BASE PATH    │ LAST REV │ LIFE CYCLE
   400  │ Orchestrator Auth API   │ 1.0.0   │ /orq-auth/v1 │    3     │ DRAFT
   ...
-  mostrando 10 de 107  ·  próxima janela: sen list api --offset 10
+  usando padrões: --limit 10 --offset 0  ·  detalhes: sen list api --help
 ```
 
-**2) Busca** — `sen list api --term autenticacao`
+**2) Busca** — `sen list api --query autenticacao`
 
 **3) Drill-down** — `sen list api --id 400 --revisions` (atalho `-r`)
 
 ```
-  REV ID │ # │ STAGE      │ CREATED     │ LAST DEPLOY │ ENVS        │ COMPLETE
-   8882  │ 3 │ Stage One  │ 2026-09-15  │ 2026-09-15  │ HMG-APIOPS  │ 85%
+  REV ID │ REV # │ STAGE      │ CREATED     │ LAST DEPLOY │ ENVS        │ COMPLETE
+   8882  │   3   │ Stage One  │ 2026-09-15  │ 2026-09-15  │ HMG-APIOPS  │ 85%
 ```
 
 **4) Combinações**
 
 ```
 sen list api --id 400                    # cabeçalho 1-linha da API
-sen list api --term auth --id 400        # ERRO: exclusivos
+sen list api --query auth --id 400       # ERRO: mutuamente exclusivas
 sen list api --offset 90 --limit 5       # janela explícita
+sen list api                             # desnudo ⇒ default anunciado (rodapé)
 ```
 
 ## 4. Mapa de fontes vivas (sondas read-only, 15/09/2026)
@@ -95,9 +96,9 @@ sen list api --offset 90 --limit 5       # janela explícita
 
 1. Grades/renderizam com payload real (executoras à época da implementação — código congelado por regra de processo);
 2. Smoke read-only: `sen list api` e drill-down 400, somente GETs (E2, pendente de placa);
-3. Exclusividade `--term`×`--id` e janelamento TEXT respeitados;
+3. Exclusividade `--query`×`--id` respeitada; `--limit`/`--offset` explícitos em toda saída, com default anunciado no caso desnudo (selos Paulo 1 e 5);
 4. `sen --help` funcional sem `.env` (D1-a) e degradação educativa sem chaves (D1-b);
-5. Validação de padrões pelo Paulo em thread (externalizada, 16/09);
+5. Validação de padrões pelo Paulo **SELADA** (5 votos em 16/09: limit-offset explícitos · `--query` · `REV #` · gramática atual · default anunciado);
 6. No dia da integração do login: (i) token real do isaac ⊇ API 400 na lista; (ii) API fora dos times dele **não** aparece (exclusão server-side comprovada); (iii) claims `teams` batem com o desenho.
 
 ## 6. Ligação com o restante da documentação

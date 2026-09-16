@@ -12,7 +12,7 @@ Wire existente em `output_display.py` permanece **dormente**: sem promoção pú
 
 ## 3. Filtros de listagem (`--domain`, `--tag`, server-side search)
 
-Reavaliam juntos com o canal JSON — são refinamentos de consumo de máquina. `--term` já cobre o cedo principal (name+description, client-side).
+Reavaliam juntos com o canal JSON — são refinamentos de consumo de máquina. `--query` já cobre o cedo principal (name+description, client-side; nome validado pelo Paulo em 16/09).
 
 ## 4. Workflow-stage-name na listagem principal
 
