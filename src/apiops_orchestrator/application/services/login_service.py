@@ -1,4 +1,5 @@
 import logging
+import os
 
 import typer
 from pydantic import ValidationError
@@ -14,6 +15,7 @@ from apiops_orchestrator.application.exceptions.login_exceptions import (
     LoginProtocolError,
     SessionPersistenceError,
 )
+from apiops_orchestrator.config import settings as settings_module
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.models.login_session_model import (
     PROFILE_DEVELOPER,
@@ -54,7 +56,7 @@ def resolve_credential(settings: Settings) -> str:
     value = (getattr(settings, "SEN_CREDENTIALS", None) or "").strip()
     if not value:
         raise CredentialNotFoundError(
-            "Credencial não encontrada: configure a variável SEN_CREDENTIALS "
+            "Credencial não encontrada: defina SEN_CREDENTIALS no arquivo .sen do diretório do aplicativo "
             "(blob Base64 de client_id:secret) e rode `sen login` novamente."
         )
     return value
@@ -91,6 +93,7 @@ class LoginService:
         return session
 
     def _resolve_inputs(self) -> str:
+        self._log_active_sources()
         credential = resolve_credential(self.settings)
         logger.info("auth.credentials.source resolved_from=SEN_CREDENTIALS")
         try:
@@ -106,13 +109,27 @@ class LoginService:
             ) from exc
         return credential
 
+    @staticmethod
+    def _log_active_sources() -> None:
+        """Reports availability of configuration sources (booleans only, never values)."""
+        process_available = any(
+            bool(os.getenv(key))
+            for key in ("SEN_CREDENTIALS", "AUTH_HOST", "AUTH_LOGIN_PATH")
+        )
+        logger.info(
+            "config.sources.active sen_file=%s env_file=%s process=%s",
+            settings_module.sen_path.is_file(),
+            settings_module.dotenv_path.is_file(),
+            process_available,
+        )
+
     def _perform_login(self, credential: str) -> dict:
         try:
             with log_duration("auth.login.request"):
                 return self.auth_adapter.login(credential)
         except typer.Exit:
             raise AuthenticationRejectedError(
-                "Credencial recusada pela API de autenticação (erro HTTP 4xx)."
+                "Credencial recusada."
             )
         except LoginError:
             raise

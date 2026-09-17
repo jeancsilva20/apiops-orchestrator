@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -17,6 +18,7 @@ from apiops_orchestrator.application.services.login_service import (
     LoginService,
     resolve_credential,
 )
+from apiops_orchestrator.config import settings as settings_module
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
 from apiops_orchestrator.infrastructure.secure_storage.session_store import (
@@ -82,6 +84,16 @@ def test_resolve_credential_primary_source_used_intact():
     assert resolve_credential(_settings(credential=f" {CREDENTIAL} ")) == CREDENTIAL
 
 
+def test_resolve_credential_missing_points_to_sen_file():
+    with pytest.raises(CredentialNotFoundError) as excinfo:
+        resolve_credential(_settings(credential=None))
+
+    message = excinfo.value.message
+    assert ".sen" in message
+    assert "SEN_CREDENTIALS" in message
+    assert "OAUTH" not in message
+
+
 def test_resolve_credential_missing_raises_before_network(caplog):
     with pytest.raises(CredentialNotFoundError):
         resolve_credential(_settings(credential=None))
@@ -115,6 +127,25 @@ def test_login_success_parses_developer_envelope(deps, caplog):
     store.save.assert_called_once()
     assert "auth.login.started" in caplog.text
     assert "auth.login.success" in caplog.text
+
+
+def test_login_logs_configuration_sources_without_values(deps, monkeypatch, caplog):
+    service, _, _ = deps
+    fake_pkg = Path("/does/not/exist")
+    monkeypatch.setattr(settings_module, "sen_path", fake_pkg / ".sen")
+    monkeypatch.setattr(settings_module, "dotenv_path", fake_pkg / ".env")
+    monkeypatch.delenv("SEN_CREDENTIALS", raising=False)
+    monkeypatch.setenv("AUTH_HOST", "https://auth.example.com")
+    caplog.set_level(logging.INFO)
+
+    service.login()
+
+    assert "config.sources.active" in caplog.text
+    assert "sen_file=False" in caplog.text
+    assert "env_file=False" in caplog.text
+    assert "process=True" in caplog.text
+    assert "https://" not in caplog.text
+    assert CREDENTIAL not in caplog.text
 
 
 def test_login_success_parses_super_admin_envelope(deps):

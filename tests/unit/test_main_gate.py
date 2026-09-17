@@ -26,8 +26,9 @@ def _stub_settings(project_root: Path):
     return settings
 
 
-def test_login_service_factory_uses_project_root_for_session_store(tmp_path):
-    settings = _stub_settings(project_root=tmp_path)
+def test_login_service_factory_uses_package_root_for_session_store(tmp_path):
+    settings = _stub_settings(project_root=tmp_path / "repo")
+    object.__setattr__(settings, "PACKAGE_ROOT", tmp_path)
 
     factory = main_mod.build_login_service_factory(settings)
     service = factory()

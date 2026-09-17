@@ -7,6 +7,7 @@ from typing import Optional
 
 from pydantic import ValidationError
 
+from apiops_orchestrator.config import settings as settings_module
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
 
 logger = logging.getLogger(__name__)
@@ -19,13 +20,16 @@ class SessionStorageError(Exception):
 
 
 class SessionStore:
-    """Stores the login session in a hidden, atomically-written file in the OS temp dir.
+    """Stores the login session in a hidden, atomically-written file.
 
-    The same store exposes the reader used by subsequent application executions.
+    Default destination is the package directory (`PACKAGE_ROOT`), co-located
+    with the `.sen` credential file; callers may inject another `directory`
+    (tests use temporary paths). The same store exposes the reader used by
+    subsequent application executions.
     """
 
     def __init__(self, directory: Optional[Path] = None) -> None:
-        self.directory = Path(directory) if directory else Path(tempfile.gettempdir())
+        self.directory = Path(directory) if directory else settings_module.PACKAGE_ROOT
         self.session_path = self.directory / SESSION_FILE_NAME
 
     def save(self, session: LoginSession) -> None:
@@ -54,7 +58,7 @@ class SessionStore:
                 except OSError:
                     logger.warning("auth.storage.temp_cleanup_failed")
             raise SessionStorageError(
-                "Não foi possível gravar a sessão local (verifique permissões e diretório temporário)."
+                "Não foi possível gravar a sessão local (verifique as permissões do diretório do aplicativo)."
             ) from exc
 
     def load(self, now: Optional[datetime] = None) -> Optional[LoginSession]:

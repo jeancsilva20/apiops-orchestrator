@@ -44,7 +44,7 @@ def build_login_service_factory(settings: Settings):
     def factory() -> LoginService:
         return LoginService(
             auth_adapter=OrchestratorAuthAdapter(settings=settings, max_retries=3),
-            session_store=SessionStore(directory=settings.PROJECT_ROOT),
+            session_store=SessionStore(directory=settings.PACKAGE_ROOT),
             settings=settings,
         )
 
@@ -166,7 +166,9 @@ def main():
         missing = ", ".join(
             str(err.get("loc", ("<unknown>",))[0]).upper() for err in e.errors()
         )
-        rprint(f"[bold red]Invalid configuration:[/bold red] missing/invalid settings: {missing}")
+        rprint(
+            f"[bold red]Invalid configuration:[/bold red] missing/invalid settings: {missing}"
+        )
         sys.exit(1)
     except typer.Exit as e:
         sys.exit(e.exit_code)

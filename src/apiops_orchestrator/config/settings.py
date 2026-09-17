@@ -6,14 +6,25 @@ import os
 from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 
 dotenv_path = PROJECT_ROOT / ".env"
-load_dotenv(dotenv_path=dotenv_path)
+sen_path = PACKAGE_ROOT / ".sen"
+
+# Credential/config sources precedence (high -> low):
+#   process environment > .sen (package dir) > .env (repo root)
+# Both files are merged into os.environ gap-fill style (load_dotenv never
+# overrides existing values), keeping that exact order, so native secrets
+# always win and the package-level .sen beats the repo-level .env.
+load_dotenv(dotenv_path=sen_path, override=False)
+load_dotenv(dotenv_path=dotenv_path, override=False)
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=str(dotenv_path), env_file_encoding="utf-8", extra="ignore"
+        env_file=(str(dotenv_path), str(sen_path)),
+        env_file_encoding="utf-8",
+        extra="ignore",
     )
 
     HOST: str
@@ -53,6 +64,8 @@ class Settings(BaseSettings):
 
     # Use the previously defined PROJECT_ROOT.
     PROJECT_ROOT: Path = PROJECT_ROOT
+    # Directory hosting the distributed package (holds `.sen` and `.sen_session`).
+    PACKAGE_ROOT: Path = PACKAGE_ROOT
     API_REPO_FOLDER: Path = "./external-repo"
     PROJECT_SRC_DIR: Path = PROJECT_ROOT / "src"
     API_REPO_ARTIFACTS_PATH: str = (

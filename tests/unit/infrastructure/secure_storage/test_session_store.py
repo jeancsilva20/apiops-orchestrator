@@ -98,6 +98,20 @@ def test_load_returns_none_when_absent(tmp_path):
     assert store.load() is None
 
 
+def test_default_directory_is_package_root(tmp_path, monkeypatch):
+    monkeypatch.setattr("apiops_orchestrator.config.settings.PACKAGE_ROOT", tmp_path)
+    store = SessionStore()
+
+    assert store.directory == tmp_path
+    assert store.session_path == tmp_path / SESSION_FILE_NAME
+
+    store.save(developer_session())
+    assert (tmp_path / SESSION_FILE_NAME).is_file()
+    loaded = store.load(now=datetime.now(timezone.utc))
+    assert loaded is not None
+    assert loaded.accessToken == ACCESS_TOKEN
+
+
 def test_load_treats_expired_session_as_absent(tmp_path):
     store = SessionStore(directory=tmp_path)
     store.save(developer_session(expiresIn=-10))
