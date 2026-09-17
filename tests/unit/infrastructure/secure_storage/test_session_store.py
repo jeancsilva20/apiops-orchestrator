@@ -11,50 +11,86 @@ from apiops_orchestrator.infrastructure.secure_storage.session_store import (
     SessionStorageError,
 )
 
-
-SESSION = LoginSession(
-    access_token="SECRET-TOKEN-VALUE",
-    token_type="Bearer",
-    expires_in=3600,
-    user_groups=["APIOps"],
-    user_email="dev@sensedia.com",
-    username="dev",
-)
+ACCESS_TOKEN = "QUJDREVG"
+ADMIN_TOKEN = "REVGQUNC"
 
 
-def _session(expires_in=3600):
-    return LoginSession(
-        access_token="SECRET-TOKEN-VALUE",
-        token_type="Bearer",
-        expires_in=expires_in,
-        user_groups=["APIOps"],
-        user_email="dev@sensedia.com",
-        username="dev",
-    )
+def developer_session(**overrides) -> LoginSession:
+    payload = {
+        "accessToken": ACCESS_TOKEN,
+        "tokenType": "Bearer",
+        "expiresIn": 3600,
+        "scope": "apis/read",
+        "profile": "developer",
+        "userName": "ci.runner",
+        "userEmail": "runner@company.test",
+        "userGroups": ["APIOps"],
+    }
+    payload.update(overrides)
+    return LoginSession(**payload)
+
+
+def super_admin_session(**overrides) -> LoginSession:
+    payload = {
+        "accessToken": ADMIN_TOKEN,
+        "tokenType": "Bearer",
+        "expiresIn": 7200,
+        "scope": "admin",
+        "profile": "super-admin",
+        "adminAccessToken": ADMIN_TOKEN,
+    }
+    payload.update(overrides)
+    return LoginSession(**payload)
 
 
 def test_save_writes_full_content_atomically(tmp_path):
     store = SessionStore(directory=tmp_path)
-    store.save(SESSION)
+    store.save(developer_session())
 
     raw = json.loads((tmp_path / SESSION_FILE_NAME).read_text(encoding="utf-8"))
-    assert raw["access_token"] == "SECRET-TOKEN-VALUE"
-    assert raw["token_type"] == "Bearer"
-    assert raw["expires_in"] == 3600
-    assert "expires_at" in raw
-    assert raw["user_groups"] == ["APIOps"]
-    assert raw["user_email"] == "dev@sensedia.com"
-    assert raw["username"] == "dev"
+    assert raw["accessToken"] == ACCESS_TOKEN
+    assert raw["tokenType"] == "Bearer"
+    assert raw["expiresIn"] == 3600
+    assert raw["scope"] == "apis/read"
+    assert raw["profile"] == "developer"
+    assert "expiresAt" in raw
+    assert raw["userName"] == "ci.runner"
+    assert raw["userEmail"] == "runner@company.test"
+    assert raw["userGroups"] == ["APIOps"]
     leftovers = [p for p in tmp_path.iterdir() if p.name != SESSION_FILE_NAME]
     assert leftovers == []
 
 
-def test_load_returns_valid_session(tmp_path):
+def test_save_super_admin_never_persists_admin_token(tmp_path):
     store = SessionStore(directory=tmp_path)
-    store.save(SESSION)
+    store.save(super_admin_session())
+
+    raw = json.loads((tmp_path / SESSION_FILE_NAME).read_text(encoding="utf-8"))
+    assert "adminAccessToken" not in raw
+    assert raw["profile"] == "super-admin"
+    assert raw["scope"] == "admin"
+    assert raw["accessToken"] == ADMIN_TOKEN
+
+
+def test_saved_super_admin_reloads_without_privileged_token(tmp_path):
+    store = SessionStore(directory=tmp_path)
+    store.save(super_admin_session())
+
+    loaded = store.load(now=datetime.now(timezone.utc))
+
+    assert loaded is not None
+    assert loaded.is_super_admin is True
+    assert loaded.adminAccessToken is None
+    assert loaded.accessToken == ADMIN_TOKEN
+
+
+def test_load_returns_valid_developer_session(tmp_path):
+    store = SessionStore(directory=tmp_path)
+    store.save(developer_session())
     loaded = store.load(now=datetime.now(timezone.utc))
     assert loaded is not None
-    assert loaded.access_token == "SECRET-TOKEN-VALUE"
+    assert loaded.accessToken == ACCESS_TOKEN
+    assert loaded.profile == "developer"
 
 
 def test_load_returns_none_when_absent(tmp_path):
@@ -64,7 +100,7 @@ def test_load_returns_none_when_absent(tmp_path):
 
 def test_load_treats_expired_session_as_absent(tmp_path):
     store = SessionStore(directory=tmp_path)
-    store.save(_session(expires_in=-10))
+    store.save(developer_session(expiresIn=-10))
     assert store.load() is None
 
 
@@ -74,13 +110,36 @@ def test_load_treats_corrupted_file_as_absent(tmp_path):
     assert store.load() is None
 
 
+def test_load_treats_legacy_flat_session_as_absent(tmp_path):
+    store = SessionStore(directory=tmp_path)
+    legacy = {
+        "access_token": ACCESS_TOKEN,
+        "token_type": "Bearer",
+        "expires_in": 3600,
+        "user_groups": ["APIOps"],
+        "user_email": "runner@company.test",
+        "username": "ci.runner",
+    }
+    (tmp_path / SESSION_FILE_NAME).write_text(json.dumps(legacy), encoding="utf-8")
+    assert store.load() is None
+
+
+def test_load_treats_unknown_profile_as_absent(tmp_path):
+    store = SessionStore(directory=tmp_path)
+    persisted = json.loads(super_admin_session().model_dump_json())
+    persisted["profile"] = "nomad"
+    (tmp_path / SESSION_FILE_NAME).write_text(json.dumps(persisted), encoding="utf-8")
+    assert store.load() is None
+
+
 def test_replace_leaves_no_temp_leftovers(tmp_path):
     store = SessionStore(directory=tmp_path)
-    store.save(_session(expires_in=10))
-    store.save(_session(expires_in=3600))
+    store.save(developer_session(scope="apis/read", expiresIn=10))
+    store.save(developer_session(scope="apis/write", expiresIn=3600))
     loaded = store.load()
     assert loaded is not None
-    assert loaded.expires_in == 3600
+    assert loaded.expiresIn == 3600
+    assert loaded.scope == "apis/write"
     leftovers = [p for p in tmp_path.iterdir() if p.name != SESSION_FILE_NAME]
     assert leftovers == []
 
@@ -88,7 +147,7 @@ def test_replace_leaves_no_temp_leftovers(tmp_path):
 @pytest.mark.skipif(os.name != "posix", reason="POSIX permission bits")
 def test_saved_file_has_owner_only_permissions(tmp_path):
     store = SessionStore(directory=tmp_path)
-    store.save(SESSION)
+    store.save(developer_session())
     mode = (tmp_path / SESSION_FILE_NAME).stat().st_mode & 0o777
     assert mode == 0o600
 
@@ -101,6 +160,6 @@ def test_io_failure_maps_to_sanitized_categorized_error(tmp_path, monkeypatch):
 
     monkeypatch.setattr(os, "replace", boom)
     with pytest.raises(SessionStorageError) as excinfo:
-        store.save(SESSION)
-    assert "SECRET-TOKEN-VALUE" not in str(excinfo.value)
+        store.save(developer_session())
+    assert ACCESS_TOKEN not in str(excinfo.value)
     assert "não foi possível gravar" in str(excinfo.value).lower()

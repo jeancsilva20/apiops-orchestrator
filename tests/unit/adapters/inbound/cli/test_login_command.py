@@ -14,17 +14,31 @@ from apiops_orchestrator.domain.models.login_session_model import LoginSession
 runner = CliRunner()
 
 CREDENTIAL = "dXNlcm5hbWU6cGFzc3dvcmQ="
-TOKEN = "U1VDQ0VTU09fVE9LRU4="
+TOKEN_DEV = "QUJDREVG"
+TOKEN_ADMIN = "REVGQUNC"
 
 
-def _session():
+def _developer_session() -> LoginSession:
     return LoginSession(
-        access_token=TOKEN,
-        token_type="Bearer",
-        expires_in=43200,
-        user_groups=["APIOps", "Lab-tech"],
-        user_email="isaac.machado@sensedia.com",
-        username="isaac.machado",
+        accessToken=TOKEN_DEV,
+        tokenType="Bearer",
+        expiresIn=43200,
+        scope="apis/read",
+        profile="developer",
+        userName="ci.runner",
+        userEmail="runner@company.test",
+        userGroups=["APIOps", "Lab-tech"],
+    )
+
+
+def _super_admin_session() -> LoginSession:
+    return LoginSession(
+        accessToken=TOKEN_ADMIN,
+        tokenType="Bearer",
+        expiresIn=7200,
+        scope="admin",
+        profile="super-admin",
+        adminAccessToken=TOKEN_ADMIN,
     )
 
 
@@ -33,21 +47,38 @@ def _obj_with(failing_exc=None, session=None):
         def login(self):
             if failing_exc is not None:
                 raise failing_exc
-            return session or _session()
+            return session or _developer_session()
 
     return {"login_service_factory": lambda: FakeService()}
 
 
-def test_login_success_prints_summary_without_secrets():
+def test_login_success_prints_developer_summary_without_secrets():
     result = runner.invoke(app, ["sen", "login"], obj=_obj_with())
     assert result.exit_code == 0
     assert "Login realizado com sucesso." in result.output
-    assert "isaac.machado" in result.output
-    assert "isaac.machado@sensedia.com" in result.output
+    assert "ci.runner" in result.output
+    assert "runner@company.test" in result.output
     assert "Sessão expira em" in result.output
     assert "APIOps, Lab-tech" not in result.output
     assert "Grupos" not in result.output
-    assert TOKEN not in result.output
+    assert TOKEN_DEV not in result.output
+    assert CREDENTIAL not in result.output
+
+
+def test_login_success_prints_super_admin_summary_only_profile_and_scope():
+    result = runner.invoke(
+        app, ["sen", "login"], obj=_obj_with(session=_super_admin_session())
+    )
+    assert result.exit_code == 0
+    assert "Login realizado com sucesso." in result.output
+    assert "super-admin" in result.output
+    assert "admin" in result.output
+    assert "Perfil" in result.output
+    assert "Escopo" in result.output
+    assert "ci.runner" not in result.output
+    assert "Sessão expira em" not in result.output
+    assert TOKEN_ADMIN not in result.output
+    assert TOKEN_DEV not in result.output
     assert CREDENTIAL not in result.output
 
 
@@ -56,13 +87,15 @@ def test_login_success_session_still_carries_groups():
 
     class RecordingService:
         def login(self):
-            session = _session()
+            session = _developer_session()
             captured["session"] = session
             return session
 
-    result = runner.invoke(app, ["sen", "login"], obj={"login_service_factory": lambda: RecordingService()})
+    result = runner.invoke(
+        app, ["sen", "login"], obj={"login_service_factory": lambda: RecordingService()}
+    )
     assert result.exit_code == 0
-    assert captured["session"].user_groups == ["APIOps", "Lab-tech"]
+    assert captured["session"].userGroups == ["APIOps", "Lab-tech"]
 
 
 def test_login_service_missing_from_context_exits_one():
@@ -81,7 +114,7 @@ def test_login_service_missing_from_context_exits_one():
         ),
         (AuthenticationRejectedError("Credencial recusada"), 3, "Credencial recusada"),
         (LoginError("Falha genérica", exit_code=1), 1, "Falha genérica"),
-        (LoginProtocolError("Resposta incompleta"), 4, "Resposta incompleta"),
+        (LoginProtocolError("Falha na autenticação."), 4, "Falha na autenticação."),
         (SessionPersistenceError("Falha de persistência"), 5, "Falha de persistência"),
     ],
 )

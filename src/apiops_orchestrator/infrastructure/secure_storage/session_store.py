@@ -29,7 +29,9 @@ class SessionStore:
         self.session_path = self.directory / SESSION_FILE_NAME
 
     def save(self, session: LoginSession) -> None:
-        payload = session.model_dump_json()
+        # The privileged super-admin token lives in memory only: dropping the
+        # field here guarantees it never touches the disk for ANY profile.
+        payload = session.model_dump_json(exclude={"adminAccessToken"})
         temp_path: Optional[Path] = None
         try:
             self.directory.mkdir(parents=True, exist_ok=True)
@@ -56,6 +58,12 @@ class SessionStore:
             ) from exc
 
     def load(self, now: Optional[datetime] = None) -> Optional[LoginSession]:
+        """Load the persisted session; the model is the validation authority.
+
+        Corrupt, legacy (flat) or unknown-profile files fail model validation
+        and are treated as "session absent" (forces re-login). A super-admin
+        session without the admin token (always absent on disk) loads fine.
+        """
         if not self.session_path.is_file():
             return None
         try:

@@ -3,6 +3,7 @@
 Summary of recent changes in the project. Each item includes date, category, title and author.
 
 ## Recent History
+- 2026-09-17 — CLI/Auth — "sen login: resposta migrada para envelope extra_info com validação por perfil (BREAKING)" — Author: Isaac Machado — Type: Nova funcionalidade
 - 2025-10-01 — Tests — "Testes" — Author: Augusto — Type: Testes
 - 2025-10-01 — CLI — "Repo param obrigatório" — Author: Augusto — Type: Correção
 - 2025-09-30 — CLI — "CLI & Testes" — Author: Augusto — Type: Nova funcionalidade

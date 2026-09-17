@@ -58,10 +58,14 @@ def login(ctx: typer.Context):
         raise e
 
     expires_at = (
-        session.expires_at.strftime("%d/%m/%Y %H:%M UTC") if session.expires_at else "-"
+        session.expiresAt.strftime("%d/%m/%Y %H:%M UTC") if session.expiresAt else "-"
     )
     rprint("[bold green]Login realizado com sucesso.[/bold green]")
-    rprint(f"Usuário: {session.username} ({session.user_email})")
+    if session.is_super_admin:
+        # Privileged flow: show profile/scope only; no identity, no tokens.
+        rprint(f"Perfil: {session.profile} | Escopo: {session.scope}")
+        return
+    rprint(f"Usuário: {session.userName} ({session.userEmail})")
     rprint(f"Sessão expira em: {expires_at}")
 
 

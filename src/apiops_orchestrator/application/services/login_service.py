@@ -1,6 +1,7 @@
 import logging
 
 import typer
+from pydantic import ValidationError
 
 from apiops_orchestrator.adapters.outbound.http.orchestrator_auth_api.orchestrator_auth_adapter import (
     build_login_url,
@@ -14,7 +15,11 @@ from apiops_orchestrator.application.exceptions.login_exceptions import (
     SessionPersistenceError,
 )
 from apiops_orchestrator.config.settings import Settings
-from apiops_orchestrator.domain.models.login_session_model import LoginSession
+from apiops_orchestrator.domain.models.login_session_model import (
+    PROFILE_DEVELOPER,
+    PROFILE_SUPER_ADMIN,
+    LoginSession,
+)
 from apiops_orchestrator.domain.ports.orchestrator_auth_port import OrchestratorAuthPort
 from apiops_orchestrator.infrastructure.observability.logging import (
     clear_operation_context,
@@ -33,10 +38,15 @@ REQUIRED_SESSION_FIELDS = (
     "access_token",
     "token_type",
     "expires_in",
-    "user_groups",
-    "user_email",
-    "username",
+    "extra_info",
 )
+
+PROFILE_REQUIRED_FIELDS = {
+    PROFILE_DEVELOPER: ("scope", "user_name", "user_email", "user_groups"),
+    PROFILE_SUPER_ADMIN: ("scope", "admin_access_token"),
+}
+
+PAYLOAD_INVALID_MESSAGE = "Falha na autenticação. " "Tente efetuar login novamente."
 
 
 def resolve_credential(settings: Settings) -> str:
@@ -113,33 +123,77 @@ class LoginService:
             )
 
     def _parse_response(self, raw_response: dict) -> LoginSession:
-        missing = [
-            field for field in REQUIRED_SESSION_FIELDS if not raw_response.get(field)
-        ]
-        if missing:
-            raise LoginProtocolError(
-                "Resposta de login incompleta. Campos obrigatórios ausentes: "
-                + ", ".join(missing)
+        """Translate the wire payload (snake_case with `extra_info` envelope) into
+        a LoginSession (camelCase). Protocol violations raise a single generic
+        message; supporting details (field names only) go to the internal log."""
+        raw = dict(raw_response or {})
+        candidate = raw.get("extra_info")
+        extra_info = candidate if isinstance(candidate, dict) else None
+        missing = [field for field in REQUIRED_SESSION_FIELDS if not raw.get(field)]
+        if extra_info is None or missing:
+            self._log_payload_invalid(
+                missing or ["extra_info"], reason="missing_core_fields"
             )
-        if str(raw_response.get("token_type")).lower() != "bearer":
-            raise LoginProtocolError(
-                "token_type retornado não é suportado (esperado: Bearer)."
-            )
+            raise LoginProtocolError(PAYLOAD_INVALID_MESSAGE)
         try:
-            expires_in = int(raw_response["expires_in"])
-            session = LoginSession(
-                access_token=str(raw_response["access_token"]),
-                token_type=str(raw_response["token_type"]),
-                expires_in=expires_in,
-                user_groups=list(raw_response["user_groups"]),
-                user_email=str(raw_response["user_email"]),
-                username=str(raw_response["username"]),
+            profile = str(extra_info.get("profile") or "")
+            if profile not in PROFILE_REQUIRED_FIELDS:
+                self._log_payload_invalid(
+                    ["profile"], reason=f"unsupported_profile={profile}"
+                )
+                raise LoginProtocolError(PAYLOAD_INVALID_MESSAGE)
+            if str(raw.get("token_type") or "").lower() != "bearer":
+                self._log_payload_invalid(
+                    ["token_type"], reason="unsupported_token_type"
+                )
+                raise LoginProtocolError(PAYLOAD_INVALID_MESSAGE)
+            missing_by_profile = [
+                field
+                for field in PROFILE_REQUIRED_FIELDS[profile]
+                if not extra_info.get(field)
+            ]
+            if missing_by_profile:
+                self._log_payload_invalid(
+                    missing_by_profile, reason=f"missing_{profile}_fields"
+                )
+                raise LoginProtocolError(PAYLOAD_INVALID_MESSAGE)
+            return self._build_session(profile, extra_info, raw)
+        except (TypeError, ValueError, KeyError, ValidationError) as exc:
+            self._log_payload_invalid(
+                [type(exc).__name__], reason="session_construction_failed"
             )
-        except (TypeError, ValueError, KeyError) as exc:
-            raise LoginProtocolError(
-                "Resposta de login com campos em formato inválido."
-            ) from exc
-        return session
+            raise LoginProtocolError(PAYLOAD_INVALID_MESSAGE) from exc
+
+    @staticmethod
+    def _build_session(profile: str, extra_info: dict, raw: dict) -> LoginSession:
+        """Map wire keys (route contract, snake_case) to model fields (camelCase)."""
+        session_input = {
+            "accessToken": str(raw["access_token"]),
+            "tokenType": str(raw["token_type"]),
+            "expiresIn": int(raw["expires_in"]),
+            "scope": str(extra_info["scope"]),
+            "profile": profile,
+        }
+        if profile == PROFILE_DEVELOPER:
+            session_input.update(
+                {
+                    "userName": str(extra_info["user_name"]),
+                    "userEmail": str(extra_info["user_email"]),
+                    "userGroups": [str(group) for group in extra_info["user_groups"]],
+                }
+            )
+        else:
+            session_input.update(
+                {"adminAccessToken": str(extra_info["admin_access_token"])}
+            )
+        return LoginSession(**session_input)
+
+    @staticmethod
+    def _log_payload_invalid(fields, reason: str) -> None:
+        """Details are restricted to field names/shape labels, never payload values."""
+        logger.error(
+            "auth.login.payload_invalid reason=%s fields=%s", reason, ",".join(fields)
+        )
 
     def _persist(self, session: LoginSession) -> None:
         try:
