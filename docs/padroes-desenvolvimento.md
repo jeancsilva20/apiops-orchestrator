@@ -203,7 +203,7 @@ logger.info("auth.session.expired")
 
 ## 9. Modelos de domínio (Pydantic)
 
-- `BaseModel` com campos `snake_case`; tipos completos (`List[str]`, `Optional[datetime]`).
+- `BaseModel` com campos **camelCase espelhando o JSON da entidade** (`apiVersion`, `revisionNumber`, `accessToken`) — identificadores de código (variáveis locais, parâmetros, atributos de serviços) seguem PEP 8 `snake_case`; tipos completos (`List[str]`, `Optional[datetime]`).
 - Campos calculados/preenchidos automaticamente usam `model_post_init` (ex.: `expires_at = now(UTC) + expires_in` em `LoginSession`); métodos auxiliares no próprio model (`is_expired(now)`).
 - Timestamps **timezone-aware em UTC** (`datetime.now(timezone.utc)`); serialização preferida `model_dump_json()` / `model_validate_json()`.
 - Persistência local sensível (padrão `SessionStore`, ADR 0006): arquivo oculto **na raiz do projeto** (`.sen_session`), escrita **atômica** (`mkstemp` → `fsync` → `chmod 0o600` → marcação de hidden no Windows → `os.replace`), deleção do temp em falha, e **mensagens de erro sem conteúdo da sessão**. Git-ignored via `.sen_session*`.
