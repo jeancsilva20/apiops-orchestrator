@@ -33,6 +33,12 @@ from apiops_orchestrator.application.services.schema_validator import SchemaVali
 from apiops_orchestrator.infrastructure.secure_storage.session_store import SessionStore
 
 
+# NOTE: `repo_path` is consumed ONLY by `run_bare_pipeline()` (legacy flow that runs
+# when invoking `python main.py` with NO arguments; used at lines 100, 114 and 131).
+# The CLI mode (`python main.py sen <cmd>`) never touches it. Known tech debt: this
+# is a hardcoded absolute path from another machine and BREAKS on runners/other PCs
+# (see docs/padroes-desenvolvimento.md). Proper fix: settings.PROJECT_ROOT /
+# settings.API_REPO_FOLDER, matching the CI clone of ./external-repo.
 repo_path = Path(
     r"C:\Users\Sensedia\Downloads\Projetos\Nexus\apiops-orchestrator\apiops_newstruct"
 )
