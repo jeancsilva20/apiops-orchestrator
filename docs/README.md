@@ -54,6 +54,12 @@
 
 > **Convenção de organização:** cada incremento de feature/documentação ganha uma pasta `docs/<nome-do-ramo>/`, espelhando o nome da branch. Documentos pré-existentes ficam onde estão (nenhuma migração).
 
+## Padrões
+
+| Documento | Conteúdo |
+|-----------|----------|
+| [padroes-desenvolvimento.md](padroes-desenvolvimento.md) | Consolidado de padrões do projeto (variáveis de ambiente, nomenclatura, arquitetura, logs, erros, testes, CI) |
+
 ---
 
 ## Processo

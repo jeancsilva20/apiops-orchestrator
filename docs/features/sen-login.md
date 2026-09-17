@@ -41,6 +41,7 @@ E   como a esteira é um perfil superadmin, deve conseguir fazer todo o fluxo de
 | 6 | Expiração → **re-login orientado**; guard nunca envia token expirado | [0002](../adr/0002-ciclo-de-vida-de-tokens-dev-x-superadmin.md) |
 | 7 | Logs de auth no padrão existente de observabilidade + eventos nomeados; zero segredos em log | [0005](../adr/0005-padrao-de-logs-de-autenticacao.md) |
 | 8 | Scopes locais são UX; **servidor é autoridade** (recusa invalida cache local) | [0003](../adr/0003-autorizacao-por-acao-endpoint-validation.md) |
+| 9 | `.sen` no diretório do pacote abriga o bloco de credenciais (`SEN_CREDENTIALS` + `AUTH_HOST` + `AUTH_LOGIN_PATH`, sem default/fallback); `.sen_session` co-residente; precedência processo > `.sen` > `.env` | [0007](../adr/0007-sen-como-casa-do-bloco-de-credenciais-e-residencia-dos-arquivos-sen.md) |
 
 ## Fases
 
@@ -78,3 +79,51 @@ interceptor Consult, migração da esteira).
 5. Token expirado: guard interpoe re-login orientado;
 6. Logs seguem padrão JSON da observabilidade com eventos `auth.*` (`--verbose` não muda formato);
 7. Suite `pytest` existente permanece 100% verde + novos testes unitários de guard/storage/adapters/CLI.
+
+## Implantação da fase 1 (implementada 16/09/2026 — change `add-sen-login`)
+
+Uso:
+
+```powershell
+# credencial: APENAS o blob Base64(client_id:secret), sem prefixo "Basic"
+[Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("<client_id>:<secret>"))
+
+# variáveis obrigatórias no .env da raiz (ver .env.example):
+SEN_CREDENTIALS="<blob>"
+AUTH_HOST="https://api-consulting.sensedia.com"      # sem fallback para HOST
+AUTH_LOGIN_PATH="/cli-2/orq-auth/v1/oauth2/token"    # sem default em código
+
+poetry run python src/apiops_orchestrator/main.py sen login
+```
+
+Comportamentos entregues:
+
+| Aspecto | Comportamento |
+|---|---|
+| Credencial | única fonte `SEN_CREDENTIALS` (sem fallback legado); ausente → erro pré-rede, exit **2** |
+| Endpoint | `AUTH_HOST` + `AUTH_LOGIN_PATH` obrigatórios; não configurados → erro antes de rede |
+| Exit codes | `0` sucesso · `1` indisponibilidade/genérica · `2` credencial não encontrada · `3` recusada (4xx) · `4` protocolo · `5` persistência |
+| Erro HTTP 4xx | **sem corpo cru/JSON** na tela (HttpClient com `report_client_errors=False`); mensagem única categorizada |
+| Sessão | JSON em `<raiz do projeto>/.sen_session` (arquivo oculto, escrita atômica, permissões de dono; fora do Git via `.gitignore` — ADR 0006) com `expires_at` |
+| Consumo futuro | `SessionStore().load()` → `LoginSession` \| `None` (ausente/expirada) |
+| Logs | eventos `auth.login.started/success/failure` no padrão de observabilidade; nenhum segredo impresso |
+| Esteira | modo bare (`python main.py`) preservado via gate por argv em `main.py` |
+
+## Implantação 1.1 (implementada 17/09/2026 — change `migrate-sen-files-to-package-root`)
+
+Migração de residência (ADR 0007):
+
+```powershell
+# No pacote (dev: src/apiops_orchestrator/), copie o gabarito e preencha:
+Copy-Item src\apiops_orchestrator\.sen.example src\apiops_orchestrator\.sen
+# .sen recebe as tres chaves do bloco: SEN_CREDENTIALS, AUTH_HOST, AUTH_LOGIN_PATH
+```
+
+| Aspecto | Comportamento novo |
+|---|---|
+| Fontes | precedência **processo > `.sen` (pacote) > `.env` (raiz)** — abaixo do detalhe no ADR 0007; esteira sem `.sen` não muda nada |
+| `.sen` | dotenv no `PACKAGE_ROOT` com o bloco de credenciais (3 chaves, todas obrigatórias, **sem default/fallback em código**); chaves extras ignoradas; git-ignored (match exato) com gabarito `.sen.example` trackeado |
+| `.sen_session` | movida para o `PACKAGE_ROOT` (co-residente do `.sen`); sessão de tempdir/raiz antiga é tratada como ausente (re-login) |
+| Erro de credencial | mensagem orienta **somente** o `.sen` do diretório do aplicativo |
+| Visibilidade | log `config.sources.active sen_file=%s env_file=%s process=%s` (booleans, sem valores) no início do login |
+| `.env.example` | restaurado ao estado anterior ao `sen login` (o `.env` tende a deixar de existir) |
