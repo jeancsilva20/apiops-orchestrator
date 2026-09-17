@@ -239,6 +239,7 @@ logger.info("auth.session.expired")
 - Branch principal de trabalho: `develop`; merges para `release` disparam a esteira (`bitbucket-pipelines.yml`): instalar Poetry → `poetry install` → clonar `sensedia/apis-repo` em `./external-repo` → gerar `.env` a partir de variáveis protegidas do repositório → rodar a aplicação → `pytest` com relatórios em `test-results/` publicados como artifacts.
 - Credenciais da esteira vêm de variáveis protegidas (ex.: `BB_USERNAME`, `BB_REPO_TOKEN`), nunca versionadas.
 - Nomes de PR/merge históricos usam tickets tipo `APIO-XX-descricao` (ver `CHANGELOG.md`).
+- Convenção de commits (Conventional Commits) e demais boas práticas de desenvolvimento são mantidas na wiki interna Nexus: [Boas Práticas de Desenvolvimento](https://sensedia.atlassian.net/wiki/spaces/Nexus/pages/5229838371/Boas+Pr%C3%A1ticas+de+Desenvolvimento) — consulte por lá para padrões atualizados de prefixos e mensagens de commit.
 
 ## 14. Divergências abertas a considerar (não tratar como padrão)
 
