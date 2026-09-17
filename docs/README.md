@@ -42,6 +42,12 @@
 |-----------|----------|
 | [sen-login.md](features/sen-login.md) | Spec da feature `sen login`: TDDs, decisões travadas, fases e critérios de aceite |
 
+## Padrões
+
+| Documento | Conteúdo |
+|-----------|----------|
+| [padroes-desenvolvimento.md](padroes-desenvolvimento.md) | Consolidado de padrões do projeto (variáveis de ambiente, nomenclatura, arquitetura, logs, erros, testes, CI) |
+
 ---
 
 ## Processo
