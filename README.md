@@ -18,8 +18,27 @@ The APIOps Orchestrator is a Python tool for composing, validating and processin
 
 ## Features
 
+- **Authentication (`sen login`):** Authenticate against the Orchestrator Auth API and store the session locally (details: `docs/features/sen-login.md`).
 - **Structure Validation:** Verify if the artifacts folder (`artifacts`) in an API repository follows the predefined folder and file structure rules.
 - **File Importing:** List all the file paths within the (`artifacts`) folder for future processing.
+
+## CLI Commands
+
+### `sen login`
+
+Authenticates the user against the Orchestrator Auth API and saves the session locally for subsequent executions.
+
+```powershell
+# 1. Generate the credential blob (Base64 of client_id:secret — no "Basic" prefix):
+[Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("<client_id>:<secret>"))
+
+# 2. Set it in the .env at the project root (see .env.example), then run:
+poetry run python src/apiops_orchestrator/main.py sen login
+```
+
+The session file is stored at the **project root** as `.sen_session` (hidden, owner-only, git-ignored — see ADR 0006).
+Full behavior (credential sources, endpoint variables, exit codes, session file and privacy) is documented in
+[`docs/features/sen-login.md`](docs/features/sen-login.md).
 
 ## How To Run
 

@@ -1,12 +1,13 @@
 import platform
 import typer
-from typing import Optional
+from typing import Any, Callable, Optional, cast
 from rich import print as rprint
 from apiops_orchestrator.application.services.api_listing_service import (
     ApiListingService,
 )
 from apiops_orchestrator.adapters.inbound.cli.output_format import OutputFormat
 from apiops_orchestrator.adapters.inbound.cli.output_display import display_output
+from apiops_orchestrator.application.exceptions.login_exceptions import LoginError
 
 main_app = typer.Typer(
     no_args_is_help=True,
@@ -36,6 +37,38 @@ class CliError(Exception):
         super().__init__(self.message)
 
 
+@sen_app.command("login")
+def login(ctx: typer.Context):
+    """
+    Authenticate against the Orchestrator Auth API and store the local session.
+    Requires the SEN_CREDENTIALS environment variable (Base64 of client_id:secret).
+    """
+    try:
+        login_service_factory = (ctx.obj or {}).get("login_service_factory")
+        if not callable(login_service_factory):
+            rprint("[bold red]Error:[/bold red] LoginService not found in context.")
+            raise typer.Exit(code=1)
+
+        service_builder = cast(Callable[[], Any], login_service_factory)
+        session = service_builder().login()
+    except LoginError as e:
+        rprint(f"[bold red]Login error:[/bold red] {e.message}")
+        raise typer.Exit(code=e.exit_code)
+    except typer.Exit as e:
+        raise e
+
+    expires_at = (
+        session.expiresAt.strftime("%d/%m/%Y %H:%M UTC") if session.expiresAt else "-"
+    )
+    rprint("[bold green]Login realizado com sucesso.[/bold green]")
+    if session.is_super_admin:
+        # Privileged flow: show profile/scope only; no identity, no tokens.
+        rprint(f"Perfil: {session.profile} | Escopo: {session.scope}")
+        return
+    rprint(f"Usuário: {session.userName} ({session.userEmail})")
+    rprint(f"Sessão expira em: {expires_at}")
+
+
 @list_app.command("api")
 def list_apis(
     ctx: typer.Context,
@@ -49,7 +82,13 @@ def list_apis(
     List APIs from Sensedia Manager.
     """
     try:
-        service: ApiListingService = ctx.obj.get("api_listing_service")
+        service: Optional[ApiListingService] = (ctx.obj or {}).get(
+            "api_listing_service"
+        )
+        if not service:
+            service_factory = (ctx.obj or {}).get("api_listing_service_factory")
+            if callable(service_factory):
+                service = cast(Callable[[], ApiListingService], service_factory)()
         if not service:
             rprint(
                 "[bold red]Error:[/bold red] ApiListingService not found in context."
@@ -106,8 +145,8 @@ def list_apis(
 
 
 def display_version():
-    rprint(f"sen 0.1.0")
-    rprint(f"apiops-orchestrator 0.1.0")
+    rprint("sen 0.1.0")
+    rprint("apiops-orchestrator 0.1.0")
     rprint(f"python {platform.python_version()}")
 
 

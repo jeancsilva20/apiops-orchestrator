@@ -1,0 +1,23 @@
+# ============================================================================
+# .sen — credenciais de login do executável (copie este arquivo para .sen)
+# ----------------------------------------------------------------------------
+# Localização deste arquivo: diretório do pacote/aplicativo
+# (em dev: src/apiops_orchestrator/; no executável: pasta do binário).
+#
+#   Copie para o mesmo diretório:
+#     cp .sen.example .sen
+#
+# O arquivo .sen JAMAIS é versionado (see .gitignore) — este gabarito sim.
+# ============================================================================
+
+# Bloco de credenciais de login (SEN_CREDENTIALS + AUTH_HOST + AUTH_LOGIN_PATH). As três são obrigatórias.
+
+# Credencial única do `sen login`: APENAS o blob Base64(client_id:secret), sem prefixo "Basic".
+# Geração: printf '%s:%s' "${OAUTH_CLIENT_ID}" "${OAUTH_CLIENT_SECRET}" | base64
+SEN_CREDENTIALS=""
+
+# Host dedicado da API de autenticação (sem fallback para HOST). Ex.: https://api-consulting.sensedia.com
+AUTH_HOST=""
+
+# Path da rota de login da Orchestrator Auth API (sem default em código). Ex.: /cli-2/orq-auth/v1/oauth2/token
+AUTH_LOGIN_PATH=""
