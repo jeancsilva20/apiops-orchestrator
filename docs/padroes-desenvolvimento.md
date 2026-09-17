@@ -113,7 +113,7 @@ Padrão dominante do projeto — tratado como contrato (ADRs 0004/0006, testes d
 
    - Obrigatórias ficam **sem default** (Pydantic falha rápido com mensagem lista as `loc` em maiúsculas).
    - Opcional com sentinela `None` + checagem no ponto de uso (`resolve_credential`), para dar erro **categorizado e amigável** em vez de falha de carga de settings.
-2. **`.env.example`** — adicionar entrada com comentário explicando formato/geração e exemplo do comando de geração (ver bloco "AUTH DA CLI").
+2. **`.env.example`** — adicionar entrada com comentário explicando formato/geração e exemplo do comando de geração (variáveis de plataforma/esteira). **Exceção (ADR 0007):** as chaves de autenticação do executável (`SEN_CREDENTIALS`, `AUTH_HOST`, `AUTH_LOGIN_PATH`) têm gabarito próprio — **`src/apiops_orchestrator/.sen.example`** (o `.env.example` não as documenta mais).
 3. **Teste de contrato** — estender `tests/unit/config/test_settings_login_vars.py`: lista `REQUIRED_VARS`, isolamento de fontes via fixture `autouse` (`monkeypatch.setattr(Settings, "model_config", ...)`) e seed via `monkeypatch.setenv`.
 4. Quanto afetar comportamento visível: atualizar `docs/features/*.md` e/ou novo ADR.
 
@@ -131,7 +131,7 @@ Implicações práticas:
 - **Nunca assumir `.env` da raiz**: fontes de credencial/config devem ficar atrás de pontos únicos de resolução (ex.: `resolve_credential`) para trocar a fonte sem tocar nos casos de uso.
 - **Caminhos**: `PROJECT_ROOT` deriva de `Path(__file__)`, o que não vale em executável congelado — no modo distribuído, caminhos de arquivos/assets devem considerar o **diretório do binário**.
 - **Headless na esteira**: sem interação; todo comando encerra com código de saída do contrato (§5).
-- Evolução anunciada: credenciais do `sen login` migram do `.env` para o `.sen` junto ao pacote entregue ao dev (ver §14).
+- Evolução anunciada: **implementada em 17/09/2026 (ADR 0007)** — o bloco de credenciais de login (`SEN_CREDENTIALS`, `AUTH_HOST`, `AUTH_LOGIN_PATH`) mora no arquivo **`.sen`** do `PACKAGE_ROOT` (gabarito `.sen.example` versionado junto), com precedência **processo > `.sen` > `.env`**; o `.env` tende a deixar de existir (acompanhar §14).
 
 ### 4.4 Paths derivados de configuração
 
@@ -206,7 +206,7 @@ logger.info("auth.session.expired")
 - `BaseModel` com campos **camelCase espelhando o JSON da entidade** (`apiVersion`, `revisionNumber`, `accessToken`) — identificadores de código (variáveis locais, parâmetros, atributos de serviços) seguem PEP 8 `snake_case`; tipos completos (`List[str]`, `Optional[datetime]`).
 - Campos calculados/preenchidos automaticamente usam `model_post_init` (ex.: `expires_at = now(UTC) + expires_in` em `LoginSession`); métodos auxiliares no próprio model (`is_expired(now)`).
 - Timestamps **timezone-aware em UTC** (`datetime.now(timezone.utc)`); serialização preferida `model_dump_json()` / `model_validate_json()`.
-- Persistência local sensível (padrão `SessionStore`, ADR 0006): arquivo oculto **na raiz do projeto** (`.sen_session`), escrita **atômica** (`mkstemp` → `fsync` → `chmod 0o600` → marcação de hidden no Windows → `os.replace`), deleção do temp em falha, e **mensagens de erro sem conteúdo da sessão**. Git-ignored via `.sen_session*`.
+- Persistência local sensível (padrão `SessionStore`, ADR 0006/0007): arquivo oculto **no diretório do pacote** (`PACKAGE_ROOT` — co-residente do `.sen`), escrita **atômica** (`mkstemp` → `fsync` → `chmod 0o600` → marcação de hidden no Windows → `os.replace`), deleção do temp em falha, e **mensagens de erro sem conteúdo da sessão**. Git-ignored via `.sen_session*`.
 
 ## 10. Testes
 
@@ -223,7 +223,7 @@ logger.info("auth.session.expired")
 
 - Nenhum segredo, credencial ou token real em código, testes, fixtures ou `docs/` (regra explícita do `docs/README.md`).
 - Blobs fake em testes (`QUJDREVG`, tokens dummy).
-- `.env`, `.sen_session*`, `external-repo/`, `logs/*.log` e caches ficam no `.gitignore` — com **comentário referenciando o ADR** responsável (veja `.gitignore` l.160).
+- `.env`, `.sen`, `.sen_session*`, `external-repo/`, `logs/*.log` e caches ficam no `.gitignore` — com **comentário referenciando o ADR** responsável (veja `.gitignore` l.160; o gabarito `.sen.example` permanece trackeado — ADR 0007).
 - Erros de usuário jamais incluem valores de credencial, mesmo truncados.
 
 ## 12. Documentação interna e OpenSpec
