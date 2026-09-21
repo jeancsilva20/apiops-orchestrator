@@ -175,6 +175,12 @@ def list_apis(
                 "Consulte: sen list api --help"
             )
             raise typer.Exit(code=1)
+        if offset is not None and offset < 0:
+            rprint(
+                "[bold red]Error:[/bold red] --offset deve ser maior ou igual a "
+                "zero. Consulte: sen list api --help"
+            )
+            raise typer.Exit(code=1)
         if revisions and api_id is None:
             rprint(
                 "[yellow]Nota:[/yellow] drill-down de revisões (--revisions/-r) "

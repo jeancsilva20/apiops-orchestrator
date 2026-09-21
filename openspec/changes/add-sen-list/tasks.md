@@ -2,8 +2,8 @@
 
 ## 1. Guardas de comportamento (lock-first, antes de tocar `main.py`)
 
-- [ ] 1.1 Estender `tests/unit/test_main_gate.py`: import de `main` não instancia `Settings`, não faz HTTP, não resolve caminho de disco; `sen --help` e `sen list api --help` respondem sem `.env` (subprocess)
-- [ ] 1.2 Testes unitários das regras de listagem contra payload fixture (snapshot real das sondas): filtro `--query` accent-folded, ordenação `id` asc, janela pós-filtro, `--limit ≤ 0` → erro, offset além do total → vazio/`0`
+- [x] 1.1 Estender `tests/unit/test_main_gate.py`: import de `main` não instancia `Settings`, não faz HTTP, não resolve caminho de disco; `sen --help` e `sen list api --help` respondem sem `.env` (subprocess) *(purity test ativo e verde; os subprocess-help ficam parkados com `@ETAPA3_SKIP` — exigem a Etapa 3 do ADR 0006, ativam na task 2.1)*
+- [x] 1.2 Testes unitários das regras de listagem contra payload fixture (snapshot real das sondas): filtro `--query` accent-folded, ordenação `id` asc, janela pós-filtro, `--limit ≤ 0` → erro, offset além do total → vazio/`0` *(cobertos por `ApiCollection` + `test_api_collection_model.py`; + regra nova: `--offset < 0` → erro, simétrico ao limit)*
 
 ## 2. Composition root lazy (ADR 0006) + entry-point
 

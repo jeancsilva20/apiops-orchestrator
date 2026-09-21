@@ -54,6 +54,11 @@ A CLI SHALL disponibilizar `sen list api` (substantivo no singular). Em condiç�
 - **WHEN** `--limit` recebe valor igual ou inferior a zero
 - **THEN** o comando falha com erro amigável (sem stacktrace) e exit code `1`, sem realizar requisição
 
+#### Scenario: Offset inválido
+
+- **WHEN** `--offset` recebe valor negativo
+- **THEN** o comando falha com erro amigável (sem stacktrace) e exit code `1`, sem realizar requisição — simétrico ao `--limit ≤ 0`; `--offset 0` permanece válido (início da página)
+
 ### Requirement: Busca `--query` client-side
 
 `sen list api --query <texto>` SHALL filtrar o conjunto retornado client-side pelos campos `name` e `description`, comparando de forma case-insensitive e accent-folded (ex.: `autenticacao` casa `Autenticação`). A flag SHALL ser **mutuamente exclusiva** com `--id` (erro imediato sem requisição). A janela `--limit`/`--offset` SHALL aplicar-se **após** o filtro. Quando a busca não produz resultados, SHALL exibir dica útil e encerrar `0`.

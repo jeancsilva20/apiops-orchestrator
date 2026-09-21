@@ -87,6 +87,19 @@ class TestWindow:
         with pytest.raises(InvalidWindowError):
             collection.window(offset=1, limit=-3)
 
+    def test_negative_offset_raises_domain_error_symmetric_with_limit(self, collection):
+        with pytest.raises(InvalidWindowError):
+            collection.window(offset=-1, limit=5)
+        with pytest.raises(InvalidWindowError):
+            collection.window(offset=-2)
+
+    def test_zero_offset_is_accepted_start_of_page(self, collection):
+        ids = [row["id"] for row in collection.window(offset=0, limit=2).rows()]
+
+        # Fixture chega embaralhada ([400, 530, ...]): janela sem sort pega a
+        # página crua a partir da posição 0.
+        assert ids == [400, 530]
+
     def test_without_limit_offset_alone_starts_from_offset(self, collection):
         ids = [row["id"] for row in collection.window(offset=3).rows()]
 

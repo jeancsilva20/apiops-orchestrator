@@ -112,6 +112,21 @@ def test_api_list_invalid_limit_fails_pre_network():
     assert result.exit_code == 1
     mock_service.list_apis.assert_not_called()
 
+def test_api_list_negative_offset_fails_pre_network():
+    """Symmetric with --limit: negative --offset must fail BEFORE any network call."""
+    from unittest.mock import MagicMock
+    mock_service = MagicMock()
+
+    result = runner.invoke(
+        app,
+        ["sen", "list", "api", "--offset", "-1"],
+        obj={"api_listing_service": mock_service},
+    )
+
+    assert result.exit_code == 1
+    assert "--offset" in result.output
+    mock_service.list_apis.assert_not_called()
+
 def test_api_list_query_passes_flags_to_service():
     from unittest.mock import MagicMock
     mock_service = MagicMock()

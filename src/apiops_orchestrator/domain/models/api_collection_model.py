@@ -178,7 +178,11 @@ class ApiCollection:
         self, offset: Optional[int] = None, limit: Optional[int] = None
     ) -> "ApiCollection":
         start = 0
-        if offset is not None and int(offset) > 0:
+        if offset is not None:
+            if int(offset) < 0:
+                raise InvalidWindowError(
+                    "--offset deve ser maior ou igual a zero."
+                )
             start = int(offset)
         if limit is not None:
             if int(limit) <= 0:
