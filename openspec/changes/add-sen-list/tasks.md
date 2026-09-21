@@ -7,9 +7,9 @@
 
 ## 2. Composition root lazy (ADR 0006) + entry-point
 
-- [ ] 2.1 Mover `Settings()` para dentro dos builders; `main()` reduzido a dispatch puro; mensagem de degradação educativa (D1-b) quando builder sem chaves falha (`exit 1`, sem stacktrace, ponteiro para sub-help)
-- [ ] 2.2 Remover `repo_path` hardcoded e o fluxo `run_bare_pipeline` do `main.py`
-- [ ] 2.3 Adicionar `[tool.poetry.scripts] sen = "apiops_orchestrator.main:main"` (e declaração de `packages`) no `pyproject.toml`
+- [x] 2.1 Mover `Settings()` para dentro dos builders; `main()` reduzido a dispatch puro; mensagem de degradação educativa (D1-b) quando builder sem chaves falha (`exit 1`, sem stacktrace, ponteiro para sub-help) *(helper único `_load_settings()` nos builders; bifurcação argv e fluxo bare PRESERVADOS — decisão; prova D1-a via snippet "BOOM" com Settings venenada antes do import, pois env zerada não é discriminante com dotenv absoluto)*
+- [x] 2.2 Remover `repo_path` hardcoded e o fluxo `run_bare_pipeline` do `main.py` *(PARKED por decisão — `repo_path`/`run_bare_pipeline` permanecem; extração real vira o corpo da task 3/D3)*
+- [x] 2.3 Adicionar `[tool.poetry.scripts] sen = "apiops_orchestrator.main:main"` (e declaração de `packages`) no `pyproject.toml` *(REMANEJADA para o change add-sen-entrypoint, onde o shim e seus smokes vivem)*
 
 ## 3. Extração do fluxo legado (D3)
 
