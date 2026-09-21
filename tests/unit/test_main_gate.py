@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pydantic
 import pytest
 
 import apiops_orchestrator.main as main_mod
@@ -13,8 +14,9 @@ from apiops_orchestrator.config.settings import Settings
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PYTHONPATH_SRC = str(REPO_ROOT / "src")
 
-ETAPA3_SKIP = pytest.mark.skip(
-    reason="Exige composition root lazy (Etapa 3 do ADR 0006)"
+BARE_MODE_SKIP = pytest.mark.skip(
+    reason="Modo bare mantido (decisão): invocação desnuda executa o fluxo legacy; "
+    "paridade/instalação do shim ficam nos smokes do add-sen-entrypoint"
 )
 
 
@@ -35,93 +37,148 @@ def _stub_settings(project_root: Path):
     return settings
 
 
-def test_login_service_factory_uses_package_root_for_session_store(tmp_path):
+def test_login_service_factory_uses_package_root_for_session_store(monkeypatch, tmp_path):
     settings = _stub_settings(project_root=tmp_path / "repo")
     object.__setattr__(settings, "PACKAGE_ROOT", tmp_path)
+    monkeypatch.setattr(main_mod, "_load_settings", MagicMock(return_value=settings))
 
-    factory = main_mod.build_login_service_factory(settings)
+    factory = main_mod.build_login_service_factory()
     service = factory()
 
     assert service.session_store.session_path == tmp_path / ".sen_session"
     assert service.session_store.directory == tmp_path
 
 
+# ---------------------------------------------------------------------------
+# Gate de boot: main() é dispatch puro; Settings só nasce no consumo
+# ---------------------------------------------------------------------------
+
+
 @pytest.fixture
-def isolated_main(monkeypatch):
+def recording_app(monkeypatch):
     fake_app = RecordingApp()
     monkeypatch.setattr(main_mod, "app", fake_app)
-    monkeypatch.setattr(main_mod, "Settings", MagicMock(return_value=MagicMock()))
-    return fake_app, monkeypatch
+    return fake_app
 
 
-def test_invoked_argv_skips_legacy_pipeline(isolated_main):
-    fake_app, monkeypatch = isolated_main
-    invoked_ctx = {"login_service_factory": "L", "api_listing_service_factory": "S"}
+def test_invoked_argv_builds_lazy_factories_and_never_runs_pipeline(recording_app, monkeypatch):
+    fake_app = recording_app
+    login_marker = lambda: "LOGIN_SERVICE"
+    listing_marker = lambda: "LISTING_SERVICE"
+    constructions = []
+
+    def login_factory():
+        constructions.append("login")
+        return login_marker
+
+    def listing_factory():
+        constructions.append("listing")
+        return listing_marker
+
     bare_spy = MagicMock(side_effect=AssertionError("legacy pipeline must not run"))
-    invoked_spy = MagicMock(return_value=invoked_ctx)
+    monkeypatch.setattr(main_mod, "build_login_service_factory", login_factory)
+    monkeypatch.setattr(main_mod, "build_listing_service_factory", listing_factory)
     monkeypatch.setattr(main_mod, "run_bare_pipeline", bare_spy)
-    monkeypatch.setattr(main_mod, "build_invoked_context", invoked_spy)
 
     monkeypatch.setattr(sys, "argv", ["main.py", "sen", "login"])
     main_mod.main()
 
     bare_spy.assert_not_called()
-    invoked_spy.assert_called_once()
-    assert fake_app.calls == [invoked_ctx]
+    assert constructions == ["login", "listing"]
+    obj = fake_app.calls[0]
+    assert obj["login_service_factory"] is login_marker
+    assert obj["api_listing_service_factory"] is listing_marker
 
 
-def test_invoked_argv_for_other_commands_same_gate(isolated_main):
-    fake_app, monkeypatch = isolated_main
-    invoked_ctx = {"api_listing_service_factory": "S"}
-    monkeypatch.setattr(main_mod, "run_bare_pipeline", MagicMock())
+def test_invoked_argv_other_commands_share_same_gate(recording_app, monkeypatch):
+    fake_app = recording_app
+    listing_marker = lambda: "LISTING_SERVICE"
     monkeypatch.setattr(
-        main_mod, "build_invoked_context", MagicMock(return_value=invoked_ctx)
+        main_mod, "build_login_service_factory", lambda: lambda: "LOGIN_SERVICE"
     )
+    monkeypatch.setattr(main_mod, "build_listing_service_factory", lambda: listing_marker)
+    monkeypatch.setattr(main_mod, "run_bare_pipeline", MagicMock())
 
     monkeypatch.setattr(sys, "argv", ["main.py", "sen", "list", "api"])
     main_mod.main()
 
-    assert fake_app.calls == [invoked_ctx]
+    obj = fake_app.calls[0]
+    assert obj["api_listing_service_factory"] is listing_marker
 
 
-def test_bare_argv_keeps_legacy_pipeline(isolated_main):
-    fake_app, monkeypatch = isolated_main
-    bare_ctx = {"api_listing_service": "DIRECT"}
-    bare_spy = MagicMock(return_value=bare_ctx)
-    invoked_spy = MagicMock(side_effect=AssertionError("invoked gate must not run"))
+def test_bare_argv_keeps_legacy_pipeline(recording_app, monkeypatch):
+    fake_app = recording_app
+    sentinel = object()
+    load_spy = MagicMock(return_value=sentinel)
+    bare_spy = MagicMock(return_value={"api_listing_service": "DIRECT"})
+    monkeypatch.setattr(main_mod, "_load_settings", load_spy)
     monkeypatch.setattr(main_mod, "run_bare_pipeline", bare_spy)
-    monkeypatch.setattr(main_mod, "build_invoked_context", invoked_spy)
 
     monkeypatch.setattr(sys, "argv", [])
     main_mod.main()
 
-    invoked_spy.assert_not_called()
-    bare_spy.assert_called_once()
-    assert fake_app.calls == [bare_ctx]
+    load_spy.assert_called_once()
+    bare_spy.assert_called_once_with(sentinel)
+    assert fake_app.calls == []
 
 
-def test_bare_mode_cli_error_returns_given_exit_code(isolated_main):
-    fake_app, monkeypatch = isolated_main
-
-    def boom(_settings):
-        raise CliError("Environment variables missing", exit_code=1)
-
-    monkeypatch.setattr(main_mod, "run_bare_pipeline", boom)
+def test_bare_cli_error_returns_given_exit_code(recording_app, monkeypatch):
+    monkeypatch.setattr(
+        main_mod,
+        "_load_settings",
+        MagicMock(side_effect=CliError("Configuração incompleta", exit_code=1)),
+    )
     monkeypatch.setattr(sys, "argv", [])
 
     with pytest.raises(SystemExit) as excinfo:
         main_mod.main()
 
     assert excinfo.value.code == 1
-    assert fake_app.calls == []
+
+
+def test_load_settings_translates_missing_config_into_educational_cli_error(monkeypatch):
+    line_errors = [
+        {"type": "missing", "loc": ("HOST",), "input": {}},
+        {"type": "missing", "loc": ("AUTH_HOST",), "input": {}},
+    ]
+    monkeypatch.setattr(
+        main_mod,
+        "Settings",
+        MagicMock(
+            side_effect=pydantic.ValidationError.from_exception_data(
+                title="Settings", line_errors=line_errors
+            )
+        ),
+    )
+
+    with pytest.raises(CliError) as excinfo:
+        main_mod._load_settings()
+
+    message = excinfo.value.message
+    assert "HOST" in message and "AUTH_HOST" in message
+    assert "--help" in message
+    assert excinfo.value.exit_code == 1
+
+
+def test_factories_do_not_touch_settings_at_construction(monkeypatch):
+    monkeypatch.setattr(
+        main_mod,
+        "Settings",
+        MagicMock(side_effect=AssertionError("Settings must not load eagerly")),
+    )
+
+    main_mod.build_login_service_factory()
+    main_mod.build_listing_service_factory()
+
+
+# ---------------------------------------------------------------------------
+# Contract that survived migration
+# ---------------------------------------------------------------------------
 
 
 def test_bare_flow_contract_still_present():
     assert hasattr(main_mod, "run_bare_pipeline") and callable(
         main_mod.run_bare_pipeline
-    )
-    assert hasattr(main_mod, "build_invoked_context") and callable(
-        main_mod.build_invoked_context
     )
 
 
@@ -138,6 +195,24 @@ offenders = [
     if isinstance(value, (Settings, SessionStore, HttpClient))
 ]
 print("PURE" if not offenders else offenders)
+"""
+
+# O filho ainda encontraria o .env do repo (dotenv caminho absoluto), então a
+# prova honesta de D1-a NÃO é "env zerada" — é venenar Settings ANTES de
+# importar main: se qualquer caminho do boot tocar Settings, RuntimeError BOOM.
+HELP_WITHOUT_SETTINGS_SNIPPET = """
+import sys
+sys.argv = ["main.py"] + {args!r}
+import apiops_orchestrator.config.settings as _cs
+
+class _BoomSettings:
+    def __new__(cls):
+        raise RuntimeError("BOOM: Settings loaded during --help!")
+
+_cs.Settings = _BoomSettings
+
+from apiops_orchestrator.main import main
+main()
 """
 
 
@@ -168,37 +243,11 @@ def test_module_import_is_side_effect_free():
     assert "PURE" in proc.stdout, proc.stdout
 
 
-@ETAPA3_SKIP
-def test_console_script_sen_naked_shows_help_never_pipeline():
-    script = (
-        "import sys; sys.argv = ['sen']; "
-        "from apiops_orchestrator.main import main; main()"
-    )
+def test_sen_help_booms_if_settings_are_touched():
+    """sen --help responde (exit 0) mesmo com Settings venenada — D1-a."""
+    snippet = HELP_WITHOUT_SETTINGS_SNIPPET.format(args=["sen", "--help"])
     proc = subprocess.run(
-        [sys.executable, "-c", script],
-        capture_output=True,
-        text=True,
-        cwd=str(REPO_ROOT),
-        env={**_clean_env()},
-        timeout=60,
-    )
-
-    assert proc.returncode == 0, proc.stderr
-    assert "Usage" in proc.stdout or "usage" in proc.stdout
-
-
-@ETAPA3_SKIP
-def test_sen_list_api_help_without_env():
-    proc = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "apiops_orchestrator.main",
-            "sen",
-            "list",
-            "api",
-            "--help",
-        ],
+        [sys.executable, "-c", snippet],
         capture_output=True,
         text=True,
         cwd=str(REPO_ROOT),
@@ -208,3 +257,25 @@ def test_sen_list_api_help_without_env():
 
     assert proc.returncode == 0, proc.stderr
     assert "Usage" in proc.stdout or "usage" in proc.stdout
+    assert "BOOM" not in proc.stderr and "BOOM" not in proc.stdout
+
+
+def test_sen_list_api_help_booms_if_settings_are_touched():
+    snippet = HELP_WITHOUT_SETTINGS_SNIPPET.format(args=["sen", "list", "api", "--help"])
+    proc = subprocess.run(
+        [sys.executable, "-c", snippet],
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        env=_clean_env(),
+        timeout=60,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "Usage" in proc.stdout or "usage" in proc.stdout
+    assert "BOOM" not in proc.stderr and "BOOM" not in proc.stdout
+
+
+@BARE_MODE_SKIP
+def test_console_script_sen_naked_behaviour_parked():
+    pass

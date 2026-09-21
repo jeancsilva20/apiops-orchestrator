@@ -43,8 +43,30 @@ repo_path = Path(
 revision = 1
 
 
-def build_login_service_factory(settings: Settings):
+def _load_settings() -> Settings:
+    """Carregamento lazy de configuração (ADR 0006).
+
+    ValidationError é traduzido em CliError educativa (D1-b): curta, lista as
+    chaves ausentes, aponta .env/.sen e o sub-help — sem stacktrace/segredos.
+    """
+    try:
+        return Settings()  # type: ignore[call-arg]
+    except pydantic.ValidationError as e:
+        missing = ", ".join(
+            str(err.get("loc", ("<unknown>",))[0]).upper() for err in e.errors()
+        )
+        raise CliError(
+            f"Configuração incompleta (ausente/inválida): {missing}. "
+            "Defina as variáveis no .env do repositório ou no .sen do diretório "
+            "do pacote. Detalhes: consulte o sub-help do comando "
+            "(ex.: sen list api --help).",
+            exit_code=1,
+        ) from e
+
+
+def build_login_service_factory():
     def factory() -> LoginService:
+        settings = _load_settings()
         return LoginService(
             auth_adapter=OrchestratorAuthAdapter(settings=settings, max_retries=3),
             session_store=SessionStore(directory=settings.PACKAGE_ROOT),
@@ -54,8 +76,9 @@ def build_login_service_factory(settings: Settings):
     return factory
 
 
-def build_listing_service_factory(settings: Settings):
+def build_listing_service_factory():
     def factory() -> ApiListingService:
+        settings = _load_settings()
         manager_adapter = ManagerApiAdapter(
             token=resolve_admin_token(settings),
             base_path="/api-manager/api/v3/",
@@ -67,13 +90,6 @@ def build_listing_service_factory(settings: Settings):
         return ApiListingService(manager_adapter, session=session)
 
     return factory
-
-
-def build_invoked_context(settings: Settings) -> dict:
-    return {
-        "login_service_factory": build_login_service_factory(settings),
-        "api_listing_service_factory": build_listing_service_factory(settings),
-    }
 
 
 def validate_recursively(
@@ -137,26 +153,27 @@ def run_bare_pipeline(settings: Settings) -> dict:
 
     return {
         "api_listing_service": api_listing_service,
-        "login_service_factory": build_login_service_factory(settings),
-        "api_listing_service_factory": build_listing_service_factory(settings),
+        "login_service_factory": build_login_service_factory(),
+        "api_listing_service_factory": build_listing_service_factory(),
     }
 
 
 def main():
     """
-    Composition Root: Orchestrates the instantiation of adapters and services,
-    and injects them into the CLI adapter.
-
-    Bare invocation (`python main.py`) runs the legacy pipeline flow as before.
-    Invoked mode (`python main.py sen <cmd>`) skips the pipeline and boots the CLI only.
+    Composition Root lazy (ADR 0006): monta factories preguiçosas de serviços;
+    `Settings` só é instanciada quando o comando invocado realmente consome
+    configuração — `--help`/`--version` respondem sem nenhum `.env`/`.sen`
+    (D1-a). Bare (`python main.py` desnudo) permanece executando o fluxo legacy
+    (decisão: extração fica na task D3).
     """
     try:
-        settings = Settings()  # type: ignore[call-arg]
-        if len(sys.argv) > 1:
-            ctx_obj = build_invoked_context(settings)
-        else:
-            ctx_obj = run_bare_pipeline(settings)
-
+        if len(sys.argv) <= 1:
+            run_bare_pipeline(_load_settings())
+            return
+        ctx_obj = {
+            "login_service_factory": build_login_service_factory(),
+            "api_listing_service_factory": build_listing_service_factory(),
+        }
         app(obj=ctx_obj)
 
     except CliError as e:
