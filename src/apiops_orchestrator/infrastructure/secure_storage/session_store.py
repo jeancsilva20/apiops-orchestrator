@@ -33,9 +33,13 @@ class SessionStore:
         self.session_path = self.directory / SESSION_FILE_NAME
 
     def save(self, session: LoginSession) -> None:
-        # The privileged super-admin token lives in memory only: dropping the
-        # field here guarantees it never touches the disk for ANY profile.
-        payload = session.model_dump_json(exclude={"adminAccessToken"})
+        # Persists the full session, including `adminAccessToken` for the
+        # super-admin profile (rev. of ADR 0002 — see openspec change
+        # store-admin-token-in-sen-session). Presence of the privileged token
+        # is guarded by the model itself; `exclude_none` keeps absent
+        # profile-conditional fields (e.g. adminAccessToken for developer)
+        # out of the file entirely.
+        payload = session.model_dump_json(exclude_none=True)
         temp_path: Optional[Path] = None
         try:
             self.directory.mkdir(parents=True, exist_ok=True)
@@ -66,7 +70,9 @@ class SessionStore:
 
         Corrupt, legacy (flat) or unknown-profile files fail model validation
         and are treated as "session absent" (forces re-login). A super-admin
-        session without the admin token (always absent on disk) loads fine.
+        session without the admin token (format written before the rev. of
+        ADR 0002) also loads fine; consumers needing the token SHALL orient
+        re-login when it is absent.
         """
         if not self.session_path.is_file():
             return None

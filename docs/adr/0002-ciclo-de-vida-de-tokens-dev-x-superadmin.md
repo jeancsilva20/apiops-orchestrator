@@ -47,6 +47,14 @@ Ação (ex.: sen list api)
 - Token vive **apenas em memória/sessão do processo** (`sen login --service` → execução → fim).
 - **Nada** em arquivo, console ou log — em nenhuma das fases.
 
+> **REVISÃO (2026-09-21, openspec `store-admin-token-in-sen-session`):** o ponto de
+> persistência desta decisão foi revisado para a esteira multiprocessos — o
+> `adminAccessToken` passa a residir no `.sen_session` (com as mesmas salvaguardas
+> da sessão: escrita atômica, permissões restritivas, exclusão do versionamento e
+> expiração). O perfil `developer` continua sem o campo. O fluxo efêmero do dev
+> via `/validation` permanece cancelado por decisão posterior (uso da rota de login
+> com credencial dedicada — ver openspec `add-sen-list`).
+
 ### Expiração
 
 - Guard local verifica expiração (claim `exp` ou 401 recebido) e **orienta re-login** (`sen login`) —

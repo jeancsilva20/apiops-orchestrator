@@ -31,7 +31,9 @@ class LoginSession(BaseModel):
     userEmail: Optional[str] = None
     userGroups: Optional[List[str]] = None
 
-    # Super-admin-only privileged token: kept in memory only, never persisted.
+    # Super-admin-only privileged token: persisted with the session since the
+    # rev. of ADR 0002 (store-admin-token-in-sen-session); same safeguards
+    # (atomic write, restrictive permissions, VCS exclusion, expiry).
     adminAccessToken: Optional[str] = None
 
     def model_post_init(self, __context) -> None:
@@ -56,8 +58,9 @@ class LoginSession(BaseModel):
             if not self.userGroups:
                 raise ValueError("Perfil 'developer' exige 'userGroups' não vazio.")
         elif self.profile == PROFILE_SUPER_ADMIN:
-            # Absence is tolerated: the store never persists the privileged
-            # token, so a reloaded session stays valid without it.
+            # Absence is tolerated for sessions written before the rev. of
+            # ADR 0002; new super-admin sessions carry the token and
+            # persistence keeps it alongside the rest of the session.
             pass
 
     @property

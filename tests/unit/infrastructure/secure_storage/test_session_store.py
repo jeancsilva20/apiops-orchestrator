@@ -61,18 +61,26 @@ def test_save_writes_full_content_atomically(tmp_path):
     assert leftovers == []
 
 
-def test_save_super_admin_never_persists_admin_token(tmp_path):
+def test_save_super_admin_persists_admin_token(tmp_path):
     store = SessionStore(directory=tmp_path)
     store.save(super_admin_session())
 
     raw = json.loads((tmp_path / SESSION_FILE_NAME).read_text(encoding="utf-8"))
-    assert "adminAccessToken" not in raw
+    assert raw["adminAccessToken"] == ADMIN_TOKEN
     assert raw["profile"] == "super-admin"
     assert raw["scope"] == "admin"
     assert raw["accessToken"] == ADMIN_TOKEN
 
 
-def test_saved_super_admin_reloads_without_privileged_token(tmp_path):
+def test_save_developer_never_carries_admin_token(tmp_path):
+    store = SessionStore(directory=tmp_path)
+    store.save(developer_session())
+
+    raw = json.loads((tmp_path / SESSION_FILE_NAME).read_text(encoding="utf-8"))
+    assert "adminAccessToken" not in raw
+
+
+def test_saved_super_admin_reloads_with_privileged_token(tmp_path):
     store = SessionStore(directory=tmp_path)
     store.save(super_admin_session())
 
@@ -80,8 +88,22 @@ def test_saved_super_admin_reloads_without_privileged_token(tmp_path):
 
     assert loaded is not None
     assert loaded.is_super_admin is True
-    assert loaded.adminAccessToken is None
+    assert loaded.adminAccessToken == ADMIN_TOKEN
     assert loaded.accessToken == ADMIN_TOKEN
+
+
+def test_load_legacy_super_admin_without_admin_token_still_valid(tmp_path):
+    store = SessionStore(directory=tmp_path)
+    legacy_super_admin = super_admin_session().model_dump_json()
+    persisted = json.loads(legacy_super_admin)
+    persisted.pop("adminAccessToken")
+    (tmp_path / SESSION_FILE_NAME).write_text(json.dumps(persisted), encoding="utf-8")
+
+    loaded = store.load(now=datetime.now(timezone.utc))
+
+    assert loaded is not None
+    assert loaded.is_super_admin is True
+    assert loaded.adminAccessToken is None
 
 
 def test_load_returns_valid_developer_session(tmp_path):
