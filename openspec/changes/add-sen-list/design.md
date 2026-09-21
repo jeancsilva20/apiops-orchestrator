@@ -29,9 +29,9 @@ Referência de análise completa: `docs/feat-command-sen-list/features/sen-list.
 
 **D1 — Composition root lazy via builders por comando.** `main()` só faz dispatch; `Settings()` é instanciado dentro dos builders no momento em que o comando exige configuração. Alternativa descartada: `Settings(lazy=True)` com proxy global — introduz semântica especial em todo consumers sem necessidade. Esteira PoC ganha falha rápida e o `--help` não paga configuração.
 
-**D2 — Fluxo legacy → `scripts/generate_api_json.py` (fora do pacote).** `python main.py` pelado deixa de existir na CLI (bare `sen` = `no_args_is_help`, já comportamento do `sen_app`); o script recebe `--repo`/`--revision` e reproduz o comportamento atual (validação de estrutura + schema + conversão `ApiFull`). Alternativa descartada: manter como sub-comando interno — perpetuaria o acoplamento e traria o pipeline para dentro do exe entregue ao dev. *(D3 era "pendente de placa"; realizado neste passo porque a migração do composition root o torna morto — não dá para migrar sem extrair ou duplicar.)*
+**D2 — Fluxo legacy PRESERVADO nesta leva (D3 fica de placa).** O caminho bare (`python main.py` sem argumentos → `run_bare_pipeline`) permanece com comportamento inalterado — sua extração para `scripts/generate_api_json.py` é pendência de placa (D3) e segue para o backlog. Discriminação de entrada: a seleção entre "modo CLI" e "modo bare" hoje usa `len(sys.argv) > 1` — frágil com o entry-point `sen` (onde `sen` pelado também produz `argv` de tamanho 1 e dispararia o pipeline por engano). Correção mínima: discriminar pelo formato do argv[0] (executável/console-script → sempre CLI; `main.py` direto → comportamento legacy preservado). A extração física do código fica registrada no backlog até a selada do D3.
 
-**D3 — Regras de listagem na camada de aplicação, comando como adapter burro.** Pipeline: `filtrar (--query) → ordenar (id asc) → janelar (offset/limit)`. A CLI apenas traduz flags; a `ApiListingService` (ou `ListApisUseCase` sob `use_cases/`) recebe o dataset bruto via `ManagerApiPort` e aplica as micro-regras A3-1a/1b/1c e A3-3. Alternativa descartada: regras no adapter HTTP — impossibilitaria mocks limpos e duplicaria a lógica no futuro drill-down. Ordenação no client compensa a ausência de paginação server-side (única ordem estável para diffs).
+**D3 — Regras de listagem em `ApiCollection` (model novo de composição de coleção), comando como adapter burro.** Pipeline: `filtrar (--query) → ordenar (id asc) → janelar (offset/limit)`. Novo model `domain/models/api_collection_model.py`: `filtered_by`/`sorted_by_id`/`window`/`rows`, recebe `List[dict]` cru (sem fazer parse item-a-item para pydantic nesta fatia) e referencia as chaves do contrato `ApiPartialInfo` (id, name, description) sem replicar shape. `ApiListingService` orquestra: busca 1× na port → pipeline fluente da coleção → retorno; drill-down monta revisões/completeness/stage. Motivações: forma de UMA API já tem dono (`ApiPartialInfo`) — os models existentes não são alterados (evitam regressão no fluxo legacy que os consome); coleção-model dá teste isolado e reuso imediato pelo drill-down. Alternativas descartadas: funções soltas em `domain/services` (sem casa para o segundo consumidor) e model rico com parse de `ApiPartialInfo` (validadores nunca provados contra resposta real do manager — custo/risco prematuro). Gatilho de evolução: quando o canal JSON (B2, backlog) exigir contrato tipado, a coleção passa a parsear para `ApiPartialInfo` — os dois mundos colapsam.
 
 **D4 — Janela sempre explícita com default anunciado.** Qualquer saída divulga a janela efetiva; o caso desnudo (`sen list api`) executa `--limit 10 --offset 0` com rodapé `usando padrões: --limit 10 --offset 0 · detalhes: sen list api --help` (selo Paulo-5 — revogou o default silencioso). `--limit ≤ 0` → erro amigável, exit 1; `--offset` além do total → lista vazia, exit 0.
 
@@ -45,8 +45,10 @@ Referência de análise completa: `docs/feat-command-sen-list/features/sen-list.
 
 ## Risks / Trade-offs
 
-- [Baixar dataset completo (107+ APIs) por chamada] → aceito e mitigável adiante com `filter=BASIC_INFO` (backlog §6); volume atual comprovado desprezível (~107 itens).
-- [Extract do legacy pode quebrar scripts/CI que chamavam `python main.py` pelado] → pipeline `pipeline.yaml`/`bitbucket-pipelines.yml` auditado no passo; entrada antiga mantém mensagem de migração apontando para o script novo.
+- [Baixar dataset completo (107+ APIs) por chamada] → aceito e mitigável adiante com `filter=BASIC_INFO` (backlog §6); volume atual comprovado desprezível (~107 itens). A chamada de listagem usa `?filter=BASIC_INFO` explicitamente (peso ↓); shape filtrado comprovado pelo fixture capturado COM o filtro — se coluna da grade sumir no smoke, abandona-se o filtro (troca de 1 parâmetro no adapter, plan B de custo trivial).
+- [Dois mundos de representação conviverão (dict cru na coleção × `ApiPartialInfo` modelado fora dela)] → dívida explícita, endereçada e de custo mínimo; saldada quando o canal JSON (B2) exigir contrato tipado e a coleção adotar parse por item.
+- [Coleção-sem-tipos pode ser vista como model anêmico] → é, assumidamente: comportamento presente, itens ainda não garantidos tipadamente; escolha consciente até que exista requesito (canal JSON) que prove os validadores contra payload real.
+- [Discriminação de entrada entre `python main.py` (bare preservado) e `sen` console-script] → teste de gate dedicado: `sen` pelado mostra ajuda e NUNCA dispara pipeline; `python main.py` sem argumentos mantém comportamento legacy.
 - [Catálogo de stages invalidado entre sessões] → cache vive só em memória da execução (sem staleness cross-run); nome do stage é cosmético, degrada para o id.
 - [Composição lazy invisível ao gate] → `test_main_gate.py` estendido como guarda de regressão antes de qualquer refactor (lock-first).
 - [Scope creep via `--revisions` no drill-down] → revisões entram nesta fatia porque a grade é canonizada (§3-3); completeness `suggestions[]` segue backlog.
@@ -54,11 +56,11 @@ Referência de análise completa: `docs/feat-command-sen-list/features/sen-list.
 ## Migration Plan
 
 1. Congelar comportamento com testes de gate e unitários da camada de aplicação (mocks na port) — antes de tocar `main.py`.
-2. Extrair legacy para `scripts/generate_api_json.py`; rewire `main.py` (sem bare-flow); registrar `[tool.poetry.scripts]`.
+2. Rewire lazy do `main.py` (builders); discriminação `sen`×`python main.py` (bare intacto); registrar `[tool.poetry.scripts]`.
 3. Implementar port/service/adapter + CLI `sen list api` com grades e flags.
 4. Smoke read-only real (E2: `sen list api` + drill-down API 400, somente GETs) — doc no changelog/CHANGELOG.
 5. Rollback: branch isolada (`feat/command-sen-list`); nenhum contrato público existente muda (sem breaking).
 
 ## Open Questions
 
-- Nenhuma bloqueante. Pendências de placa registradas na feature (D2 selado aqui implicitamente; E2 smoke aguarda token real da máquina no dia da integração).
+- Nenhuma bloqueante. Extração do fluxo legacy (D3) segue para o backlog como pendência de placa; E2 smoke aguarda token real da máquina no dia da integração.

@@ -101,6 +101,30 @@ Falhas SHALL ser convertidas em mensagens humanas curtas conforme a família do 
 - **WHEN** a conexão com o host falha (timeout/DNS/refused)
 - **THEN** a CLI exibe mensagem de indisponibilidade com dica (host/rede) e encerra com exit code `1`
 
+### Requirement: Fonte do token das APIs administrativas
+
+As chamadas administrativas da listagem SHALL obter o token super admin seguindo a precedência abaixo:
+
+1. **Sessão super-admin válida** (`.sen_session` no `PACKAGE_ROOT`, não expirada, perfil `super-admin` com `adminAccessToken` presente — cf. change arquivado `store-admin-token-in-sen-session`): usar o token persistido, **sem chamada à rota de login**;
+2. **Rota de login** (`AUTH_HOST`/`AUTH_LOGIN_PATH`) com a credencial dedicada `ADMIN_LOGIN_CREDENTIALS` (blob Base64 intocado, definida exclusivamente no `.env` — precedência processo > `.env`; credencial de ambiente, **não** pertence ao `.sen` individual do dev).
+
+Nenhum caminho SHALL usar o `accessToken` de sessão `developer` como Bearer administrativo. O token proveniente da rota SHALL ser efêmero (memória do comando, nunca persistido — inclusive não retroalimenta o `.sen_session`). Ausência simultânea de sessão utilizável e credencial SHALL falhar **antes de qualquer chamada de rede** com mensagem educativa apontando para `ADMIN_LOGIN_CREDENTIALS` no `.env` (herda D1-b). Resposta sem `admin_access_token` SHALL produzir erro de protocolo genérico, sem valores. Nenhum valor de token/credencial SHALL ser logado (ADR 0005) — apenas a fonte (`session`/`login_route`) em eventos nomeados.
+
+#### Scenario: Esteira — token pronto na sessão (sem rede de auth)
+
+- **WHEN** a esteira executou `sen login` de super-admin (token persistido no `.sen_session`) e `sen list api` roda em processo subsequente com sessão não expirada
+- **THEN** o token `adminAccessToken` da sessão é usado como Bearer da listagem e nenhuma requisição à rota de login é feita
+
+#### Scenario: Dev — obtenção via rota de login com credencial de ambiente
+
+- **WHEN** não há sessão super-admin utilizável (ausente, expirada, perfil `developer` ou sessão sem token) e `ADMIN_LOGIN_CREDENTIALS` está definida no `.env`
+- **THEN** o comando chama a rota de login com o blob admin, extrai `extra_info.admin_access_token`, usa em memória para a listagem e não grava nada — o `.sen_session` permanece intacto
+
+#### Scenario: Nem sessão nem credencial
+
+- **WHEN** não há sessão super-admin utilizável e `ADMIN_LOGIN_CREDENTIALS` não está definida (`.env`)
+- **THEN** o comando falha com mensagem educativa (o que falta + como resolver + próxima ação) e `exit 1`, sem nenhuma chamada de rede
+
 ### Requirement: Segurança de saídas e segredos
 
 Todas as saídas do `sen list` SHALL seguir o padrão de logs existente (ADR 0005): nenhum token, credencial ou valor de segredo SHALL aparecer em stdout/stderr, exceptions ou testes; corpos de resposta com credenciais SHALL ser suprimidos (relato de corpo suprimido).
@@ -109,3 +133,66 @@ Todas as saídas do `sen list` SHALL seguir o padrão de logs existente (ADR 000
 
 - **WHEN** qualquer comando da fatia executa (sucesso ou falha)
 - **THEN** nenhuma linha de saída contém valores de token, credencial Basic ou segredo; falhas exibem apenas descrições e categorias
+
+### Requirement: Filtragem de visibilidade client-side
+
+A listagem `sen list api` SHALL filtrar, **no cliente e antes da busca (`--query`) e da janela (`--limit`/`--offset`)**, quais APIs são visíveis ao perfil da sessão. A decisão SHALL combinar o objeto `visibility` de cada API (retorno cru do payload de listagem) com o contexto de sessão do `.sen_session` (`userName`, `userGroups`, perfil admin). Comparações de username e de nome de grupo SHALL usar trim + case-insensitive (nomes de grupo sem distinção de acento/caixa). Sem contador de APIs ocultas na saída — o comando exibe apenas o que o usuário pode ver.
+
+Tipos de visibilidade observados em produção (probes read-only 21/09/2026, 110 APIs): `ORGANIZATION` (87) · `GROUP` (10) · `ME` (13). `owner` sempre presente; `groupVisibility` chega como objeto único com `name` inline (sem GET para resolver); `users[]` na lista é irrelevante para a decisão de visibilidade. Valores distintos SHALL ser tratados pela tabela:
+
+| Condicao                                        | Visivel para a sessao                                   |
+|-------------------------------------------------|----------------------------------------------------------|
+| `super_admin` (perfil/admin token da sessao)     | tudo                                                     |
+| `visibilityType == "ORGANIZATION"`               | todos da organizacao                                     |
+| `visibilityType == "ME"`                         | somente se `owner == userName`                           |
+| `visibilityType == "GROUP"`                      | SOMENTE se `groupVisibility.name` casa com algum `userGroups` da sessao (trim/casefold) — `owner` NAO influi na regra GROUP |
+| tipo ausente ou desconhecido                     | NUNCA (deny-by-default)                                  |
+
+A ordem SHALL ser: `visible_to` → `filtered_by(query)` → `sorted_by_id` → `window(offset, limit)` — busca e paginação incidem sobre o universo já filtrado.
+
+Sessão **sem grupos legíveis** (`userGroups` ausente/vazio em perfil não admin) SHALL **bloquear** o comando com erro educativo (o piso mínimo é o grupo API Ops): mensagem curta orientando refazer `sen login` ou entrar em contato, `exit 1`, **sem** simular lista vazia. Resultado vazio após o filtro SHALL tratar-se como lista legítima vazia ("No APIs found."), sem erro.
+
+#### Scenario: API de organização aparece para todos
+
+- **WHEN** o filtro avalia uma API com `visibilityType: ORGANIZATION`
+- **THEN** a API compõe o universo visível independentemente de `userGroups`
+
+#### Scenario: API ME restrita ao dono
+
+- **WHEN** o filtro avalia uma API com `visibilityType: ME` cujo `owner` difere de `userName` da sessão
+- **THEN** a API é excluída da listagem (exceto para perfil admin)
+
+#### Scenario: API de grupo casa por associação do usuário
+
+- **WHEN** o filtro avalia uma API com `visibilityType: GROUP` e `groupVisibility.name` igual (ignorando caixa/espaços) a um grupo de `userGroups` da sessão
+- **THEN** a API aparece na listagem mesmo com `users: []` no payload
+
+#### Scenario: API de grupo é ocultada quando o nome não casa
+
+- **WHEN** o filtro avalia uma API `GROUP` cujo nome de grupo não consta em `userGroups` da sessão (independente de quem é o `owner`)
+- **THEN** a API é excluída silenciosamente da listagem (a página/janela continua coerente com o universo visível)
+
+#### Scenario: Tipo de visibilidade desconhecido é negado
+
+- **WHEN** o filtro encontra `visibility` ausente, com `visibilityType` vazio ou com valor fora da tabela (`ORGANIZATION`/`GROUP`/`ME`)
+- **THEN** a API é excluída (deny-by-default), independentemente do perfil (exceto super admin)
+
+#### Scenario: Busca e janela aplicadas após a visibilidade
+
+- **WHEN** o usuário combina filtro de visibilidade ativo com `--query`, `--limit` e/ou `--offset`
+- **THEN** o pipeline executa na ordem `visible_to` → `filtered_by` → `sorted_by_id` → `window` e a janela incide sobre o conjunto já visível
+
+#### Scenario: Sessão sem grupos bloqueia o comando
+
+- **WHEN** o perfil da sessão é não admin e `userGroups` está ausente ou vazio no `.sen_session`
+- **THEN** o comando falha **antes de qualquer cálculo/requisição complementar** com mensagem educativa curta (contexto mínimo de participação no grupo API Ops; sugerir `sen login` novamente ou acionar o time de acesso) e `exit 1`
+
+#### Scenario: Plataforma não retorna APIs
+
+- **WHEN** o endpoint de listagem responde com coleção vazia
+- **THEN** o comando informa ausência de APIs (mensagem padrão "No APIs found.") e encerra com `exit code 0`
+
+#### Scenario: Filtro resulta em universo vazio
+
+- **WHEN** a coleção retornada não é vazia, mas nenhuma API passa pelo filtro de visibilidade
+- **THEN** o comando exibe a grade vazia sem tratar como erro e encerra com `exit code 0`
