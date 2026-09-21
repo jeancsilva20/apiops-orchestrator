@@ -21,6 +21,11 @@ A sessão SHALL ser persistida em um **arquivo oculto** (nome iniciado por ponto
 - **WHEN** o login é concluído e o diretório do pacote já contém um arquivo `.sen`
 - **THEN** ambos os arquivos convivem no mesmo diretório (`.sen` de credencial, `.sen_session` de sessão), sem interferência de um sobre o outro
 
+#### Scenario: Leitura por execução posterior
+
+- **WHEN** a aplicação inicia uma execução subsequente e existe arquivo de sessão com `expiresAt` maior que o instante atual
+- **THEN** a sessão é carregável pelo mecanismo de persistência fornecido por este change contendo todos os campos gravados; para a sessão `super-admin` o `adminAccessToken` agora COMPÕE esse carregamento quando presente no arquivo
+
 #### Scenario: Leitura por execução posterior — super-admin com token completo
 
 - **WHEN** a aplicação inicia uma execução subsequente e existe arquivo de sessão de perfil `super-admin` com `expiresAt` maior que o instante atual
