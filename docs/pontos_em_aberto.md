@@ -12,6 +12,7 @@
 | # | Tema | Status | Data |
 |---|---|---|---|
 | 1 | Cache da listagem de APIs (`sen list api`) | DECIDIDO — sem cache | 2026-09-21 |
+| 2 | Token super admin (`sen login` / API de login do Manager) | EM ABERTO — ponto de ajuste | 2026-09-21 |
 
 ---
 
@@ -60,5 +61,37 @@ Registrar cache quando algum destes eventos ocorrer:
   atributo hidden no Windows).
 - **Controles:** TTL default 5 min; flag `--no-cache`/`--refresh` na CLI; miss → 2 chamadas + grava.
 - **Estimativa:** ~120-150 linhas + 8-10 tests + delta de spec (~half day).
+
+---
+
+## 2. Token super admin (`sen login` / API de login do Manager)
+
+> **Status:** EM ABERTO — ponto de ajuste arquitetural.
+
+### Contexto
+
+No fluxo de dev do `sen`, o token de super admin é obtido através da rota de login,
+passando o token super admin que está na env como credencial. Esse funcionamento atual
+fica registrado como **ponto de ajuste**: a API de login do Manager considera o usuário
+super admin apenas quando verifica que o **client pertence a um token super admin**.
+
+### Consequência do desenho atual
+
+Por causa dessa verificação client-side (token → client), **o único jeito de obter o token
+via essa rota é armazená-lo do lado da aplicação** — o que viola o princípio de não manter
+segredos materializados no código/pacote (cf. regra da ADR 0005).
+
+### Decisão pendente
+
+Em aberto: definir **uma nova rota dedicada** (que reconheça super admin por outro meio,
+sem exigir o token como input) **ou outra arquitetura** de obtenção/provisionamento do
+token super admin. Enquanto persistir o desenho atual, o workaround (armazenar do lado
+da aplicação) segue apenas como solução provisória do fluxo de dev.
+
+### Gatilhos para reabrir/resolver
+
+1. Reunião/arquitetura definir a rota ou o mecanismo definitivo de autenticação super admin;
+2. Mudança na API de login do Manager que altere a forma de identificar token super admin;
+3. Necessidade de mover o fluxo de dev para produção/shared (o workaround deixa de ser aceitável).
 
 ---
