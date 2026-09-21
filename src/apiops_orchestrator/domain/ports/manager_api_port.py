@@ -14,6 +14,14 @@ class ManagerApiPort(ABC):
         pass
 
     @abstractmethod
+    def get_revisions_basic(self) -> list[Dict[str, Any]]:
+        """Contract to fetch the basic revisions catalog (one call for all APIs).
+
+        Each row carries {id, api {id, revisionNumber, ...}, workflowId, workflowStageId}.
+        """
+        pass
+
+    @abstractmethod
     def publish_api_changes(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Contract to publish new API revisions"""
         pass

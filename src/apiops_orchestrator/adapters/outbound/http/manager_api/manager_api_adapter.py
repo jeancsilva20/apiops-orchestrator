@@ -43,6 +43,11 @@ class ManagerApiAdapter(ManagerApiPort):
         endpoint = f"apis/{target_id}"
         return self._request("GET", endpoint)
 
+    def get_revisions_basic(self) -> list[Dict[str, Any]]:
+        """GET the basic revisions catalog (single call covering all APIs)."""
+        endpoint = "revisions/basic"
+        return self._request("GET", endpoint)
+
     def get_custom_interceptor_by_id(self, custom_interceptor_id: int) -> Dict[str, str] | None:
         endpoint = f"custom-interceptors/{custom_interceptor_id}"
 
