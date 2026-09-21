@@ -1,3 +1,5 @@
+import os
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -7,6 +9,13 @@ import pytest
 import apiops_orchestrator.main as main_mod
 from apiops_orchestrator.adapters.inbound.cli.cli_adapter import CliError
 from apiops_orchestrator.config.settings import Settings
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+PYTHONPATH_SRC = str(REPO_ROOT / "src")
+
+ETAPA3_SKIP = pytest.mark.skip(
+    reason="Exige composition root lazy (Etapa 3 do ADR 0006)"
+)
 
 
 class RecordingApp:
@@ -105,3 +114,97 @@ def test_bare_mode_cli_error_returns_given_exit_code(isolated_main):
 
     assert excinfo.value.code == 1
     assert fake_app.calls == []
+
+
+def test_bare_flow_contract_still_present():
+    assert hasattr(main_mod, "run_bare_pipeline") and callable(
+        main_mod.run_bare_pipeline
+    )
+    assert hasattr(main_mod, "build_invoked_context") and callable(
+        main_mod.build_invoked_context
+    )
+
+
+IMPORT_PURITY_SNIPPET = """
+import apiops_orchestrator.main as m
+from apiops_orchestrator.config.settings import Settings
+from apiops_orchestrator.infrastructure.secure_storage.session_store import (
+    SessionStore,
+)
+from apiops_orchestrator.infrastructure.utils.http_client import HttpClient
+offenders = [
+    name
+    for name, value in vars(m).items()
+    if isinstance(value, (Settings, SessionStore, HttpClient))
+]
+print("PURE" if not offenders else offenders)
+"""
+
+
+def _clean_env() -> dict:
+    env = {
+        "PATH": os.environ.get("PATH", ""),
+        "PYTHONPATH": PYTHONPATH_SRC,
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+    if os.name == "nt":
+        env["SYSTEMROOT"] = os.environ.get("SYSTEMROOT", "")
+    for var in ("AUTH_HOST", "AUTH_LOGIN_PATH", "SEN_CREDENTIALS", "HOST"):
+        env.pop(var, None)
+    return env
+
+
+def test_module_import_is_side_effect_free():
+    proc = subprocess.run(
+        [sys.executable, "-c", IMPORT_PURITY_SNIPPET],
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        env=_clean_env(),
+        timeout=60,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "PURE" in proc.stdout, proc.stdout
+
+
+@ETAPA3_SKIP
+def test_console_script_sen_naked_shows_help_never_pipeline():
+    script = (
+        "import sys; sys.argv = ['sen']; "
+        "from apiops_orchestrator.main import main; main()"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        env={**_clean_env()},
+        timeout=60,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "Usage" in proc.stdout or "usage" in proc.stdout
+
+
+@ETAPA3_SKIP
+def test_sen_list_api_help_without_env():
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "apiops_orchestrator.main",
+            "sen",
+            "list",
+            "api",
+            "--help",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        env=_clean_env(),
+        timeout=60,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "Usage" in proc.stdout or "usage" in proc.stdout

@@ -27,66 +27,151 @@ def test_verbose_flag():
     assert "APIOps CLI" in result.output
 
 def test_api_list_success():
-    """Test 'list api' command with mocked service."""
+    """Test 'list api' naked: canonical grade + announced defaults footer (A3-2)."""
     from unittest.mock import MagicMock
     mock_service = MagicMock()
     mock_service.list_apis.return_value = [
-        {"id": 1, "name": "API 1", "basePath": "/api1"},
-        {"id": 2, "name": "API 2", "basePath": "/api2"}
+        {"id": 1, "name": "API 1", "basePath": "/api1", "version": "1.0.0"},
+        {"id": 2, "name": "API 2", "basePath": "/api2", "version": "2.0.0"},
     ]
-    
+
     result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service": mock_service})
-    
-    assert result.exit_code == 0
-    assert "id, name, basePath" in result.output
-    assert "1, API 1, /api1" in result.output
-    assert "2, API 2, /api2" in result.output
-    mock_service.list_apis.assert_called_once_with(api_id=None)
 
-def test_api_list_with_id():
-    """Test 'list api --id' command."""
+    assert result.exit_code == 0
+    assert "ID" in result.output and "BASE PATH" in result.output
+    assert "LAST REV" in result.output and "LIFE CYCLE" in result.output
+    assert "/api1" in result.output
+    assert "usando padrões: --limit 10 --offset 0" in result.output
+    assert "detalhes: sen list api --help" in result.output
+    # A3-2: o default anunciado PRECISA alcançar o pipeline (janela real)
+    mock_service.list_apis.assert_called_once_with(query=None, offset=0, limit=10)
+
+def test_api_list_explicit_window_footer():
+    """Explicit --limit/--offset shows effective window footer."""
     from unittest.mock import MagicMock
     mock_service = MagicMock()
     mock_service.list_apis.return_value = [
-        {"id": 123, "name": "API 123", "basePath": "/api123", "description": "Desc"}
+        {"id": 1, "name": "API 1", "basePath": "/api1"}
     ]
-    
-    result = runner.invoke(app, ["sen", "list", "api", "--id", "123"], obj={"api_listing_service": mock_service})
-    
-    assert result.exit_code == 0
-    assert "id, name, basePath, description" in result.output
-    assert "123, API 123, /api123, Desc" in result.output
-    mock_service.list_apis.assert_called_once_with(api_id=123)
 
-def test_api_list_verbose():
-    """Test 'list api --verbose' command."""
+    result = runner.invoke(
+        app,
+        ["sen", "list", "api", "--offset", "90", "--limit", "5"],
+        obj={"api_listing_service": mock_service},
+    )
+
+    assert result.exit_code == 0
+    assert "janela: --limit 5 --offset 90" in result.output
+
+def test_api_list_columns_values():
+    """Canonical columns render version/last rev/life cycle with degradation."""
     from unittest.mock import MagicMock
     mock_service = MagicMock()
     mock_service.list_apis.return_value = [
-        {"id": 1, "name": "API 1", "basePath": "/api1", "version": "v1", "description": "Desc"}
+        {
+            "id": 400,
+            "name": "Orchestrator Auth API",
+            "basePath": "/orq-auth/v1",
+            "version": "1.0.1",
+            "lastRevision": {"id": 8882, "revisionNumber": 3},
+            "lifeCycle": "DRAFT",
+        },
+        {"id": 401, "name": "Sem Revision", "basePath": "/x/v1"},
     ]
-    
-    result = runner.invoke(app, ["sen", "list", "api", "--verbose"], obj={"api_listing_service": mock_service})
-    
-    assert result.exit_code == 0
-    assert "id, name, basePath, version, description" in result.output
-    assert "1, API 1, /api1, v1, Desc" in result.output
 
-def test_api_list_no_apis():
+    result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service": mock_service})
+
+    assert result.exit_code == 0
+    assert "8882" not in result.output  # grade mostra número da revisão, não o id
+    assert "DRAFT" in result.output
+    assert result.output.count("-") > 0  # degradação '-' nos campos ausentes
+
+def test_api_list_query_exclusive_with_id():
+    from unittest.mock import MagicMock
+    mock_service = MagicMock()
+
+    result = runner.invoke(
+        app,
+        ["sen", "list", "api", "--query", "auth", "--id", "400"],
+        obj={"api_listing_service": mock_service},
+    )
+
+    assert result.exit_code == 1
+    assert "--query" in result.output and "--id" in result.output
+
+def test_api_list_invalid_limit_fails_pre_network():
+    from unittest.mock import MagicMock
+    mock_service = MagicMock()
+
+    result = runner.invoke(
+        app,
+        ["sen", "list", "api", "--limit", "0"],
+        obj={"api_listing_service": mock_service},
+    )
+
+    assert result.exit_code == 1
+    mock_service.list_apis.assert_not_called()
+
+def test_api_list_query_passes_flags_to_service():
+    from unittest.mock import MagicMock
+    mock_service = MagicMock()
+    mock_service.list_apis.return_value = [{"id": 1, "name": "A", "basePath": "/b"}]
+
+    result = runner.invoke(
+        app,
+        ["sen", "list", "api", "--query", "auth", "--limit", "3", "--offset", "2"],
+        obj={"api_listing_service": mock_service},
+    )
+
+    assert result.exit_code == 0
+    mock_service.list_apis.assert_called_once_with(
+        query="auth", offset=2, limit=3
+    )
+
+def test_api_list_drilldown_single_row():
+    """--id keeps one-line grade without window footer."""
+    from unittest.mock import MagicMock
+    mock_service = MagicMock()
+    mock_service.list_apis.return_value = [
+        {"id": 400, "name": "Orchestrator Auth API", "basePath": "/orq-auth/v1", "version": "1.0.1"}
+    ]
+
+    result = runner.invoke(app, ["sen", "list", "api", "--id", "400"], obj={"api_listing_service": mock_service})
+
+    assert result.exit_code == 0
+    assert "Orchestrator Auth API" in result.output
+    assert "usando padrões" not in result.output
+    mock_service.list_apis.assert_called_once_with(api_id=400)
+
+def test_api_list_insufficient_session_translates_error():
+    from unittest.mock import MagicMock
+    from apiops_orchestrator.domain.models.api_collection_model import (
+        InsufficientSessionError,
+    )
+    mock_service = MagicMock()
+    mock_service.list_apis.side_effect = InsufficientSessionError(
+        "Sua sessão não possui grupos de acesso"
+    )
+
+    result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service": mock_service})
+
+    assert result.exit_code == 1
+    assert "grupos de acesso" in result.output
+
+def test_api_list_no_apis_when_none_returned():
     """Test 'list api' when no APIs are returned."""
     from unittest.mock import MagicMock
     mock_service = MagicMock()
     mock_service.list_apis.return_value = []
-    
+
     result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service": mock_service})
-    
+
     assert result.exit_code == 0
     assert "No APIs found." in result.output
 
 def test_api_list_json():
     """Test 'list api --output json'."""
     from unittest.mock import MagicMock
-    import json
     mock_service = MagicMock()
     data = [{"id": 1, "name": "API 1", "basePath": "/api1"}]
     mock_service.list_apis.return_value = data

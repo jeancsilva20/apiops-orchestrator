@@ -8,6 +8,11 @@ from apiops_orchestrator.application.services.api_listing_service import (
 from apiops_orchestrator.adapters.inbound.cli.output_format import OutputFormat
 from apiops_orchestrator.adapters.inbound.cli.output_display import display_output
 from apiops_orchestrator.application.exceptions.login_exceptions import LoginError
+from apiops_orchestrator.domain.models.api_collection_model import (
+    ApiCollectionError,
+    last_revision_number,
+    life_cycle_of,
+)
 
 main_app = typer.Typer(
     no_args_is_help=True,
@@ -69,11 +74,73 @@ def login(ctx: typer.Context):
     rprint(f"Sessão expira em: {expires_at}")
 
 
+LIST_HEADER = ("ID", "NAME", "VERSION", "BASE PATH", "LAST REV", "LIFE CYCLE")
+DEFAULT_WINDOW_LIMIT = 10
+DEFAULT_WINDOW_OFFSET = 0
+
+
+def _listing_cells(api: dict) -> tuple:
+    return (
+        str(api.get("id", "")),
+        str(api.get("name", "")),
+        str(api.get("version", "") or "-"),
+        str(api.get("basePath", "") or ""),
+        str(last_revision_number(api) or "-"),
+        str(life_cycle_of(api) or "-"),
+    )
+
+
+def _render_grade(cells_rows) -> None:
+    """Grade alinhada estilo monospace (A3/C2): colunas alinhadas à esquerda."""
+    widths = [len(col) for col in LIST_HEADER]
+    flat_rows = [LIST_HEADER] + [
+        (cells if isinstance(cells, tuple) else tuple(cells))
+        for cells in cells_rows
+    ]
+    for row in flat_rows:
+        for index, cell in enumerate(row):
+            widths[index] = max(widths[index], len(cell))
+    rprint("[bold cyan]" + "  ".join(
+        LIST_HEADER[i].ljust(widths[i]) for i in range(len(LIST_HEADER))
+    ) + "[/bold cyan]")
+    for row in cells_rows:
+        values = row if isinstance(row, tuple) else tuple(row)
+        rprint("  ".join(
+            values[i].ljust(widths[i]) for i in range(len(LIST_HEADER))
+        ))
+
+
+def _window_footer(limit_value: Optional[int], offset_value: Optional[int]) -> None:
+    shown_limit = (
+        limit_value if limit_value is not None else DEFAULT_WINDOW_LIMIT
+    )
+    shown_offset = (
+        offset_value if offset_value is not None else DEFAULT_WINDOW_OFFSET
+    )
+    if limit_value is None and offset_value is None:
+        rprint(
+            f"[dim]usando padrões: --limit {shown_limit} "
+            f"--offset {shown_offset}  ->  detalhes: sen list api --help[/dim]"
+        )
+    else:
+        rprint(
+            f"[dim]janela: --limit {shown_limit} "
+            f"--offset {shown_offset}[/dim]"
+        )
+
+
 @list_app.command("api")
 def list_apis(
     ctx: typer.Context,
     api_id: Optional[int] = typer.Option(None, "--id", help="Filter by API ID."),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show more details."),
+    query: Optional[str] = typer.Option(
+        None, "--query", help="Client-side search on name/description."
+    ),
+    limit: Optional[int] = typer.Option(None, "--limit", help="Page size."),
+    offset: Optional[int] = typer.Option(None, "--offset", help="Offset from start."),
+    revisions: bool = typer.Option(
+        False, "--revisions", "-r", help="Show revisions drill-down (incoming slice)."
+    ),
     output: OutputFormat = typer.Option(
         OutputFormat.TEXT, "--output", "-o", help="Output format (text, json, yaml)."
     ),
@@ -95,48 +162,55 @@ def list_apis(
             )
             raise typer.Exit(code=1)
 
-        apis = service.list_apis(api_id=api_id)
+        # Validações pré-rede (A3-3, A3-1)
+        if query and api_id is not None:
+            rprint(
+                "[bold red]Error:[/bold red] Use --query OU --id, nunca os dois "
+                "juntos. Consulte: sen list api --help"
+            )
+            raise typer.Exit(code=1)
+        if limit is not None and limit <= 0:
+            rprint(
+                "[bold red]Error:[/bold red] --limit deve ser maior que zero. "
+                "Consulte: sen list api --help"
+            )
+            raise typer.Exit(code=1)
+        if revisions and api_id is None:
+            rprint(
+                "[yellow]Nota:[/yellow] drill-down de revisões (--revisions/-r) "
+                "chega em fatia posterior — exibindo cabeçalho por ora."
+            )
+
+        if api_id is not None:
+            apis = service.list_apis(api_id=api_id)
+        else:
+            # Caso desnudo envia os defaults AO PIPELINE (A3-2): a janela
+            # client-side so eh real se os valores alcancarem o window().
+            apis = service.list_apis(
+                query=query,
+                offset=offset if offset is not None else DEFAULT_WINDOW_OFFSET,
+                limit=limit if limit is not None else DEFAULT_WINDOW_LIMIT,
+            )
 
         if not apis:
             rprint("[yellow]No APIs found.[/yellow]")
             return
 
+        if revisions and api_id is None:
+            for api in apis[:1]:
+                rprint(f"hint: use sen list api --id {api.get('id')} --revisions")
+            raise typer.Exit(code=0)
+
         def print_text():
-            if api_id is not None and verbose:
-                # Header: id, name, basepath, description, environments, revisions
-                rprint(
-                    "[bold cyan]id, name, basePath, description, environments count, revisions count[/bold cyan]"
-                )
-                for api in apis:
-                    env_count = len(api.get("environments", []))
-                    rev_count = len(api.get("revisions", []))
-                    rprint(
-                        f"{api.get('id')}, {api.get('name')}, {api.get('basePath')}, {api.get('description')}, {env_count}, {rev_count}"
-                    )
-            elif api_id is not None:
-                # Header: id, name, basepath, description
-                rprint("[bold cyan]id, name, basePath, description[/bold cyan]")
-                for api in apis:
-                    rprint(
-                        f"{api.get('id')}, {api.get('name')}, {api.get('basePath')}, {api.get('description')}"
-                    )
-            elif verbose:
-                # Header: id, name, basepath, version, description
-                rprint(
-                    "[bold cyan]id, name, basePath, version, description,[/bold cyan]"
-                )
-                for api in apis:
-                    rprint(
-                        f"{api.get('id')}, {api.get('name')}, {api.get('basePath')}, {api.get('version')}, {api.get('description')}"
-                    )
-            else:
-                # Header: id, name, basepath
-                rprint("[bold cyan]id, name, basePath[/bold cyan]")
-                for api in apis:
-                    rprint(f"{api.get('id')}, {api.get('name')}, {api.get('basePath')}")
+            _render_grade([_listing_cells(api) for api in apis])
+            if api_id is None:
+                _window_footer(limit, offset)
 
         display_output(apis, output_format=output, text_callback=print_text)
 
+    except ApiCollectionError as e:
+        rprint(f"[bold red]Error:[/bold red] {e}")
+        raise typer.Exit(code=1)
     except Exception as e:
         if isinstance(e, typer.Exit):
             raise e
