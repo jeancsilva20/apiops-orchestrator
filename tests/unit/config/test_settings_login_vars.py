@@ -5,12 +5,17 @@ from apiops_orchestrator.config.settings import Settings
 
 REQUIRED_VARS = [
     "HOST",
-    "OAUTH_CLIENT_ID",
-    "OAUTH_CLIENT_SECRET",
     "REQUEST_TIMEOUT",
     "API_ID",
     "AUTH_HOST",
     "AUTH_LOGIN_PATH",
+]
+
+OPTIONAL_VARS = [
+    "OAUTH_CLIENT_ID",
+    "OAUTH_CLIENT_SECRET",
+    "SEN_CREDENTIALS",
+    "ADMIN_LOGIN_CREDENTIALS",
 ]
 
 
@@ -69,6 +74,16 @@ def test_sen_credentials_is_optional_at_settings_level(monkeypatch):
     assert settings.SEN_CREDENTIALS is None
     assert settings.OAUTH_CLIENT_ID == "id"
     assert settings.OAUTH_CLIENT_SECRET == "secret"
+
+
+def test_oauth_pair_and_credentials_are_optional_now(monkeypatch):
+    for optional_var in OPTIONAL_VARS:
+        _seed_required(monkeypatch)
+        monkeypatch.delenv(optional_var, raising=False)
+
+        settings = Settings()
+
+        assert getattr(settings, optional_var) is None, optional_var
 
 
 def _clean_auth_block(monkeypatch):

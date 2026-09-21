@@ -28,8 +28,8 @@ class Settings(BaseSettings):
     )
 
     HOST: str
-    OAUTH_CLIENT_ID: str
-    OAUTH_CLIENT_SECRET: str
+    OAUTH_CLIENT_ID: str | None = None
+    OAUTH_CLIENT_SECRET: str | None = None
     REQUEST_TIMEOUT: int
 
     # API Data
@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     SEN_CREDENTIALS: str | None = None
     AUTH_HOST: str
     AUTH_LOGIN_PATH: str
+
+    # Credencial para LOGAR como super admin (mesma rota de login) e obter o
+    # token para completar ações administrativas (ex.: sen list). Sessão
+    # super-admin válida em .sen_session tem precedência sobre esta credencial.
+    ADMIN_LOGIN_CREDENTIALS: str | None = None
 
     # Adaptive Governance Data
     WORKFLOW_ID: int | None = None

@@ -19,6 +19,9 @@ from apiops_orchestrator.adapters.outbound.http.orchestrator_auth_api.orchestrat
 from apiops_orchestrator.adapters.outbound.http.user_management_api.sensedia_authentication_adapter import (
     SensediaAuthenticationAdapter,
 )
+from apiops_orchestrator.application.services.admin_token_provider import (
+    resolve_admin_token,
+)
 from apiops_orchestrator.application.services.api_listing_service import (
     ApiListingService,
 )
@@ -53,18 +56,15 @@ def build_login_service_factory(settings: Settings):
 
 def build_listing_service_factory(settings: Settings):
     def factory() -> ApiListingService:
-        auth_adapter = SensediaAuthenticationAdapter(
-            base_path="user-management/v1", max_retries=3, settings=settings
-        )
-        token = cast(str, auth_adapter.authenticate())
         manager_adapter = ManagerApiAdapter(
-            token=token,
+            token=resolve_admin_token(settings),
             base_path="/api-manager/api/v3/",
             max_retries=3,
             api_id=cast(int, settings.API_ID),
             settings=settings,
         )
-        return ApiListingService(manager_adapter)
+        session = SessionStore(directory=settings.PACKAGE_ROOT).load()
+        return ApiListingService(manager_adapter, session=session)
 
     return factory
 
