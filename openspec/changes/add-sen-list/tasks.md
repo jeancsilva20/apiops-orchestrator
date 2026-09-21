@@ -18,9 +18,9 @@
 
 ## 4. Domínio e aplicação (busca mora aqui)
 
-- [ ] 4.1 Consolidar port `ManagerApiPort` (`get_apis`, `get_api_by_id`, revisões, completeness, stages) e fixtures de mock
-- [ ] 4.2 Implementar as regras na `ApiListingService` (filtro `name`+`description` case-insensitive/accent-folded → ordenar `id` asc → janelar), com pipeline explícito filtrar→ordenar→janelar
-- [ ] 4.3 Util de normalização Unicode/accent-fold único e reutilizável
+- [ ] 4.1 Consolidar port `ManagerApiPort` (`get_apis`, `get_api_by_id`, revisões, completeness, stages) e fixtures de mock *(ativos hoje: `get_apis`/`get_api_by_id`/`get_revisions_basic`; os 3 contratos do drill-down (revisões/completeness/stages) entram no commit da task 5, junto da implementação)*
+- [x] 4.2 Implementar as regras na `ApiListingService` (filtro `name`+`description` case-insensitive/accent-folded → ordenar `id` asc → janelar), com pipeline explícito filtrar→ordenar→janelar *(entregue e provado pelos testes da task 1.2 + testes de visibilidade/drill-down/enriquecimento)*
+- [x] 4.3 Util de normalização Unicode/accent-fold único e reutilizável *(+ teste direto `test_text_normalizer.py`: acentos, casefold (ß/İ), None, escalares, simetria payload×query)*
 
 ## 5. Adapter outbound (novas consultas, sem mudança de contrato)
 
