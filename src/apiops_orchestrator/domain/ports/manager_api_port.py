@@ -1,11 +1,46 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Dict, Any
+
+
+@dataclass(frozen=True)
+class ApiCatalogPage:
+    """Uma pagina do catalogo (api-finder) com o total do universo.
+
+    `total` vem do header `count` — o server fala o tamanho do universo
+    (sondas r5b: count=108 com _limit=10). Serve para rodapes e para
+    offset-beyond-total sem guessing.
+    """
+
+    rows: list[Dict[str, Any]]
+    total: int
 
 
 class ManagerApiPort(ABC):
     @abstractmethod
     def get_apis(self) -> list[Dict[str, Any]]:
-        """Contract to search all APIs"""
+        """Contract to search all APIs (manager cru — fluxo legado/bare)."""
+        pass
+
+    @abstractmethod
+    def list_catalog_apis(
+        self,
+        limit: int,
+        order_by: str = "apiId",
+        sort: str = "asc",
+    ) -> ApiCatalogPage:
+        """Fonte da LISTAGEM de `sen list api` — catalogo api-finder.
+
+        GET /api-finder/api/v3/apis com onlyMyContextApi=false (visibilidade
+        eh calculada pelo CLIENTE sobre contextType/contextGroupName).
+        Medido em sondas (r5c, 21/09/2026): o servidor NAO caminha com
+        skip/offset/page (inertes) — o `_limit` apenas TRUNCA a janela iniciada
+        na posicao 0 da ordenacao; offset profundo eh client-side (service
+        pede `_limit = offset + limit` e faz o slice). Row shape:
+        {apiId, apiName, description, version, creationDate, updateDate,
+        basePath, owner, contextType, contextGroupName, contextUserLogins,
+        apiLifeCycle, lastRevision(NUMERO), plans[], ...}.
+        """
         pass
 
     @abstractmethod

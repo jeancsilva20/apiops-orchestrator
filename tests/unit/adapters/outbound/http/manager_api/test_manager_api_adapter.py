@@ -97,19 +97,95 @@ def test_get_api_by_id_with_param_success(mock_settings):
 
 
 # ---------------------------------------------------------------------------
-# Drill-down (task 5 do add-sen-list) — shapes ancorados nas sondas 21/09/2026
-# (docs/feat-command-sen-list/probes/): revision_completeness e
-# workflow_139_stages capturados da plataforma em produção.
-#
-# Nota de desenho: o drill-down NÃO chama /revisions/{rid} nem revisions/basic
-# — TODA a matéria-prima das grades (revisions[], lastRevision, environments)
-# já vem no próprio GET /apis/{id} (ver temp_example_api.json da fatia).
+# Catalogo api-finder (fonte da listagem) — sondas r5 ancoradas
 # ---------------------------------------------------------------------------
 
-STAGE_ROWS_SAMPLE = [
-    {"workflowStageId": 420, "workflowStageName": "Stage One", "position": 1},
-    {"workflowStageId": 753, "workflowStageName": "Teste", "position": 2},
-]
+def test_list_catalog_apis_hits_finder_with_params_and_reads_count(mock_settings):
+    adapter = ManagerApiAdapter(
+        token="tok", base_path="/api-manager/api/v3/", max_retries=3,
+        api_id=123, settings=mock_settings,
+    )
+
+    with patch("apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter.HttpClient.request") as mock_req:
+        mock_req.return_value = ([{"apiId": 1}], {"count": "108"})
+
+        page = adapter.list_catalog_apis(limit=95)
+
+        assert page.total == 108
+        assert page.rows == [{"apiId": 1}]
+        mock_req.assert_called_once_with(
+            method="GET",
+            url="http://urltest.com/api-finder/api/v3/apis",
+            headers={"Authorization": "Bearer tok", "Content-Type": "application/json"},
+            max_retries=3,
+            report_client_errors=False,
+            return_headers=True,
+            params={
+                "_limit": "95",
+                "orderBy": "apiId",
+                "sort": "asc",
+                "onlyMyContextApi": "false",
+            },
+        )
+
+
+def test_list_catalog_apis_default_orders_by_api_id_asc(mock_settings):
+    adapter = ManagerApiAdapter(
+        token="tok", base_path="/api-manager/api/v3/", max_retries=3,
+        api_id=123, settings=mock_settings,
+    )
+
+    with patch("apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter.HttpClient.request") as mock_req:
+        mock_req.return_value = ([], {"count": "0"})
+
+        adapter.list_catalog_apis(limit=1)
+
+        params = mock_req.call_args.kwargs["params"]
+        assert params["orderBy"] == "apiId" and params["sort"] == "asc"
+
+
+def test_list_catalog_apis_degrades_total_without_count_header(mock_settings):
+    adapter = ManagerApiAdapter(
+        token="tok", base_path="/api-manager/api/v3/", max_retries=3,
+        api_id=123, settings=mock_settings,
+    )
+
+    with patch("apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter.HttpClient.request") as mock_req:
+        mock_req.return_value = ([{"apiId": 7}], {})
+
+        page = adapter.list_catalog_apis(limit=1)
+
+        assert page.total == -1  # sem header: degrada, comando segue
+        assert page.rows == [{"apiId": 7}]
+
+
+def test_list_catalog_apis_non_list_payload_normalizes_to_empty(mock_settings):
+    adapter = ManagerApiAdapter(
+        token="tok", base_path="/api-manager/api/v3/", max_retries=3,
+        api_id=123, settings=mock_settings,
+    )
+
+    with patch("apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter.HttpClient.request") as mock_req:
+        mock_req.return_value = ({"result": "failure"}, {"count": "1"})
+
+        page = adapter.list_catalog_apis(limit=1)
+
+        assert page.rows == []
+
+
+def test_list_catalog_apis_reports_client_errors_false_inherited(mock_settings):
+    """UX própria: o corpo cru de 4xx nunca impressiona a tela do usuário."""
+    adapter = ManagerApiAdapter(
+        token="tok", base_path="/api-manager/api/v3/", max_retries=3,
+        api_id=123, settings=mock_settings,
+    )
+
+    with patch("apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter.HttpClient.request") as mock_req:
+        mock_req.return_value = ([], {"count": "0"})
+
+        adapter.list_catalog_apis(limit=1)
+
+        assert mock_req.call_args.kwargs["report_client_errors"] is False
 
 
 def _make_adapter(mock_settings):
@@ -117,6 +193,13 @@ def _make_adapter(mock_settings):
         token="token123", base_path="/api-manager/api/v3/", max_retries=3,
         api_id=400, settings=mock_settings,
     )
+
+
+# Stages de workflow — catálogo capturado (sonda r2, workflow 139)
+STAGE_ROWS_SAMPLE = [
+    {"workflowStageId": 420, "workflowStageName": "Stage One", "position": 1},
+    {"workflowStageId": 753, "workflowStageName": "Teste", "position": 2},
+]
 
 
 def test_get_revision_completeness_success_returns_payload(mock_settings):

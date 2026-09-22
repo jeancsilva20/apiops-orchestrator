@@ -1,16 +1,16 @@
 import logging
 from typing import Dict, Any, List, Optional
 
-from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
+from apiops_orchestrator.domain.ports.manager_api_port import ApiCatalogPage, ManagerApiPort
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.infrastructure.utils.http_client import HttpClient
 
 logger = logging.getLogger(__name__)
 
 GOVERNANCE_BASE_PATH = "/api-governance/api/v3/"
-# Rotas derivadas do catálogo sao insumo ( nao endpoint ): lista de revisoes por
-# API vem de /revisions/basic filtrado por api.id — sem endpoint proprio na
-# plataforma (sondas 21/09/2026).
+FINDER_BASE_PATH = "/api-finder/api/v3/"
+# Rotas derivadas do catalogo sao insumo ( nao endpoint ): lista de revisoes por
+# API vem do propio payload da API (sondas r4: revisions[] completa em /apis/{id}).
 
 
 class ManagerApiAdapter(ManagerApiPort):
@@ -54,6 +54,47 @@ class ManagerApiAdapter(ManagerApiPort):
         """GET to retrieve all APIs"""
         endpoint = "apis"
         return self._request("GET", endpoint)
+
+    def list_catalog_apis(
+        self,
+        limit: int,
+        order_by: str = "apiId",
+        sort: str = "asc",
+    ) -> ApiCatalogPage:
+        """Catalogo api-finder (fonte da listagem) — `count` no header = total.
+
+        Params medidos (sondas r5): `_limit` truncante; skip/offset/page inertes;
+        orderBy/sort validos (determinismo: apiId asc). onlyMyContextApi=false:
+        visibilidade = conta do cliente.
+        """
+        url = f"{self.host}{FINDER_BASE_PATH}apis"
+        payload, response_headers = HttpClient.request(
+            method="GET",
+            url=url,
+            headers=self._get_headers(),
+            max_retries=self.max_retries,
+            report_client_errors=False,  # UX própria do `sen list` (E1/D1-b)
+            return_headers=True,
+            params={
+                "_limit": str(limit),
+                "orderBy": order_by,
+                "sort": sort,
+                "onlyMyContextApi": "false",
+            },
+        )
+
+        rows = payload if isinstance(payload, list) else []
+        return ApiCatalogPage(rows=rows, total=self._parse_total(response_headers))
+
+    @staticmethod
+    def _parse_total(headers: Dict[str, str]) -> int:
+        """Header `count` = tamanho do universo; degrada sem o metadado."""
+        raw = headers.get("count")
+        try:
+            return int(raw) if raw is not None else -1
+        except (TypeError, ValueError):
+            logger.warning("api-finder count header missing; degrading total")
+            return -1
 
     def get_api_by_id(self, api_id: int | None = None) -> Dict[str, Any]:
         """GET to retrieve the API data"""

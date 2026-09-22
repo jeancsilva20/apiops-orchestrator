@@ -197,3 +197,85 @@ class ApiCollection:
 
     def __len__(self) -> int:
         return len(self.items)
+
+
+def finder_row_visible_to(
+    row: Dict[str, Any],
+    username: Optional[str],
+    groups: Optional[List[str]],
+    super_admin: bool = False,
+) -> bool:
+    """Matriz de visibilidade sobre UMA linha do api-finder (sondas r5).
+
+    A plataforma entrega o contexto SEMPRE e a CLI (onlyMyContextApi=false,
+    decisao selada) calcula o alcance no cliente:
+
+    - ORGANIZATION: todos
+    - ME: owner == usuario da sessao
+    - GROUP: SOMENTE contextGroupName pertencendo aos userGroups da sessao
+      (contextUserLogins NAO concede em contexto GROUP — restricao selada);
+      compartilhamento individual por `contextUserLogins` so pesa em contexto ME
+    - tipo ausente/desconhecido: NUNCA (deny-by-default)
+
+    Comparacoes de username/grupo usam trim + casefold + accent-fold.
+    """
+    if super_admin:
+        return True
+
+    folded_username = _fold_stripped(username)
+    folded_groups = {_fold_stripped(g) for g in (groups or [])}
+    context_type = _fold_stripped(row.get("contextType"))
+
+    if context_type == "organization":
+        return True
+    if context_type == "me":
+        if folded_username and _fold_stripped(row.get("owner")) == folded_username:
+            return True
+        logins = row.get("contextUserLogins") or []
+        return any(_fold_stripped(login) == folded_username for login in logins)
+    if context_type == "group":
+        group_name = _fold_stripped(row.get("contextGroupName"))
+        return bool(group_name) and group_name in folded_groups
+    return False
+
+
+def finder_rows_visible_to(
+    rows: Optional[List[Dict[str, Any]]],
+    username: Optional[str],
+    groups: Optional[List[str]],
+    super_admin: bool = False,
+) -> List[Dict[str, Any]]:
+    """Aplica a matriz de contexto por linha (sem mutar as originais)."""
+    return [
+        row
+        for row in (rows or [])
+        if finder_row_visible_to(row, username, groups, super_admin)
+    ]
+
+
+def normalize_finder_rows(rows: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    """Projeta linhas do api-finder no shape canonico do ApiCollection.
+
+    apiId->id · apiName->name · apiLifeCycle->lifeCycle ·
+    lastRevision(numero)->lastRevision.revisionNumber. Descarta linhas sem
+    apiId. Todo o pipeline existente (filtered_by/sorted_by_id/window) roda
+    intacto sobre a projecao.
+    """
+    projected: List[Dict[str, Any]] = []
+    for row in rows or []:
+        if not isinstance(row, dict) or row.get("apiId") is None:
+            continue
+        projected.append(
+            {
+                "id": row.get("apiId"),
+                "name": row.get("apiName"),
+                "description": row.get("description"),
+                "version": row.get("version"),
+                "basePath": row.get("basePath"),
+                "lifeCycle": row.get("apiLifeCycle"),
+                "owner": row.get("owner"),
+                "updateDate": row.get("updateDate"),
+                "lastRevision": {"revisionNumber": row.get("lastRevision")},
+            }
+        )
+    return projected
