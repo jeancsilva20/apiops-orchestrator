@@ -30,9 +30,9 @@
 
 ## 6. CLI (`sen list api`)
 
-- [ ] 6.1 Flags: `--query` (exclusiva com `--id`, validação pré-rede), `--limit`, `--offset`, `--id`, `--revisions`/`-r`
-- [ ] 6.2 Grades canônicas do §3 em `output_display.py`: listagem, 1-linha de drill-down, revisões; rodapé de janela efetiva com default anunciado no caso desnudo
-- [ ] 6.3 Mensagens de erro E1 (401 credenciais · 403 permissão · 404 não encontrada · query vazia → dica · rede caída), todos `exit 1`
+- [x] 6.1 Flags: `--query` (exclusiva com `--id`, validação pré-rede), `--limit`, `--offset`, `--id`, `--revisions`/`-r` *(-r exige --id: erro pré-rede; offsets negativos rejeitados — guarda da task 1)*
+- [x] 6.2 Grades canônicas do §3 em `output_display.py`: listagem, 1-linha de drill-down, revisões; rodapé de janela efetiva com default anunciado no caso desnudo *(REWIRE FINDER: fonte única das grades = catálogo; grade de revisões 5 colunas (REV ID · REV # · STAGE · ENVS · COMPLETE) — opção A, células CREATED/LAST DEPLOY descartadas por ausência no frame; `_render_grade` parametrizável por header; smoke real rc 0 nas duas faces)*
+- [ ] 6.3 Mensagens de erro E1 (401 credenciais · 403 permissão · 404 não encontrada · query vazia → dica · rede caída), todos `exit 1` *(ervas: 404 fundido educativo já live no drill-down; 401/403/rede seguem com catch genérico da CLI — catálogo humano pendente, exige infra de `HttpCallError` resgatada da leva descartada)*
 
 ## 7. Qualidade e fechamento
 

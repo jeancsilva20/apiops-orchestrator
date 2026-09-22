@@ -78,19 +78,28 @@ A CLI SHALL disponibilizar `sen list api` (substantivo no singular). Em condiç�
 - **WHEN** o texto de `--query` não casa com nenhuma API
 - **THEN** o comando informa que não encontrou resultados com dica (revisar o termo), sem erro e sem stacktrace
 
-### Requirement: Drill-down por `--id` com revisões opcionais
+### Requirement: Drill-down por `--id` com revisões opcionais (fonte = catálogo)
 
-`sen list api --id <api_id>` SHALL exibir cabeçalho de 1 linha da API; com `--revisions` (atalho `-r`), SHALL compor a grade de revisões (REV ID · REV # · STAGE · CREATED · LAST DEPLOY · ENVS · COMPLETE) usando: revisions da API, completeness por revisão exibida e nome do stage via catálogo de workflows **cacheado por sessão** (uma chamada por workflow distinto, não por linha). Quando o nome do stage não puder ser resolvido, SHALL exibir o id do workflow como degradação.
+`sen list api --id <api_id>` SHALL exibir cabeçalho de 1 linha da API; com `--revisions` (atalho `-r`), SHALL compor a grade de revisões (**REV ID · REV # · STAGE · ENVS · COMPLETE**) — **fonte única: o catálogo (api-finder) via `customSearch=(apiId:{id})`**, 1 chamada para todo o drill-down. O frame do catálogo traz inline `revisions[]` (id, revisionNumber), `completeness[]` ({score, apiRevision}) e `environments[]` ({name, apiRevision}) — células ENVS/COMPLETE derivam do frame; o nome do STAGE resolve via catálogo de workflows de governance **cacheado por execução** (uma chamada por workflow distinto, nunca por linha). Quando o nome do stage não puder ser resolvido, SHALL exibir o id do workflow como degradação; quando não houver completeness para a revisão, a célula SHALL renderizar `-`.
+
+Células CREATED/LAST DEPLOY **não existem no frame do catálogo** (sondas r9: `revisions[]` sem creationDate nem histórico de deploys) e por isso NÃO integram a grade — evolução aguarda a plataforma expor esses dados na mesma fonte.
+
+`-r` sem `--id` SHALL falhar imediatamente (erro educativo, pré-rede, exit 1).
 
 #### Scenario: Drill-down com revisões
 
 - **WHEN** o usuário executa `sen list api --id 400 --revisions` para API com revisões válidas
-- **THEN** a grade exibe as revisões com número, stage (nome), datas e percentual de completeness, realizando no máximo 1 chamada por revisão exibida + 1 por workflow distinto (cache válido dentro da mesma execução)
+- **THEN** a grade exibe REV ID · REV # · STAGE (nome) · ENVS · COMPLETE (percentual), com 1 chamada ao catálogo + no máximo 1 chamada por workflow distinto (cache válido dentro da mesma execução)
 
 #### Scenario: API inexistente ou inacessível
 
-- **WHEN** `--id` não corresponde a nenhuma API OU a API não está visível para o chamante (404 do servidor — o servidor pode mascarar ausência e ausência de permissão na mesma resposta)
+- **WHEN** `--id` não corresponde a nenhuma API OU a API não está visível para o chamante (catálogo responde vazio — o servidor pode mascarar ausência e ausência de permissão)
 - **THEN** o comando falha com mensagem humana "API não encontrada ou sem permissão de acesso" (sem corpo cru JSON) e exit code `1`
+
+#### Scenario: Revisões sem `--id`
+
+- **WHEN** `--revisions/-r` é usado sem `--id`
+- **THEN** o comando falha com erro educativo apontando o vínculo com `--id` e o sub-help, sem realizar requisição, e exit code `1`
 
 ### Requirement: Erros HTTP mapeados para humanos (E1)
 
