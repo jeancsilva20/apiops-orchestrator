@@ -40,10 +40,10 @@ class Settings(BaseSettings):
     AUTH_HOST: str
     AUTH_LOGIN_PATH: str
 
-    # Credencial para LOGAR como super admin (mesma rota de login) e obter o
-    # token para completar ações administrativas (ex.: sen list). Sessão
-    # super-admin válida em .sen_session tem precedência sobre esta credencial.
-    ADMIN_LOGIN_CREDENTIALS: str | None = None
+    # Rota de validação do accessToken do `.sen_session`: default = AUTH_LOGIN_PATH
+    # + `/validation` (espelho do namespace do orq-auth). Override total aqui,
+    # definindo AUTH_VALIDATE_PATH com o path absoluto (ex.: /cli-2/.../validation).
+    AUTH_VALIDATE_PATH: str | None = None
 
     # Adaptive Governance Data
     WORKFLOW_ID: int | None = None

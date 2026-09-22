@@ -2,13 +2,11 @@ import logging
 
 from apiops_orchestrator.adapters.outbound.http.orchestrator_auth_api.orchestrator_auth_adapter import (
     OrchestratorAuthAdapter,
-    build_login_url,
+    build_validate_url,
 )
 from apiops_orchestrator.application.exceptions.login_exceptions import (
-    AuthenticationUnavailableError,
-    CredentialNotFoundError,
+    AuthenticationRejectedError,
     LoginError,
-    LoginProtocolError,
 )
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.ports.orchestrator_auth_port import OrchestratorAuthPort
@@ -21,14 +19,11 @@ RESOLUTION_MAX_RETRIES = 3
 
 
 def resolve_admin_token(settings: Settings) -> str:
-    """Ponto único de obtenção do token super admin para comandos do manager.
+    """Compõe adapter + provider + store e devolve o admin token (Bearer pronto).
 
-    Compõe (OrchestratorAuthAdapter + AdminTokenProvider + SessionStore) e
-    devolve o token pronto para uso como Bearer — sessão `.sen_session`
-    válida primeiro, rota de login com `ADMIN_LOGIN_CREDENTIALS` em seguida.
-    Todo comando que tocar APIs administrativas DEVE passar por aqui; ponto
-    futuro de validação de token (ex.: perfis não super admin obtidos via
-    OAuth) entra na mesma função, não nos chamadores.
+    Precedência: sessão super-admin com `adminAccessToken` no `.sen_session`
+    → accessToken devorial validado na rota validate. Único ponto para todo
+    comando que tocar APIs administrativas.
     """
     return AdminTokenProvider(
         auth_adapter=OrchestratorAuthAdapter(settings=settings, max_retries=RESOLUTION_MAX_RETRIES),
@@ -38,16 +33,12 @@ def resolve_admin_token(settings: Settings) -> str:
 
 
 class AdminTokenProvider:
-    """Resolve o token super admin para comandos administrativos.
+    """Resolve o token administrativo via sessão e rota validate.
 
-    Ordem de precedência (ADR 0002 rev., openspec add-sen-list):
-
-    1. Sessão super-admin válida em `.sen_session` com `adminAccessToken`
-       presente → usa o token pronto (zero rede de autenticação);
-    2. Caso contrário (dev ou sessão inutilizável) → loga como super admin na
-       MESMA rota de login (`AUTH_HOST`/`AUTH_LOGIN_PATH`) usando a credencial
-       dedicada `ADMIN_LOGIN_CREDENTIALS` e usa o `admin_access_token`
-       retornado em memória (nada persistido, nada logado — ADR 0005).
+    1. Sessão super-admin válida com `adminAccessToken` → usa pronto;
+    2. Sessão válida (perfil dev) → POST validate com o `accessToken`;
+    3. Qualquer outro retorno (não-200, autorizado!=true, admin token
+       ausente) → 401 educativo: refaça `sen login`.
     """
 
     def __init__(
@@ -61,24 +52,18 @@ class AdminTokenProvider:
         self.session_store = session_store
 
     def obtain(self) -> str:
-        from_session = self._token_from_session()
+        from_session = self._admin_token_from_session()
         if from_session:
             logger.info("auth.admin_token.source resolved_from=session")
             return from_session
-        logger.info("auth.admin_token.source resolved_from=login_route")
-        credential = self._resolve_admin_login_credential()
+
+        logger.info("auth.admin_token.source resolved_from=validate_route")
+        dev_token = self._dev_access_token()
         self._guard_endpoint_configured()
-        raw_response = self._perform_login(credential)
+        raw_response = self._perform_validate(dev_token)
         return self._extract_admin_token(raw_response)
 
-    def _token_from_session(self) -> str | None:
-        """Sessão super-admin não expirada com token privilegiado → usa pronto.
-
-        Sessão expirada, ausente, de perfil developer (sem admin token) ou
-        legada sem token devolvem None e caem no caminho de obtenção por
-        credencial. Qualquer falha de leitura é silenciosa aqui (o store já
-        trata corrupta/expirada como ausente).
-        """
+    def _admin_token_from_session(self) -> str | None:
         try:
             session = self.session_store.load()
         except Exception:
@@ -88,52 +73,51 @@ class AdminTokenProvider:
             return None
         return session.adminAccessToken or None
 
-    def _resolve_admin_login_credential(self) -> str:
-        value = (self.settings.ADMIN_LOGIN_CREDENTIALS or "").strip()
-        if not value:
-            raise CredentialNotFoundError(
-                "Credencial de administração não encontrada: defina ADMIN_LOGIN_CREDENTIALS no "
-                "arquivo .env (blob Base64 de client_id:secret do perfil super admin) e rode "
-                "`sen list api` novamente."
+    def _dev_access_token(self) -> str:
+        """accessToken do dev; sessão ausente/expirada/sem token → 401 educativo."""
+        try:
+            session = self.session_store.load()
+        except Exception:
+            session = None
+        if session is None or session.is_expired() or not (session.accessToken or "").strip():
+            raise AuthenticationRejectedError(
+                "Sessão inválida ou ausente: faça `sen login` e rode o comando novamente."
             )
-        return value
+        return session.accessToken
 
     def _guard_endpoint_configured(self) -> None:
         try:
-            build_login_url(self.settings)
-        except RuntimeError as exc:
-            detail = str(exc)
-            if "AUTH_LOGIN_PATH" in detail:
-                raise LoginError(
-                    "Path de autenticação não configurado: defina AUTH_LOGIN_PATH."
-                ) from exc
-            raise LoginError(
-                "Endpoint de autenticação não configurado: defina AUTH_HOST."
-            ) from exc
+            build_validate_url(self.settings)
+        except RuntimeError:
+            raise LoginError("Endpoint de validação não configurado: defina AUTH_HOST.")
 
-    def _perform_login(self, credential: str) -> dict:
+    def _perform_validate(self, dev_token: str) -> dict:
         try:
-            with log_duration("auth.admin_token.request"):
-                return self.auth_adapter.login(credential)
-        except LoginError:
-            raise
+            with log_duration("auth.admin_token.validate"):
+                return self.auth_adapter.validate_access_token(dev_token)
         except Exception:
-            logger.exception("auth.admin_token.network_failure")
-            raise AuthenticationUnavailableError(
-                "API de autenticação indisponível ou falha de conexão após tentativas."
+            # Qualquer coisa que não seja (200, autorizado=true, token) → 401 educativo.
+            logger.info("auth.admin_token.validate.refused")
+            raise AuthenticationRejectedError(
+                "Validação não autorizou o acesso: faça `sen login` e tente novamente."
             )
 
     @staticmethod
     def _extract_admin_token(raw_response: dict) -> str:
+        """(200, autorizado=true, admin_access_token presente) → token; resto → 401."""
         raw = dict(raw_response or {})
+        authorized = raw.get("autorizado")
         extra_info = raw.get("extra_info") if isinstance(raw.get("extra_info"), dict) else {}
         token = extra_info.get("admin_access_token") if extra_info else None
-        if not token:
-            logger.error(
-                "auth.admin_token.payload_invalid reason=missing_admin_access_token"
+
+        if authorized is not True:
+            logger.info("auth.admin_token.authorized=false")
+            raise AuthenticationRejectedError(
+                "Erro na validação: faça `sen login` e tente novamente."
             )
-            raise LoginProtocolError(
-                "Resposta da autenticação sem token administrativo. "
-                "Tente efetuar login novamente ou verifique a credencial de administração."
+        if not token:
+            logger.error("auth.admin_token.payload_invalid reason=missing_admin_access_token")
+            raise AuthenticationRejectedError(
+                "Erro na validação: faça `sen login` e tente novamente."
             )
         return str(token)
