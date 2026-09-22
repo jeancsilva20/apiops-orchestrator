@@ -24,9 +24,9 @@
 
 ## 5. Adapter outbound (novas consultas, sem mudança de contrato)
 
-- [x] 5.1 `ManagerApiAdapter`: métodos de revisões (`/apis/{id}/revisions`), completeness (`/revisions/{rid}/completeness`) e stages de workflow (`/api-governance/api/v3/workflows/{id}/stages`) *(SONDAS r1-r4 revogaram o desenho original: drill-down fonte única = `GET /apis/{id}` (revisions[]+lastRevision+environments já vivem lá); adapter entrega completeness (degradação `{}`) + stages (base path governance) + CATÁLOGO api-finder (`list_catalog_apis`, header `count`); `/revisions/{rid}` foi contratado e PODADO no mesmo commit; `/revisions/basic` ficou fora da listagem nova — enrich morto com o finder)*
+- [x] 5.1 `ManagerApiAdapter`: métodos de revisões (`/apis/{id}/revisions`), completeness (`/revisions/{rid}/completeness`) e stages de workflow (`/api-governance/api/v3/workflows/{id}/stages`) *(SONDAS r1-r4 revogaram o desenho original: drill-down fonte única = frame do CATÁLOGO `list_api_detail` (revisions[]+completeness+wokflow[]+environments inline — retorno_temp_finder_id.json); + CATÁLOGO de listagem (`list_catalog_apis`, header `count`); `/revisions/{rid}` PODADO; `/revisions/basic` fora da listagem nova)*
 - [x] 5.2 Cache de catálogo de stages por sessão (1 chamada por workflow distinto); degradação para id quando não resolvível *(cache de instância = por execução/processo; falha nunca cacheia; `[]` → CLI mostra id do workflow; 3 testes provando HIT/MISS/fail-through/isolamento entre instâncias)*
-- [x] 5.3 Mapear erros RFC7807 → famílias humanas (401/403/404/rede) reutilizando `http_error_mapper.py`, corpo suprimido *(supressão de corpo já vigente no HttpClient/existing mapper; o CATÁLOGO E1 de mensagens materializa na CLI — task 6.3, onde reside a última milha da tradução)*
+- [x] 5.3 Mapear erros RFC7807 → famílias humanas (401/403/404/rede) reutilizando `http_error_mapper.py`, corpo suprimido *(FONTE DO TOKEN re-selada: a credencial de ambiente foi aposentada; fluxo novo = `accessToken` do `.sen_session` → rota validate; QUALQUER recusa homogeneizada em 401 educativo `AuthenticationRejectedError` no provider — CLI só apresenta o texto; catálogo completo E1 segue na CLI, task 6.3)*
 
 ## 6. CLI (`sen list api`)
 

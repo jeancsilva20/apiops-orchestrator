@@ -115,29 +115,34 @@ Falhas SHALL ser convertidas em mensagens humanas curtas conforme a família do 
 - **WHEN** a conexão com o host falha (timeout/DNS/refused)
 - **THEN** a CLI exibe mensagem de indisponibilidade com dica (host/rede) e encerra com exit code `1`
 
-### Requirement: Fonte do token das APIs administrativas
+### Requirement: Fonte do token das APIs administrativas (via rota validate)
 
-As chamadas administrativas da listagem SHALL obter o token super admin seguindo a precedência abaixo:
+As chamadas administrativas da listagem SHALL obter o token super admin seguindo a precedência abaixo, num único ponto central (`resolve_admin_token`) — todo comando que tocar APIs administrativas SHALL passar por ele:
 
-1. **Sessão super-admin válida** (`.sen_session` no `PACKAGE_ROOT`, não expirada, perfil `super-admin` com `adminAccessToken` presente — cf. change arquivado `store-admin-token-in-sen-session`): usar o token persistido, **sem chamada à rota de login**;
-2. **Rota de login** (`AUTH_HOST`/`AUTH_LOGIN_PATH`) com a credencial dedicada `ADMIN_LOGIN_CREDENTIALS` (blob Base64 intocado, definida exclusivamente no `.env` — precedência processo > `.env`; credencial de ambiente, **não** pertence ao `.sen` individual do dev).
+1. **Sessão super-admin válida** (`.sen_session` no `PACKAGE_ROOT`, não expirada, perfil `super-admin` com `adminAccessToken` presente — cf. change arquivado `store-admin-token-in-sen-session`): usar o token persistido, **sem chamada de rede**;
+2. **Rota validate** (`AUTH_HOST` + path, default `AUTH_LOGIN_PATH + "/validation"`; override total via `AUTH_VALIDATE_PATH`): enviar o `accessToken` do dev persistido no `.sen_session` como Bearer. Somente a resposta **200 + `autorizado: true` + `extra_info.admin_access_token` presente** SHALL ser considerada sucesso — qualquer outro retorno (status diverso, autorizado diferente de true, token ausente, falha de conexão/timeout) SHALL resultar em **401 educativo**: "faça `sen login` e tente novamente".
 
-Nenhum caminho SHALL usar o `accessToken` de sessão `developer` como Bearer administrativo. O token proveniente da rota SHALL ser efêmero (memória do comando, nunca persistido — inclusive não retroalimenta o `.sen_session`). Ausência simultânea de sessão utilizável e credencial SHALL falhar **antes de qualquer chamada de rede** com mensagem educativa apontando para `ADMIN_LOGIN_CREDENTIALS` no `.env` (herda D1-b). Resposta sem `admin_access_token` SHALL produzir erro de protocolo genérico, sem valores. Nenhum valor de token/credencial SHALL ser logado (ADR 0005) — apenas a fonte (`session`/`login_route`) em eventos nomeados.
+Nenhum caminho SHALL usar o `accessToken` do dev como Bearer administrativo direto — o Bearer administrativo nasce SEMPRE da validate (ou da fast-lane da esteira). O token proveniente da validate SHALL ser efêmero (memória do comando, nunca persistido — inclusive não retroalimenta o `.sen_session`). A credencial de ambiente `ADMIN_LOGIN_CREDENTIALS` está **aposentada** deste fluxo. Falhas SHALL ser homogeneizadas: mesma mensagem educativa, `exit 1`, sem stacktrace e sem valores (herda D1-b). Nenhum valor de token/credencial SHALL ser logado (ADR 0005) — apenas a fonte (`session`/`validate_route`) e o evento `validate.refused`.
 
 #### Scenario: Esteira — token pronto na sessão (sem rede de auth)
 
 - **WHEN** a esteira executou `sen login` de super-admin (token persistido no `.sen_session`) e `sen list api` roda em processo subsequente com sessão não expirada
-- **THEN** o token `adminAccessToken` da sessão é usado como Bearer da listagem e nenhuma requisição à rota de login é feita
+- **THEN** o token `adminAccessToken` da sessão é usado como Bearer da listagem e nenhuma requisição à validate é feita
 
-#### Scenario: Dev — obtenção via rota de login com credencial de ambiente
+#### Scenario: Dev — accessToken validado e admin token cunhado
 
-- **WHEN** não há sessão super-admin utilizável (ausente, expirada, perfil `developer` ou sessão sem token) e `ADMIN_LOGIN_CREDENTIALS` está definida no `.env`
-- **THEN** o comando chama a rota de login com o blob admin, extrai `extra_info.admin_access_token`, usa em memória para a listagem e não grava nada — o `.sen_session` permanece intacto
+- **WHEN** o dev executou `sen login` (developer) e `sen list api` roda com sessão não expirada
+- **THEN** o comando envia o `accessToken` do `.sen_session` à rota validate, extrai `extra_info.admin_access_token`, usa em memória para a listagem e não grava nada — o `.sen_session` permanece intacto
 
-#### Scenario: Nem sessão nem credencial
+#### Scenario: Validate não autoriza
 
-- **WHEN** não há sessão super-admin utilizável e `ADMIN_LOGIN_CREDENTIALS` não está definida (`.env`)
-- **THEN** o comando falha com mensagem educativa (o que falta + como resolver + próxima ação) e `exit 1`, sem nenhuma chamada de rede
+- **WHEN** a rota validate responde qualquer coisa que não seja (200, `autorizado: true`, `admin_access_token` presente) — incluindo não-200 e falha de conexão
+- **THEN** o comando falha com a mensagem educativa única (orientando `sen login`) e `exit 1`, sem ecoar corpo ou status bruto
+
+#### Scenario: Sem sessão
+
+- **WHEN** não há `.sen_session` utilizável (ausente, expirada, sem accessToken) e a fast-lane não se aplica
+- **THEN** o comando falha com mensagem educativa apontando `sen login` e `exit 1`, sem nenhuma chamada além da inexistente validate
 
 ### Requirement: Segurança de saídas e segredos
 
