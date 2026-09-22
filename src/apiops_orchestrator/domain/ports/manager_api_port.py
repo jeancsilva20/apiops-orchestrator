@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 
 @dataclass(frozen=True)
@@ -45,7 +45,12 @@ class ManagerApiPort(ABC):
 
     @abstractmethod
     def get_api_by_id(self, api_id: int) -> Dict[str, Any]:
-        """Contract to search data from the API by ID"""
+        """Contract to search data from the API by ID (manager)"""
+        pass
+
+    @abstractmethod
+    def list_api_detail(self, api_id: int) -> Optional[Dict[str, Any]]:
+        """Search API detail from the CATALOG (api-finder, customSearch=(apiId:{id}))."""
         pass
 
     @abstractmethod

@@ -55,6 +55,22 @@ class ManagerApiAdapter(ManagerApiPort):
         endpoint = "apis"
         return self._request("GET", endpoint)
 
+    def list_api_detail(self, api_id: int) -> Optional[Dict[str, Any]]:
+        """Detalhe da API no catálogo (api-finder); None quando 0 rows."""
+        url = f"{self.host}{FINDER_BASE_PATH}apis"
+        payload, _ = HttpClient.request(
+            method="GET",
+            url=url,
+            headers=self._get_headers(),
+            max_retries=self.max_retries,
+            report_client_errors=False,
+            return_headers=True,
+            params={"customSearch": f"(apiId:{api_id})"},
+        )
+
+        rows = payload if isinstance(payload, list) else []
+        return rows[0] if rows and isinstance(rows[0], dict) else None
+
     def list_catalog_apis(
         self,
         limit: int,

@@ -107,6 +107,19 @@ def _sort_key(item: Dict[str, Any]):
     return (1, 0)
 
 
+def finder_stage_by_revision(api_frame: Dict[str, Any]) -> Dict[Any, Dict[str, Any]]:
+    """Mapa {apiRevision: {workflow_id, workflow_stage_id}} de `wokflow[]`."""
+    mapping: Dict[Any, Dict[str, Any]] = {}
+    for entry in api_frame.get("wokflow") or []:
+        if not isinstance(entry, dict) or entry.get("apiRevision") is None:
+            continue
+        mapping[entry["apiRevision"]] = {
+            "workflow_id": entry.get("workflowId"),
+            "workflow_stage_id": entry.get("workflowStageId"),
+        }
+    return mapping
+
+
 @dataclass(frozen=True)
 class ApiCollection:
     """Comportamento sobre uma colecao de APIs (dicts crus da port).

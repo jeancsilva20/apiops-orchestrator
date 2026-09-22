@@ -206,8 +206,61 @@ def test_api_list_yaml():
     mock_service.list_apis.return_value = data
     
     result = runner.invoke(app, ["sen", "list", "api", "-o", "yaml"], obj={"api_listing_service": mock_service})
-    
+
     assert result.exit_code == 0
     assert "id: 1" in result.output
     assert "name: API 1" in result.output
+
+
+# ---------------------------------------------------------------------------
+# Drill-down de revisões (task 6, opção A) — grade canônica do §3
+# ---------------------------------------------------------------------------
+
+def test_revisions_drill_down_renders_canonical_grade():
+    from unittest.mock import MagicMock
+    mock_service = MagicMock()
+    mock_service.api_revisions.return_value = [
+        {
+            "revision_id": 8862,
+            "revision_number": 1,
+            "stage_name": "Stage One",
+            "environments": "Default",
+            "complete": "85%",
+        },
+        {
+            "revision_id": 8948,
+            "revision_number": 4,
+            "stage_name": "Stage One",
+            "environments": "-",
+            "complete": "85%",
+        },
+    ]
+
+    result = runner.invoke(
+        app,
+        ["sen", "list", "api", "--id", "400", "--revisions"],
+        obj={"api_listing_service": mock_service},
+    )
+
+    assert result.exit_code == 0
+    for col in ("REV ID", "REV #", "STAGE", "ENVS", "COMPLETE"):
+        assert col in result.output
+    assert "Stage One" in result.output
+    assert "85%" in result.output
+    mock_service.api_revisions.assert_called_once_with(400)
+    mock_service.list_apis.assert_not_called()
+
+
+def test_revisions_requires_id_pre_network():
+    from unittest.mock import MagicMock
+    mock_service = MagicMock()
+
+    result = runner.invoke(
+        app, ["sen", "list", "api", "--revisions"], obj={"api_listing_service": mock_service}
+    )
+
+    assert result.exit_code == 1
+    assert "--id" in result.output
+    mock_service.api_revisions.assert_not_called()
+    mock_service.list_apis.assert_not_called()
 

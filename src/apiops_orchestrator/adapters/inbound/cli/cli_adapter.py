@@ -90,10 +90,10 @@ def _listing_cells(api: dict) -> tuple:
     )
 
 
-def _render_grade(cells_rows) -> None:
+def _render_grade(cells_rows, header=LIST_HEADER) -> None:
     """Grade alinhada estilo monospace (A3/C2): colunas alinhadas à esquerda."""
-    widths = [len(col) for col in LIST_HEADER]
-    flat_rows = [LIST_HEADER] + [
+    widths = [len(col) for col in header]
+    flat_rows = [header] + [
         (cells if isinstance(cells, tuple) else tuple(cells))
         for cells in cells_rows
     ]
@@ -101,12 +101,12 @@ def _render_grade(cells_rows) -> None:
         for index, cell in enumerate(row):
             widths[index] = max(widths[index], len(cell))
     rprint("[bold cyan]" + "  ".join(
-        LIST_HEADER[i].ljust(widths[i]) for i in range(len(LIST_HEADER))
+        header[i].ljust(widths[i]) for i in range(len(header))
     ) + "[/bold cyan]")
     for row in cells_rows:
         values = row if isinstance(row, tuple) else tuple(row)
         rprint("  ".join(
-            values[i].ljust(widths[i]) for i in range(len(LIST_HEADER))
+            values[i].ljust(widths[i]) for i in range(len(header))
         ))
 
 
@@ -183,11 +183,15 @@ def list_apis(
             raise typer.Exit(code=1)
         if revisions and api_id is None:
             rprint(
-                "[yellow]Nota:[/yellow] drill-down de revisões (--revisions/-r) "
-                "chega em fatia posterior — exibindo cabeçalho por ora."
+                "[bold red]Error:[/bold red] --revisions/-r exige --id (drill-down "
+                "revisa UMA API). Consulte: sen list api --help"
             )
+            raise typer.Exit(code=1)
 
         if api_id is not None:
+            if revisions:
+                _render_revisions_grade(service, api_id, output)
+                return
             apis = service.list_apis(api_id=api_id)
         else:
             # Caso desnudo envia os defaults AO PIPELINE (A3-2): a janela
@@ -201,11 +205,6 @@ def list_apis(
         if not apis:
             rprint("[yellow]No APIs found.[/yellow]")
             return
-
-        if revisions and api_id is None:
-            for api in apis[:1]:
-                rprint(f"hint: use sen list api --id {api.get('id')} --revisions")
-            raise typer.Exit(code=0)
 
         def print_text():
             _render_grade([_listing_cells(api) for api in apis])
@@ -222,6 +221,35 @@ def list_apis(
             raise e
         rprint(f"[bold red]Error listing APIs:[/bold red] {e}")
         raise typer.Exit(code=1)
+
+
+REVISIONS_HEADER = (
+    "REV ID", "REV #", "STAGE", "ENVS", "COMPLETE",
+)
+
+
+def _revision_cells(row: dict) -> tuple:
+    return (
+        str(row.get("revision_id", "")),
+        str(row.get("revision_number", "")),
+        str(row.get("stage_name", "-")),
+        str(row.get("environments") or "-"),
+        str(row.get("complete") or "-"),
+    )
+
+
+def _render_revisions_grade(
+    service: ApiListingService, api_id: int, output: OutputFormat
+) -> None:
+    rows = service.api_revisions(api_id)
+    if not rows:
+        rprint(f"[yellow]No revisions found for API {api_id}.[/yellow]")
+        return
+
+    def print_text():
+        _render_grade([_revision_cells(row) for row in rows], header=REVISIONS_HEADER)
+
+    display_output(rows, output_format=output, text_callback=print_text)
 
 
 def display_version():
