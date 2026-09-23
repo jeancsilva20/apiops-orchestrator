@@ -5,6 +5,10 @@ description = "Ferramenta de linha de comando para automação e boas práticas 
 authors = ["Your Name <you@example.com>"]
 license = "n"
 readme = "README.md"
+packages = [{ include = "apiops_orchestrator", from = "src" }]
+
+[tool.poetry.scripts]
+sen = "apiops_orchestrator.main:main"
 
 [tool.poetry.dependencies]
 python = "^3.12"
