@@ -80,7 +80,7 @@ A CLI SHALL disponibilizar `sen list api` (substantivo no singular). Em condiç�
 
 ### Requirement: Drill-down por `--id` com revisões opcionais (fonte = catálogo)
 
-`sen list api --id <api_id>` SHALL exibir cabeçalho de 1 linha da API; com `--revisions` (atalho `-r`), SHALL compor a grade de revisões (**REV ID · REV # · STAGE · ENVS · COMPLETE**) — **fonte única: o catálogo (api-finder) via `customSearch=(apiId:{id})`**, 1 chamada para todo o drill-down. O frame do catálogo traz inline `revisions[]` (id, revisionNumber), `completeness[]` ({score, apiRevision}) e `environments[]` ({name, apiRevision}) — células ENVS/COMPLETE derivam do frame; o nome do STAGE resolve via catálogo de workflows de governance **cacheado por execução** (uma chamada por workflow distinto, nunca por linha). Quando o nome do stage não puder ser resolvido, SHALL exibir o id do workflow como degradação; quando não houver completeness para a revisão, a célula SHALL renderizar `-`.
+`sen list api --id <api_id>` SHALL exibir cabeçalho de 1 linha da API; com `--revisions` (atalho `-r`), SHALL compor a grade de revisões (**REV # · REV ID · STAGE · ENVS · COMPLETE**) — **fonte única: o catálogo (api-finder) via `customSearch=(apiId:{id})`**, 1 chamada para todo o drill-down. O frame do catálogo traz inline `revisions[]` (id, revisionNumber), `completeness[]` ({score, apiRevision}) e `environments[]` ({name, apiRevision}) — células ENVS/COMPLETE derivam do frame; a coluna LAST REV (do cabeçalho e da listagem) SHALL exibir o **número** da revisão, traduzido pelo próprio `revisions[]` local (o `lastRevision` do frame é o ID); **sem número resolvível, SHALL renderizar `-`** (nunca o ID). O nome do STAGE resolve via catálogo de workflows de governance **cacheado por execução** (uma chamada por workflow distinto, nunca por linha). Quando o nome do stage não puder ser resolvido, SHALL exibir o id do workflow como degradação; quando não houver completeness para a revisão, a célula SHALL renderizar `-`. A coluna LIFE CYCLE está **aposentada da listagem** (fonte entrega `null` — retorno do detail a mantém dormante, reativa quando a plataforma expor `apiLifeCycle`).
 
 Células CREATED/LAST DEPLOY **não existem no frame do catálogo** (sondas r9: `revisions[]` sem creationDate nem histórico de deploys) e por isso NÃO integram a grade — evolução aguarda a plataforma expor esses dados na mesma fonte.
 
@@ -89,7 +89,7 @@ Células CREATED/LAST DEPLOY **não existem no frame do catálogo** (sondas r9: 
 #### Scenario: Drill-down com revisões
 
 - **WHEN** o usuário executa `sen list api --id 400 --revisions` para API com revisões válidas
-- **THEN** a grade exibe REV ID · REV # · STAGE (nome) · ENVS · COMPLETE (percentual), com 1 chamada ao catálogo + no máximo 1 chamada por workflow distinto (cache válido dentro da mesma execução)
+- **THEN** a grade exibe REV # · REV ID · STAGE (nome) · ENVS · COMPLETE (percentual), com 1 chamada ao catálogo + no máximo 1 chamada por workflow distinto (cache válido dentro da mesma execução)
 
 #### Scenario: API inexistente ou inacessível
 
