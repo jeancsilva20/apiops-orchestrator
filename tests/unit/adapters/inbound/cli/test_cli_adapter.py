@@ -26,6 +26,15 @@ def test_verbose_flag():
     assert result.exit_code == 0
     assert "APIOps CLI" in result.output
 
+def test_list_without_subcommand_orientates_instead_of_engine_speak():
+    """`sen list` pelado não mostra 'Missing command.': orienta para 'sen list api' (exit 2)."""
+    result = runner.invoke(app, ["sen", "list"])
+
+    assert result.exit_code == 2
+    assert "sen list api" in result.output.replace("\n", " ")
+    assert "--help" in result.output
+
+
 def test_api_list_success():
     """Test 'list api' naked: canonical grade + announced defaults footer (A3-2)."""
     from unittest.mock import MagicMock

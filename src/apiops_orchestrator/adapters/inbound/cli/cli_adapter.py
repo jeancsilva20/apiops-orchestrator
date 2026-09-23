@@ -26,6 +26,19 @@ sen_app = typer.Typer(
 )
 
 list_app = typer.Typer(name="list", help="List resources.")
+
+
+@list_app.callback(invoke_without_command=True)
+def list_callback(ctx: typer.Context):
+    if ctx.invoked_subcommand is None:
+        rprint(
+            "[bold yellow]Nenhum subcomando informado.[/bold yellow] "
+            "O disponível hoje é: sen list api "
+            "(consulte: sen list api --help)"
+        )
+        raise typer.Exit(code=2)
+
+
 sen_app.add_typer(list_app)
 
 main_app.add_typer(sen_app)
