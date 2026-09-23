@@ -48,7 +48,7 @@ def test_api_list_success():
 
     assert result.exit_code == 0
     assert "ID" in result.output and "BASE PATH" in result.output
-    assert "LAST REV" in result.output and "LIFE CYCLE" in result.output
+    assert "LAST REV" in result.output
     assert "/api1" in result.output
     assert "usando padrões: --limit 10 --offset 0" in result.output
     assert "detalhes: sen list api --help" in result.output
@@ -73,7 +73,7 @@ def test_api_list_explicit_window_footer():
     assert "janela: --limit 5 --offset 90" in result.output
 
 def test_api_list_columns_values():
-    """Canonical columns render version/last rev/life cycle with degradation."""
+    """Canonical columns render version/last rev with degradation (LIFE CYCLE removida)."""
     from unittest.mock import MagicMock
     mock_service = MagicMock()
     mock_service.list_apis.return_value = [
@@ -83,7 +83,6 @@ def test_api_list_columns_values():
             "basePath": "/orq-auth/v1",
             "version": "1.0.1",
             "lastRevision": {"id": 8882, "revisionNumber": 3},
-            "lifeCycle": "DRAFT",
         },
         {"id": 401, "name": "Sem Revision", "basePath": "/x/v1"},
     ]
@@ -92,7 +91,7 @@ def test_api_list_columns_values():
 
     assert result.exit_code == 0
     assert "8882" not in result.output  # grade mostra número da revisão, não o id
-    assert "DRAFT" in result.output
+    assert "LIFE CYCLE" not in result.output  # coluna aposentada
     assert result.output.count("-") > 0  # degradação '-' nos campos ausentes
 
 def test_api_list_query_exclusive_with_id():

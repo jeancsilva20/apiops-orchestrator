@@ -202,27 +202,6 @@ STAGE_ROWS_SAMPLE = [
 ]
 
 
-def test_get_revision_completeness_success_returns_payload(mock_settings):
-    adapter = _make_adapter(mock_settings)
-
-    with patch(MOCK_PATH) as mock_request:
-        mock_request.return_value = {"percentageCompleted": 80}
-        result = adapter.get_revision_completeness(8948)
-
-        assert result == {"percentageCompleted": 80}
-
-
-def test_get_revision_completeness_degrades_to_empty_on_backend_refusal(mock_settings):
-    """O backend delega ao Adaptive Governance e pode recusar (422→403 nas sondas)."""
-    adapter = _make_adapter(mock_settings)
-
-    with patch(MOCK_PATH) as mock_request:
-        mock_request.side_effect = RuntimeError("HTTP 422: INVALID")
-        result = adapter.get_revision_completeness(8948)
-
-        assert result == {}
-
-
 def test_workflow_stages_uses_governance_base_path(mock_settings):
     adapter = _make_adapter(mock_settings)
 

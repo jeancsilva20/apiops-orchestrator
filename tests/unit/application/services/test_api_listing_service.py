@@ -41,10 +41,12 @@ class TestApiListingService:
             rows=[
                 {"apiId": 1, "apiName": "API 1", "description": "d", "version": "1",
                  "basePath": "/a1", "apiLifeCycle": "DRAFT", "lastRevision": 3,
-                 "contextType": "ORGANIZATION"},
+                 "contextType": "ORGANIZATION",
+                 "revisions": [{"id": 3, "revisionNumber": 2}]},
                 {"apiId": 2, "apiName": "API 2", "description": "d", "version": "1",
                  "basePath": "/b/v1", "apiLifeCycle": "DRAFT", "lastRevision": 4,
-                 "contextType": "ORGANIZATION"},
+                 "contextType": "ORGANIZATION",
+                 "revisions": [{"id": 4, "revisionNumber": 1}]},
             ],
             total=2,
         )
@@ -55,7 +57,8 @@ class TestApiListingService:
 
         # Assert — mundo inteiro (limit omitido) numa unica chamada
         assert [row["id"] for row in result] == [1, 2]
-        assert result[0]["lastRevision"]["revisionNumber"] == 3
+        # lastRevision = ID; número resolvido pelo revisions[] local (2 e 1)
+        assert [row["lastRevision"]["revisionNumber"] for row in result] == [2, 1]
         mock_manager_api.list_catalog_apis.assert_called_once_with(limit=1)
         mock_manager_api.get_apis.assert_not_called()
         mock_manager_api.get_api_by_id.assert_not_called()
@@ -69,16 +72,21 @@ class TestApiListingService:
             "version": "1.0",
             "basePath": "/x/v1",
             "apiLifeCycle": "DRAFT",
-            "lastRevision": 9,
+            "lastRevision": 88,
+            "revisions": [
+                {"id": 77, "revisionNumber": 8},
+                {"id": 88, "revisionNumber": 9},
+            ],
         }
         service = ApiListingService(manager_api=mock_manager_api)
 
         # Act
         result = service.list_apis(api_id=123)
 
-        # Assert: header normalizado a partir do frame do catálogo
+        # lastRevision do finder = ID (88); número vem do revisions[] local
         assert [row["id"] for row in result] == [123]
-        assert result[0]["lastRevision"]["revisionNumber"] == 9
+        by_id = {row["id"]: row for row in result}
+        assert by_id[123]["lastRevision"]["revisionNumber"] == 9
         mock_manager_api.list_api_detail.assert_called_once_with(123)
         mock_manager_api.get_api_by_id.assert_not_called()
 
@@ -96,13 +104,18 @@ class TestVisibilityOnListing:
         {
             "apiId": 1, "apiName": "Publica", "description": "x", "version": "1",
             "basePath": "/p/v1", "contextType": "ORGANIZATION", "owner": "alguem.nao",
-            "contextUserLogins": [], "apiLifeCycle": "PUBLISHED", "lastRevision": 3,
+            "contextUserLogins": [], "apiLifeCycle": "PUBLISHED", "lastRevision": 77,
+            "revisions": [{"id": 77, "revisionNumber": 3}],
         },
         {
             "apiId": 2, "apiName": "Meu Grupo", "description": "d2", "version": "1",
             "basePath": "/g/v1", "contextType": "GROUP", "contextGroupName": "APIOps",
             "owner": "paulo.silva", "contextUserLogins": [], "apiLifeCycle": "DRAFT",
-            "lastRevision": 7,
+            "lastRevision": 88,
+            "revisions": [
+                {"id": 77, "revisionNumber": 6},
+                {"id": 88, "revisionNumber": 7},
+            ],
         },
         {
             "apiId": 3, "apiName": "Alheia ME", "description": "d3", "version": "1",
@@ -133,12 +146,9 @@ class TestVisibilityOnListing:
         result = service.list_apis()
 
         assert [row["id"] for row in result] == [1, 2, 3, 4]
-        # projeto canonico: LAST REV (numero) e lifeCycle nascem do finder
+        # lastRevision do finder = ID; número resolve no revisions[] LOCAL da linha
         by_id = {row["id"]: row for row in result}
         assert by_id[1]["lastRevision"]["revisionNumber"] == 3
-        assert by_id[2]["lifeCycle"] == "DRAFT"
-        # enrich morto: nenhuma chamada de catalogo de revisoes
-        mock_manager_api.get_revisions_basic.assert_not_called()
         # pagina inteira ja cobre o universo (len==total): NAO ha refetch
         assert mock_manager_api.list_catalog_apis.call_args_list == [call(limit=1)]
 
@@ -166,14 +176,14 @@ class TestVisibilityOnListing:
             "description": "d",
             "version": "1",
             "basePath": "/q/v1",
-            "lastRevision": 1,
+            "lastRevision": 900,
+            "revisions": [{"id": 900, "revisionNumber": 1}],
         }
         service = ApiListingService(manager_api=mock_manager_api)
 
         result = service.list_apis(api_id=9)
 
         assert result[0]["lastRevision"]["revisionNumber"] == 1
-        mock_manager_api.get_revisions_basic.assert_not_called()
         mock_manager_api.list_catalog_apis.assert_not_called()
 
     def test_without_session_passes_through_unfiltered_legacy(
