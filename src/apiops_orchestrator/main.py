@@ -170,6 +170,11 @@ def main():
         if len(sys.argv) <= 1:
             run_bare_pipeline(_load_settings())
             return
+        # O console-script `sen` chega com argv[0]="...sen(.cmd)" e o primeiro
+        # argumento já é o comando (ex.: "login") — a árvore Typer espera o
+        # token "sen" na frente, presente só na forma `python main.py sen ...`.
+        if Path(sys.argv[0]).stem.lower() == "sen" and sys.argv[1] != "sen":
+            sys.argv.insert(1, "sen")
         ctx_obj = {
             "login_service_factory": build_login_service_factory(),
             "api_listing_service_factory": build_listing_service_factory(),

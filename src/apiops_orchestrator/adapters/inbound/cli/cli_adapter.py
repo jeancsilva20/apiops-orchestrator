@@ -21,7 +21,6 @@ from apiops_orchestrator.application.exceptions.login_exceptions import LoginErr
 from apiops_orchestrator.domain.models.api_collection_model import (
     ApiCollectionError,
     last_revision_number,
-    life_cycle_of,
 )
 
 main_app = typer.Typer(
@@ -36,6 +35,19 @@ sen_app = typer.Typer(
 )
 
 list_app = typer.Typer(name="list", help="List resources.")
+
+
+@list_app.callback(invoke_without_command=True)
+def list_callback(ctx: typer.Context):
+    if ctx.invoked_subcommand is None:
+        rprint(
+            "[bold yellow]Nenhum subcomando informado.[/bold yellow] "
+            "O disponível hoje é: sen list api "
+            "(consulte: sen list api --help)"
+        )
+        raise typer.Exit(code=2)
+
+
 sen_app.add_typer(list_app)
 
 main_app.add_typer(sen_app)
@@ -281,7 +293,7 @@ def _session_panel(field_rows: list, width: Optional[int] = None) -> Panel:
     )
 
 
-LIST_HEADER = ("ID", "NAME", "VERSION", "BASE PATH", "LAST REV", "LIFE CYCLE")
+LIST_HEADER = ("ID", "NAME", "VERSION", "BASE PATH", "LAST REV")
 DEFAULT_WINDOW_LIMIT = 10
 DEFAULT_WINDOW_OFFSET = 0
 
@@ -293,7 +305,6 @@ def _listing_cells(api: dict) -> tuple:
         str(api.get("version", "") or "-"),
         str(api.get("basePath", "") or ""),
         str(last_revision_number(api) or "-"),
-        str(life_cycle_of(api) or "-"),
     )
 
 
@@ -423,18 +434,14 @@ def list_apis(
 
 
 REVISIONS_HEADER = (
-    "REV ID",
-    "REV #",
-    "STAGE",
-    "ENVS",
-    "COMPLETE",
+    "REV #", "REV ID", "STAGE", "ENVS", "COMPLETE",
 )
 
 
 def _revision_cells(row: dict) -> tuple:
     return (
-        str(row.get("revision_id", "")),
         str(row.get("revision_number", "")),
+        str(row.get("revision_id", "")),
         str(row.get("stage_name", "-")),
         str(row.get("environments") or "-"),
         str(row.get("complete") or "-"),

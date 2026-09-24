@@ -7,10 +7,8 @@ import pytest
 from apiops_orchestrator.domain.models.api_collection_model import (
     ApiCollection,
     InvalidWindowError,
-    attach_last_revision,
     last_revision_number,
     life_cycle_of,
-    revision_basic_map,
 )
 
 FIXTURE_PATH = Path(__file__).resolve().parents[3] / "fixtures" / "apis_sample.json"
@@ -152,54 +150,6 @@ class TestProjectionRules:
         assert life_cycle_of({"lifeCycle": "DRAFT"}) == "DRAFT"
         assert life_cycle_of({"lifeCycle": ""}) is None
         assert life_cycle_of({}) is None
-
-
-class TestRevisionBasicMap:
-    def test_keeps_max_revision_per_api(self):
-        rows = [
-            {"id": 1, "api": {"id": 10, "revisionNumber": 1}},
-            {"id": 2, "api": {"id": 10, "revisionNumber": 5}},
-            {"id": 3, "api": {"id": 20, "revisionNumber": 2}},
-        ]
-
-        mapping = revision_basic_map(rows)
-
-        assert mapping == {10: 5, 20: 2}
-
-    def test_handles_real_payload_shape_with_workflow_keys(self):
-        row = {
-            "id": 1,
-            "api": {"id": 400, "revisionNumber": 4, "name": "Orchestrator Auth API"},
-            "workflowId": 139,
-            "workflowStageId": 420,
-        }
-
-        assert revision_basic_map([row]) == {400: 4}
-
-    def test_skips_rows_without_api_or_revision(self):
-        assert revision_basic_map([{}, {"api": {"id": None}}, {"api": {}}]) == {}
-
-
-class TestAttachLastRevision:
-    def test_decorates_items_without_overwriting_real_source(self):
-        items = [
-            {"id": 1},
-            {"id": 2, "lastRevision": {"id": 9, "revisionNumber": 7}},
-        ]
-        mapping = {1: 4, 2: 99}
-
-        result = attach_last_revision(items, mapping)
-
-        assert result[0]["lastRevision"]["revisionNumber"] == 4
-        assert result[1]["lastRevision"]["revisionNumber"] == 7  # real vence
-        assert last_revision_number(result[0]) == 4
-        assert "lastRevision" not in items[0]  # não muta o original
-        assert items[1]["lastRevision"]["revisionNumber"] == 7
-
-    def test_unknown_api_kept_untouched(self):
-        result = attach_last_revision([{"id": 77}], {1: 3})
-
-        assert "lastRevision" not in result[0]
 
 
 class TestVisibleTo:

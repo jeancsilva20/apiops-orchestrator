@@ -118,22 +118,6 @@ class ManagerApiAdapter(ManagerApiPort):
         endpoint = f"apis/{target_id}"
         return self._request("GET", endpoint)
 
-    def get_revisions_basic(self) -> list[Dict[str, Any]]:
-        """GET the basic revisions catalog (single call covering all APIs)."""
-        endpoint = "revisions/basic"
-        return self._request("GET", endpoint)
-
-    def get_revision_completeness(self, revision_id: int) -> Dict[str, Any]:
-        """GET completeness; backend delega ao Adaptive Governance. Degrada silenciosamente para {}:
-        a grade exibe '-' e a execucao continua (nunca quebra o drill-down).
-        """
-        try:
-            return self._request("GET", f"revisions/{revision_id}/completeness")
-        except Exception:
-            # Sem eco de ids/valores (ADR 0005): evento booleano basta.
-            logger.warning("revision completeness unavailable; degrading to empty")
-            return {}
-
     def get_workflow_stages(self, workflow_id: int) -> list[Dict[str, Any]]:
         """GET stages catalog com cache por workflow (hit = zero rede).
 

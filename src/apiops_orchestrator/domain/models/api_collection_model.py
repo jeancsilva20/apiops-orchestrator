@@ -56,45 +56,6 @@ def life_cycle_of(item: Dict[str, Any]) -> Optional[str]:
     return str(value) if value else None
 
 
-def revision_basic_map(rows: List[Dict[str, Any]]) -> Dict[Any, int]:
-    """Regra: mapa {apiId -> maior revisionNumber} a partir de /revisions/basic.
-
-    Cada linha tem {id, api {id, revisionNumber, ...}, workflowId, ...};
-    ha N linhas por api, vale a de maior revisionNumber.
-    """
-    mapping: Dict[Any, int] = {}
-    for row in rows or []:
-        api = row.get("api") or {}
-        api_id = api.get("id")
-        revision = api.get("revisionNumber") or 0
-        if api_id is None:
-            continue
-        mapping[api_id] = max(mapping.get(api_id, 0), revision)
-    return mapping
-
-
-def attach_last_revision(
-    items: List[Dict[str, Any]], revision_map: Dict[Any, int]
-) -> List[Dict[str, Any]]:
-    """Anexa `lastRevision` derivado ao item sem mutar o original.
-
-    Nunca SOBRESCREVE um lastRevision real do payload (fonte prioritaria).
-    """
-    enriched = []
-    for item in items or []:
-        if (item.get("lastRevision") or {}).get("revisionNumber"):
-            enriched.append(item)
-            continue
-        revision = revision_map.get(item.get("id"))
-        if not revision:
-            enriched.append(item)
-            continue
-        decorated = dict(item)
-        decorated["lastRevision"] = {"revisionNumber": revision}
-        enriched.append(decorated)
-    return enriched
-
-
 def _sort_key(item: Dict[str, Any]):
     raw_id = item.get("id")
     if isinstance(raw_id, int):
@@ -270,14 +231,24 @@ def normalize_finder_rows(rows: Optional[List[Dict[str, Any]]]) -> List[Dict[str
     """Projeta linhas do api-finder no shape canonico do ApiCollection.
 
     apiId->id · apiName->name · apiLifeCycle->lifeCycle ·
-    lastRevision(numero)->lastRevision.revisionNumber. Descarta linhas sem
-    apiId. Todo o pipeline existente (filtered_by/sorted_by_id/window) roda
-    intacto sobre a projecao.
+    `lastRevision` do frame = ID da ultima revisao; o NUMERO resolve
+    procurando em `revisions[]` a revision com esse id. SEM numero resolvivel
+    → None (grade exibe '-'); nunca retrocede ao ID. Descarta linhas sem apiId.
     """
     projected: List[Dict[str, Any]] = []
     for row in rows or []:
         if not isinstance(row, dict) or row.get("apiId") is None:
             continue
+        last_revision = row.get("lastRevision")
+        revision_number: Optional[int] = None
+        for revision in row.get("revisions") or []:
+            if (
+                isinstance(revision, dict)
+                and revision.get("id") == last_revision
+                and revision.get("revisionNumber")
+            ):
+                revision_number = revision["revisionNumber"]
+                break
         projected.append(
             {
                 "id": row.get("apiId"),
@@ -288,7 +259,7 @@ def normalize_finder_rows(rows: Optional[List[Dict[str, Any]]]) -> List[Dict[str
                 "lifeCycle": row.get("apiLifeCycle"),
                 "owner": row.get("owner"),
                 "updateDate": row.get("updateDate"),
-                "lastRevision": {"revisionNumber": row.get("lastRevision")},
+                "lastRevision": {"revisionNumber": revision_number},
             }
         )
     return projected
