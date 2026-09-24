@@ -58,7 +58,10 @@ def test_login_success_prints_developer_summary_without_secrets():
     assert "Login realizado com sucesso." in result.output
     assert "ci.runner" in result.output
     assert "runner@company.test" in result.output
-    assert "Sessão expira em" in result.output
+    assert "Sessão Válida até" not in result.output
+    assert "válida até" in result.output
+    assert "usuário:" in result.output
+    assert ">_  APIOps CLI" in result.output
     assert "APIOps, Lab-tech" not in result.output
     assert "Grupos" not in result.output
     assert TOKEN_DEV not in result.output
@@ -73,8 +76,8 @@ def test_login_success_prints_super_admin_summary_only_profile_and_scope():
     assert "Login realizado com sucesso." in result.output
     assert "super-admin" in result.output
     assert "admin" in result.output
-    assert "Perfil" in result.output
-    assert "Escopo" in result.output
+    assert "perfil:" in result.output
+    assert "escopo:" in result.output
     assert "ci.runner" not in result.output
     assert "Sessão expira em" not in result.output
     assert TOKEN_ADMIN not in result.output
