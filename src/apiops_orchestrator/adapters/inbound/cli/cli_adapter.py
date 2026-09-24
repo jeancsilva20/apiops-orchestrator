@@ -132,16 +132,30 @@ def _framed_logo() -> str:
     return _adapt_encoding("\n".join(result))
 
 
-def _adapt_encoding(text: str) -> str:
-    """Adapta box-drawing/blocos quando o stdout não é UTF-8 (cp1252 etc.)."""
+def _supports_text(text: str) -> bool:
+    """True when stdout can fully render `text`, glyph by glyph.
+
+    Single source of terminal-glyph capability detection: treats utf*/latin*
+    as capable without probing, conservatively reports False on unknown
+    encodings, and keeps every glyph consumer (logo, panels, loader) in
+    sync so visual degradation is all-or-nothing.
+    """
     encoding = (getattr(sys.stdout, "encoding", None) or "").lower()
-    if not encoding or encoding.startswith(("utf", "latin")):
-        return text
+    if encoding.startswith(("utf", "latin")):
+        return True
+    if not encoding:
+        return False
     try:
         text.encode(encoding)
-        return text
+        return True
     except UnicodeEncodeError:
-        pass
+        return False
+
+
+def _adapt_encoding(text: str) -> str:
+    """Adapta box-drawing/blocos quando o stdout não é UTF-8 (cp1252 etc.)."""
+    if _supports_text(text):
+        return text
     for original, replacement in _BOX_ASCII_REPLACEMENTS.items():
         text = text.replace(original, replacement)
     return text.replace("\u2588", "#")
@@ -237,13 +251,7 @@ class _LoadingBar:
 
     def __init__(self, label: str = "Autenticando..."):
         self.label = label
-        encoding = (getattr(sys.stdout, "encoding", None) or "").lower()
-        self.block = "\u2588"
-        if encoding:
-            try:
-                self.block.encode(encoding)
-            except UnicodeEncodeError:
-                self.block = "#"
+        self.block = "\u2588" if _supports_text("\u2588") else "#"
 
     def __rich_console__(self, console, options):
         yield self._frame(time.monotonic())
@@ -263,16 +271,7 @@ class _LoadingBar:
 
 def _stdout_supports_rounded_box() -> bool:
     """True quando o stdout aceita os glifos de box-drawing arredondado."""
-    encoding = (getattr(sys.stdout, "encoding", None) or "").lower()
-    if not encoding:
-        return False
-    if encoding.startswith(("utf", "latin")):
-        return True
-    try:
-        "\u256d\u2500".encode(encoding)
-        return True
-    except UnicodeEncodeError:
-        return False
+    return _supports_text("\u256d\u2500")
 
 
 def _framed_logo_width() -> int:
@@ -444,12 +443,12 @@ def list_apis(
 
         display_output(apis, output_format=output, text_callback=print_text)
 
+    except typer.Exit:
+        raise
     except ApiCollectionError as e:
         rprint(f"[bold red]Erro:[/bold red] {e}")
         raise typer.Exit(code=1)
     except Exception as e:
-        if isinstance(e, typer.Exit):
-            raise e
         rprint(f"[bold red]Erro ao listar APIs:[/bold red] {e}")
         raise typer.Exit(code=1)
 
