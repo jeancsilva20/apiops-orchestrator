@@ -34,7 +34,7 @@ Authenticates the user against the Orchestrator Auth API and saves the session l
 [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("<client_id>:<secret>"))
 
 # 2. Set it in the .env at the project root (see .env.example), then run:
-poetry run python src/apiops_orchestrator/main.py sen login
+.\.venv\Scripts\python.exe src\apiops_orchestrator\main.py sen login
 ```
 
 The session file is stored at the **project root** as `.sen_session` (hidden, owner-only, git-ignored — see ADR 0006).
@@ -45,23 +45,23 @@ Full behavior (credential sources, endpoint variables, exit codes, session file 
 
 ### Requirements
 - Python 3.10+
-- Poetry (Dependency manager)
 
 ### 1. Setup
 
-1.  **Install Poetry** (In case you haven't already):
-    Follow the official instalation guide for your OS [here](https://python-poetry.org/docs/#installation).
-
-2.  **Clone the repository** (In case you haven't already):
+1.  **Clone the repository** (In case you haven't already):
     ```bash
     git clone https://bitbucket.org/sensedia/apiops-orchestrator
     cd apiops-orchestrator
     ```
 
-3.  **Install project dependencies**:
-    Poetry will automatically create a virtual environment and install all dependencies.
-    ```bash
-    poetry install
+2.  **Bootstrap the virtual environment** (creates `.venv\` and installs all dependencies from `pyproject.toml`, no Poetry needed):
+    ```powershell
+    powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
+    ```
+
+    All commands below use the local interpreter directly:
+    ```powershell
+    .\.venv\Scripts\python.exe
     ```
 
 ### 2. Configuration (Optional for tests)
@@ -82,16 +82,16 @@ This step is optional if you only want to run tests. Before running the main scr
 ### 3. Running the code
 
 Run the script from the project root:
-```bash
-poetry run python src/apiops_orchestrator/main.py
+```powershell
+.\.venv\Scripts\python.exe src\apiops_orchestrator\main.py
 ```
 The script will print the location of the artifacts folder, validate its structure and list the files found.
 
 ### Tests
 
-Ensure you have followed the **Setup** steps first. To run the unit tests using Poetry:
-```bash
-poetry run pytest
+Ensure you have followed the **Setup** steps first. To run the unit tests:
+```powershell
+.\.venv\Scripts\python.exe -m pytest
 ```
 
 ## Folder Structure
@@ -105,9 +105,9 @@ poetry run pytest
 
 ## Tech Stack
 - Python 3.10+
+- venv + pip (dependency management, installed from `pyproject.toml`)
 - Pydantic Settings (environment configuration/.env)
 - Pytest (testing)
-- Poetry (dependency management)
 
 ## Contributors
 - Augusto

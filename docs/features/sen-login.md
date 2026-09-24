@@ -93,7 +93,8 @@ SEN_CREDENTIALS="<blob>"
 AUTH_HOST="https://api-consulting.sensedia.com"      # sem fallback para HOST
 AUTH_LOGIN_PATH="/cli-2/orq-auth/v1/oauth2/token"    # sem default em código
 
-poetry run python src/apiops_orchestrator/main.py sen login
+# execução local (venv criado por scripts\setup.ps1, sem Poetry):
+.\.venv\Scripts\python.exe src\apiops_orchestrator\main.py sen login
 ```
 
 Comportamentos entregues:

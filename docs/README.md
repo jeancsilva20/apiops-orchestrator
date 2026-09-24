@@ -1,6 +1,6 @@
 # Documentação do apiops-orchestrator
 
-Índice da documentação interna do orquestrador. Última atualização: **2026-09-15**.
+Índice da documentação interna do orquestrador. Última atualização: **2026-09-24**.
 
 > **Relação com a documentação canônica do projeto:** os documentos oficiais de visão, conhecimento e decisões vivem em
 > `Plataforma-Sensedia/API Ops - docs/Docs revisados/`. Os arquivos desta pasta registram as decisões e o
@@ -26,6 +26,8 @@
 | [0003](adr/0003-autorizacao-por-acao-endpoint-validation.md) | Autorização por ação via endpoint `/oauth2/token/validation` | Aceito |
 | [0004](adr/0004-variavel-de-ambiente-sen-credentials.md) | Variável de ambiente `SEN_CREDENTIALS` | Aceito |
 | [0005](adr/0005-padrao-de-logs-de-autenticacao.md) | Padrão de logs de autenticação herdado da observabilidade | Aceito |
+| [0007](adr/0007-sen-como-casa-do-bloco-de-credenciais-e-residencia-dos-arquivos-sen.md) | `.sen` como casa do bloco de credenciais | Aceito |
+| [0008](feat-command-sen-completeness/adr/0008-completeness-port-dedicada-ag-direto.md) | `sen completeness`: port dedicada + AG direto | Aceito (implementação congelada) |
 
 ## Autenticação
 
@@ -51,6 +53,14 @@
 | [sen-login-incremento-teams-jwt.md](feat-command-sen-list/sen-login-incremento-teams-jwt.md) | Incremento do login: teams do usuário no `extra_info` do JWT (requisito ao time de `/orq-auth`) |
 | [adr/0006-composition-root-lazy-cli.md](feat-command-sen-list/adr/0006-composition-root-lazy-cli.md) | ADR 0006 — composition root lazy: `sen` standalone, `--help` sem `.env`, entry-point |
 | [backlog/sen-list-despriorizacoes.md](feat-command-sen-list/backlog/sen-list-despriorizacoes.md) | Despriorizações legítimas (JSON -o, YAML, filtros, stage-name, audit) com contratos à espera |
+
+## Ramo `feat/command-sen-completeness` (incremento em curso)
+
+| Documento | Conteúdo |
+|-----------|----------|
+| [features/sen-completeness.md](feat-command-sen-completeness/features/sen-completeness.md) | Spec do `sen completeness`: decisões seladas em 7 categorias (gramática, escopo, dados, arquitetura, contrato, visualização, erros), grades aprovadas, mapa de fontes vivas (sondas 24/09) e critérios de aceite |
+| [feat-command-sen-completeness/adr/0008-completeness-port-dedicada-ag-direto.md](feat-command-sen-completeness/adr/0008-completeness-port-dedicada-ag-direto.md) | ADR 0008 — port dedicada `CompletenessPort` + AG direto como fonte primária + satélite api-finder; contrato versionado `apiops.sen-completeness/v1`; gate 70% hardcoded (P10) |
+| [feat-command-sen-completeness/backlog/sen-completeness-postergados.md](feat-command-sen-completeness/backlog/sen-completeness-postergados.md) | Postergados com contrato congelado: gate dinâmico (P10 via workflows), JWT platform-native no login (P-b), harmonização de severidade, enriquecimentos, hook do `sen validate` |
 
 > **Convenção de organização:** cada incremento de feature/documentação ganha uma pasta `docs/<nome-do-ramo>/`, espelhando o nome da branch. Documentos pré-existentes ficam onde estão (nenhuma migração).
 
