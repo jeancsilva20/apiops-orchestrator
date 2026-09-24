@@ -1,5 +1,10 @@
 [tool.poetry]
 name = "apiops-orchestrator"
+# Fonte unica de versao: lida em runtime via importlib.metadata (cli_adapter.cli_version).
+# IMPORTANTE: ao gerar um .exe (bundle frozen), a metadata (*.dist-info) NAO entra no
+# bundle por padrao — configurar o empacotador para copiala (PyInstaller:
+# --copy-metadata apiops-orchestrator) ou selar a versao em arquivo ao lado do binario,
+# caso contrario `sen --version` cai no fallback estatico do cli_version().
 version = "0.1.0"
 description = "Ferramenta de linha de comando para automação e boas práticas em ApiOps."
 authors = ["Your Name <you@example.com>"]
