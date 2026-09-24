@@ -104,7 +104,7 @@ def test_login_success_session_still_carries_groups():
 def test_login_service_missing_from_context_exits_one():
     result = runner.invoke(app, ["sen", "login"], obj={})
     assert result.exit_code == 1
-    assert "LoginService not found in context." in result.output
+    assert "Serviço de login indisponível no contexto." in result.output
 
 
 @pytest.mark.parametrize(

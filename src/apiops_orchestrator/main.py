@@ -107,7 +107,7 @@ def validate_recursively(
                 if kind and kind in kind_to_schema:
                     schema_validator.validate(data, kind_to_schema[kind], item)
             except Exception as e:
-                rprint(f"[bold yellow]Skipping/Error in {item.name}:[/bold yellow] {e}")
+                rprint(f"[bold yellow]Ignorando item {item.name} devido a erro:[/bold yellow] {e}")
 
 
 def run_bare_pipeline(settings: Settings) -> dict:
@@ -143,9 +143,9 @@ def run_bare_pipeline(settings: Settings) -> dict:
     )
     api_listing_service = ApiListingService(manager_adapter)
 
-    rprint("[bold green]Starting Schema Validation...[/bold green]")
+    rprint("[bold green]Iniciando validação de schemas...[/bold green]")
     validate_recursively(repo_path, importer, schema_validator, kind_to_schema)
-    rprint("[bold green]Schema Validation completed successfully![/bold green]")
+    rprint("[bold green]Validação de schemas concluída com sucesso![/bold green]")
 
     service = ConversorService(result, settings, manager_adapter)
     api_full = service.build_api_json()
@@ -182,23 +182,23 @@ def main():
         app(obj=ctx_obj)
 
     except CliError as e:
-        rprint(f"[bold red]Error:[/bold red] {e.message}")
+        rprint(f"[bold red]Erro:[/bold red] {e.message}")
         sys.exit(e.exit_code)
     except pydantic.ValidationError as e:
         missing = ", ".join(
             str(err.get("loc", ("<unknown>",))[0]).upper() for err in e.errors()
         )
         rprint(
-            f"[bold red]Invalid configuration:[/bold red] missing/invalid settings: {missing}"
+            f"[bold red]Configuração inválida:[/bold red] variáveis ausentes ou inválidas: {missing}"
         )
         sys.exit(1)
     except typer.Exit as e:
         sys.exit(e.exit_code)
     except typer.Abort:
-        rprint("[bold red]Aborted.[/bold red]")
+        rprint("[bold red]Operação abortada.[/bold red]")
         sys.exit(1)
     except Exception as e:
-        rprint(f"[bold red]Unexpected error:[/bold red] {e}")
+        rprint(f"[bold red]Erro inesperado:[/bold red] {e}")
         sys.exit(1)
 
 

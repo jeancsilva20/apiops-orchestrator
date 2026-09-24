@@ -190,7 +190,7 @@ def test_api_list_no_apis_when_none_returned():
     result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service_factory": lambda: mock_service})
 
     assert result.exit_code == 0
-    assert "No APIs found." in result.output
+    assert "Nenhuma API encontrada." in result.output
 
 def test_api_list_json():
     """Test 'list api --output json'."""

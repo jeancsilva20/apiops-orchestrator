@@ -1,3 +1,4 @@
+import importlib.metadata
 import platform
 import sys
 import time
@@ -56,7 +57,17 @@ app = main_app
 
 WELCOME_TITLE = "BEM-VINDO AO SENSEDIA API ORCHESTRATOR"
 
-CLI_VERSION = "0.1.0"
+_CLI_PACKAGE = "apiops-orchestrator"
+
+
+def cli_version() -> str:
+    """Single source of truth: version declared in pyproject.toml, resolved
+    from the installed package metadata; falls back for frozen/dev runs
+    where metadata is unavailable."""
+    try:
+        return importlib.metadata.version(_CLI_PACKAGE)
+    except importlib.metadata.PackageNotFoundError:
+        return "-"
 
 WELCOME_LOGO = """\
   ████    ██████    ██████    ████    ██████    ████████               ███████  ██        ██████
@@ -178,13 +189,13 @@ def login(ctx: typer.Context):
     try:
         login_service_factory = (ctx.obj or {}).get("login_service_factory")
         if not callable(login_service_factory):
-            rprint("[bold red]Error:[/bold red] LoginService not found in context.")
+            rprint("[bold red]Erro:[/bold red] Serviço de login indisponível no contexto.")
             raise typer.Exit(code=1)
 
         print_welcome()
         session = _authenticate_with_feedback(cast(Callable[[], Any], login_service_factory))
     except LoginError as e:
-        rprint(f"[bold red]Login error:[/bold red] {e.message}")
+        rprint(f"[bold red]Erro de login:[/bold red] {e.message}")
         raise typer.Exit(code=e.exit_code)
     except typer.Exit as e:
         raise e
@@ -280,7 +291,7 @@ def _session_panel(field_rows: list, width: Optional[int] = None) -> Panel:
     header = Text.assemble(
         (">_  ", "bold white"),
         ("APIOps CLI", "bold white"),
-        (f" (v{CLI_VERSION})", "white"),
+        (f" (v{cli_version()})", "white"),
     )
     grid = Table.grid(padding=(0, 1))
     grid.add_column(justify="left", min_width=10, no_wrap=True)
@@ -376,7 +387,8 @@ def list_apis(
         service_factory = (ctx.obj or {}).get("api_listing_service_factory")
         if not callable(service_factory):
             rprint(
-                "[bold red]Error:[/bold red] Erro interno."
+                "[bold red]Erro:[/bold red] Serviço de listagem de APIs "
+                "indisponível no contexto."
             )
             raise typer.Exit(code=1)
         service = cast(Callable[[], ApiListingService], service_factory)()
@@ -384,25 +396,25 @@ def list_apis(
         # Validações pré-rede (A3-3, A3-1)
         if query and api_id is not None:
             rprint(
-                "[bold red]Error:[/bold red] Use --query OU --id, nunca os dois "
+                "[bold red]Erro:[/bold red] Use --query OU --id, nunca os dois "
                 "juntos. Consulte: sen list api --help"
             )
             raise typer.Exit(code=1)
         if limit is not None and limit <= 0:
             rprint(
-                "[bold red]Error:[/bold red] --limit deve ser maior que zero. "
+                "[bold red]Erro:[/bold red] --limit deve ser maior que zero. "
                 "Consulte: sen list api --help"
             )
             raise typer.Exit(code=1)
         if offset is not None and offset < 0:
             rprint(
-                "[bold red]Error:[/bold red] --offset deve ser maior ou igual a "
+                "[bold red]Erro:[/bold red] --offset deve ser maior ou igual a "
                 "zero. Consulte: sen list api --help"
             )
             raise typer.Exit(code=1)
         if revisions and api_id is None:
             rprint(
-                "[bold red]Error:[/bold red] --revisions/-r exige --id (drill-down "
+                "[bold red]Erro:[/bold red] --revisions/-r exige --id (drill-down "
                 "revisa UMA API). Consulte: sen list api --help"
             )
             raise typer.Exit(code=1)
@@ -422,7 +434,7 @@ def list_apis(
             )
 
         if not apis:
-            rprint("[yellow]No APIs found.[/yellow]")
+            rprint("[yellow]Nenhuma API encontrada.[/yellow]")
             return
 
         def print_text():
@@ -433,12 +445,12 @@ def list_apis(
         display_output(apis, output_format=output, text_callback=print_text)
 
     except ApiCollectionError as e:
-        rprint(f"[bold red]Error:[/bold red] {e}")
+        rprint(f"[bold red]Erro:[/bold red] {e}")
         raise typer.Exit(code=1)
     except Exception as e:
         if isinstance(e, typer.Exit):
             raise e
-        rprint(f"[bold red]Error listing APIs:[/bold red] {e}")
+        rprint(f"[bold red]Erro ao listar APIs:[/bold red] {e}")
         raise typer.Exit(code=1)
 
 
@@ -462,7 +474,7 @@ def _render_revisions_grade(
 ) -> None:
     rows = service.api_revisions(api_id)
     if not rows:
-        rprint(f"[yellow]No revisions found for API {api_id}.[/yellow]")
+        rprint(f"[yellow]Nenhuma revisão encontrada para a API {api_id}.[/yellow]")
         return
 
     def print_text():
@@ -472,8 +484,8 @@ def _render_revisions_grade(
 
 
 def display_version():
-    rprint(f"sen {CLI_VERSION}")
-    rprint(f"apiops-orchestrator {CLI_VERSION}")
+    rprint(f"sen {cli_version()}")
+    rprint(f"apiops-orchestrator {cli_version()}")
     rprint(f"python {platform.python_version()}")
 
 
