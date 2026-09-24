@@ -44,7 +44,7 @@ def test_api_list_success():
         {"id": 2, "name": "API 2", "basePath": "/api2", "version": "2.0.0"},
     ]
 
-    result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service": mock_service})
+    result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service_factory": lambda: mock_service})
 
     assert result.exit_code == 0
     assert "ID" in result.output and "BASE PATH" in result.output
@@ -66,7 +66,7 @@ def test_api_list_explicit_window_footer():
     result = runner.invoke(
         app,
         ["sen", "list", "api", "--offset", "90", "--limit", "5"],
-        obj={"api_listing_service": mock_service},
+        obj={"api_listing_service_factory": lambda: mock_service},
     )
 
     assert result.exit_code == 0
@@ -87,7 +87,7 @@ def test_api_list_columns_values():
         {"id": 401, "name": "Sem Revision", "basePath": "/x/v1"},
     ]
 
-    result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service": mock_service})
+    result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service_factory": lambda: mock_service})
 
     assert result.exit_code == 0
     assert "8882" not in result.output  # grade mostra número da revisão, não o id
@@ -101,7 +101,7 @@ def test_api_list_query_exclusive_with_id():
     result = runner.invoke(
         app,
         ["sen", "list", "api", "--query", "auth", "--id", "400"],
-        obj={"api_listing_service": mock_service},
+        obj={"api_listing_service_factory": lambda: mock_service},
     )
 
     assert result.exit_code == 1
@@ -114,7 +114,7 @@ def test_api_list_invalid_limit_fails_pre_network():
     result = runner.invoke(
         app,
         ["sen", "list", "api", "--limit", "0"],
-        obj={"api_listing_service": mock_service},
+        obj={"api_listing_service_factory": lambda: mock_service},
     )
 
     assert result.exit_code == 1
@@ -128,7 +128,7 @@ def test_api_list_negative_offset_fails_pre_network():
     result = runner.invoke(
         app,
         ["sen", "list", "api", "--offset", "-1"],
-        obj={"api_listing_service": mock_service},
+        obj={"api_listing_service_factory": lambda: mock_service},
     )
 
     assert result.exit_code == 1
@@ -143,7 +143,7 @@ def test_api_list_query_passes_flags_to_service():
     result = runner.invoke(
         app,
         ["sen", "list", "api", "--query", "auth", "--limit", "3", "--offset", "2"],
-        obj={"api_listing_service": mock_service},
+        obj={"api_listing_service_factory": lambda: mock_service},
     )
 
     assert result.exit_code == 0
@@ -159,7 +159,7 @@ def test_api_list_drilldown_single_row():
         {"id": 400, "name": "Orchestrator Auth API", "basePath": "/orq-auth/v1", "version": "1.0.1"}
     ]
 
-    result = runner.invoke(app, ["sen", "list", "api", "--id", "400"], obj={"api_listing_service": mock_service})
+    result = runner.invoke(app, ["sen", "list", "api", "--id", "400"], obj={"api_listing_service_factory": lambda: mock_service})
 
     assert result.exit_code == 0
     assert "Orchestrator Auth API" in result.output
@@ -176,7 +176,7 @@ def test_api_list_insufficient_session_translates_error():
         "Sua sessão não possui grupos de acesso"
     )
 
-    result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service": mock_service})
+    result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service_factory": lambda: mock_service})
 
     assert result.exit_code == 1
     assert "grupos de acesso" in result.output
@@ -187,7 +187,7 @@ def test_api_list_no_apis_when_none_returned():
     mock_service = MagicMock()
     mock_service.list_apis.return_value = []
 
-    result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service": mock_service})
+    result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service_factory": lambda: mock_service})
 
     assert result.exit_code == 0
     assert "No APIs found." in result.output
@@ -199,7 +199,7 @@ def test_api_list_json():
     data = [{"id": 1, "name": "API 1", "basePath": "/api1"}]
     mock_service.list_apis.return_value = data
     
-    result = runner.invoke(app, ["sen", "list", "api", "--output", "json"], obj={"api_listing_service": mock_service})
+    result = runner.invoke(app, ["sen", "list", "api", "--output", "json"], obj={"api_listing_service_factory": lambda: mock_service})
     
     assert result.exit_code == 0
     # The output contains rich syntax highlighting, so we check for key parts
@@ -213,7 +213,7 @@ def test_api_list_yaml():
     data = [{"id": 1, "name": "API 1", "basePath": "/api1"}]
     mock_service.list_apis.return_value = data
     
-    result = runner.invoke(app, ["sen", "list", "api", "-o", "yaml"], obj={"api_listing_service": mock_service})
+    result = runner.invoke(app, ["sen", "list", "api", "-o", "yaml"], obj={"api_listing_service_factory": lambda: mock_service})
 
     assert result.exit_code == 0
     assert "id: 1" in result.output
@@ -247,7 +247,7 @@ def test_revisions_drill_down_renders_canonical_grade():
     result = runner.invoke(
         app,
         ["sen", "list", "api", "--id", "400", "--revisions"],
-        obj={"api_listing_service": mock_service},
+        obj={"api_listing_service_factory": lambda: mock_service},
     )
 
     assert result.exit_code == 0
@@ -264,7 +264,7 @@ def test_revisions_requires_id_pre_network():
     mock_service = MagicMock()
 
     result = runner.invoke(
-        app, ["sen", "list", "api", "--revisions"], obj={"api_listing_service": mock_service}
+        app, ["sen", "list", "api", "--revisions"], obj={"api_listing_service_factory": lambda: mock_service}
     )
 
     assert result.exit_code == 1

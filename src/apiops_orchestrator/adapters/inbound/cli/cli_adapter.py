@@ -145,6 +145,30 @@ class CliError(Exception):
         super().__init__(self.message)
 
 
+def _authenticate_with_feedback(service_builder: Callable[[], Any]):
+    """Runs the login flow with a spinner only when stdout is a terminal.
+
+    In non-interactive stdout (CI runner, redirected output, docker logs),
+    Rich's Live turns each animation frame into plain new lines polluting
+    machine-readable output, so we fall back to a single dim status line.
+    """
+    if not get_console().is_terminal:
+        rprint("[dim]Autenticando...[/dim]")
+        return service_builder().login()
+
+    live = Live(
+        Align.center(_LoadingBar()),
+        console=get_console(),
+        refresh_per_second=10,
+        transient=True,
+    )
+    live.start()
+    try:
+        return service_builder().login()
+    finally:
+        live.stop()
+
+
 @sen_app.command("login")
 def login(ctx: typer.Context):
     """
@@ -157,18 +181,8 @@ def login(ctx: typer.Context):
             rprint("[bold red]Error:[/bold red] LoginService not found in context.")
             raise typer.Exit(code=1)
 
-        service_builder = cast(Callable[[], Any], login_service_factory)
-        live = Live(
-            Align.center(_LoadingBar()),
-            console=get_console(),
-            refresh_per_second=10,
-            transient=True,
-        )
-        live.start()
-        try:
-            session = service_builder().login()
-        finally:
-            live.stop()
+        print_welcome()
+        session = _authenticate_with_feedback(cast(Callable[[], Any], login_service_factory))
     except LoginError as e:
         rprint(f"[bold red]Login error:[/bold red] {e.message}")
         raise typer.Exit(code=e.exit_code)
@@ -359,18 +373,13 @@ def list_apis(
     List APIs from Sensedia Manager.
     """
     try:
-        service: Optional[ApiListingService] = (ctx.obj or {}).get(
-            "api_listing_service"
-        )
-        if not service:
-            service_factory = (ctx.obj or {}).get("api_listing_service_factory")
-            if callable(service_factory):
-                service = cast(Callable[[], ApiListingService], service_factory)()
-        if not service:
+        service_factory = (ctx.obj or {}).get("api_listing_service_factory")
+        if not callable(service_factory):
             rprint(
-                "[bold red]Error:[/bold red] ApiListingService not found in context."
+                "[bold red]Error:[/bold red] Erro interno."
             )
             raise typer.Exit(code=1)
+        service = cast(Callable[[], ApiListingService], service_factory)()
 
         # Validações pré-rede (A3-3, A3-1)
         if query and api_id is not None:
@@ -490,7 +499,6 @@ def main_callback(
     """
     APIOps CLI Sensedia.
     """
-    print_welcome()
     if verbose:
         # TODO: Ajustar nível de log quando houver integração com logging
         pass
