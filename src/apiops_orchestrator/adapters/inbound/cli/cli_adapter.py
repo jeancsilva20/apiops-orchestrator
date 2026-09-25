@@ -19,10 +19,9 @@ from apiops_orchestrator.application.services.api_listing_service import (
 from apiops_orchestrator.adapters.inbound.cli.output_format import OutputFormat
 from apiops_orchestrator.adapters.inbound.cli.output_display import display_output
 from apiops_orchestrator.application.exceptions.login_exceptions import LoginError
-from apiops_orchestrator.domain.models.api_collection_model import (
-    ApiCollectionError,
-    last_revision_number,
-)
+from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
+from apiops_orchestrator.domain.models.catalog_revision_model import CatalogRevisionInfo
+from apiops_orchestrator.application.exceptions.listing_exceptions import ApiCollectionError
 
 main_app = typer.Typer(
     no_args_is_help=True,
@@ -322,13 +321,13 @@ DEFAULT_WINDOW_LIMIT = 10
 DEFAULT_WINDOW_OFFSET = 0
 
 
-def _listing_cells(api: dict) -> tuple:
+def _listing_cells(api: ApiCatalogEntry) -> tuple:
     return (
-        str(api.get("id", "")),
-        str(api.get("name", "")),
-        str(api.get("version", "") or "-"),
-        str(api.get("basePath", "") or ""),
-        str(last_revision_number(api) or "-"),
+        str(api.id if api.id is not None else ""),
+        str(api.name or ""),
+        str(api.version or "-"),
+        str(api.basePath or ""),
+        str(api.last_revision_number() or "-"),
     )
 
 
@@ -437,11 +436,15 @@ def list_apis(
             return
 
         def print_text():
-            _render_grade([_listing_cells(api) for api in apis])
+            _render_grade([_listing_cells(entry) for entry in apis])
             if api_id is None:
                 _window_footer(limit, offset)
 
-        display_output(apis, output_format=output, text_callback=print_text)
+        display_output(
+            [entry.to_listing_dict() for entry in apis],
+            output_format=output,
+            text_callback=print_text,
+        )
 
     except typer.Exit:
         raise
@@ -458,13 +461,17 @@ REVISIONS_HEADER = (
 )
 
 
-def _revision_cells(row: dict) -> tuple:
+def _format_score(score):
+    return "-" if score is None else f"{score:.0f}%"
+
+
+def _revision_cells(row: CatalogRevisionInfo) -> tuple:
     return (
-        str(row.get("revision_number", "")),
-        str(row.get("revision_id", "")),
-        str(row.get("stage_name", "-")),
-        str(row.get("environments") or "-"),
-        str(row.get("complete") or "-"),
+        str(row.revision_number),
+        str(row.revision_id),
+        str(row.stage_name),
+        str(row.environments or "-"),
+        _format_score(row.completeness_score),
     )
 
 
@@ -477,9 +484,11 @@ def _render_revisions_grade(
         return
 
     def print_text():
-        _render_grade([_revision_cells(row) for row in rows], header=REVISIONS_HEADER)
+        _render_grade(
+            [_revision_cells(row) for row in rows], header=REVISIONS_HEADER
+        )
 
-    display_output(rows, output_format=output, text_callback=print_text)
+    display_output([row.to_dict() for row in rows], output_format=output, text_callback=print_text)
 
 
 def display_version():
