@@ -96,8 +96,7 @@ pytest
 - Matheus Alves Giroto
 - Alisson Lopes
 - Luiza Silva
-- Rapha Santos
-
+- Jean Silva
 ---
 Check also `CHANGELOG.md` for the project's changing history.
 
