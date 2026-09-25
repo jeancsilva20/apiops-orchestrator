@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import patch, Mock
 import typer
 from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter import ManagerApiAdapter
+from apiops_orchestrator.domain.models.workflow_stage_model import WorkflowStage
 from apiops_orchestrator.config.settings import Settings
 
 MOCK_PATH = "apiops_orchestrator.infrastructure.utils.http_client.HttpClient.request"
@@ -112,7 +113,7 @@ def test_list_catalog_apis_hits_finder_with_params_and_reads_count(mock_settings
         page = adapter.list_catalog_apis(limit=95)
 
         assert page.total == 108
-        assert page.rows == [{"apiId": 1}]
+        assert len(page.rows) == 1 and page.rows[0].id == 1  # tipado (D4)
         mock_req.assert_called_once_with(
             method="GET",
             url="http://urltest.com/api-finder/api/v3/apis",
@@ -156,7 +157,7 @@ def test_list_catalog_apis_degrades_total_without_count_header(mock_settings):
         page = adapter.list_catalog_apis(limit=1)
 
         assert page.total == -1  # sem header: degrada, comando segue
-        assert page.rows == [{"apiId": 7}]
+        assert len(page.rows) == 1 and page.rows[0].id == 7
 
 
 def test_list_catalog_apis_non_list_payload_normalizes_to_empty(mock_settings):
@@ -209,7 +210,10 @@ def test_workflow_stages_uses_governance_base_path(mock_settings):
         mock_request.return_value = STAGE_ROWS_SAMPLE
         result = adapter.get_workflow_stages(139)
 
-        assert result == STAGE_ROWS_SAMPLE
+        assert result == [
+            WorkflowStage(workflowStageId=420, workflowStageName="Stage One"),
+            WorkflowStage(workflowStageId=753, workflowStageName="Teste"),
+        ]
         assert mock_request.call_args.kwargs["url"] == (
             "http://urltest.com/api-governance/api/v3/workflows/139/stages"
         )
@@ -236,8 +240,14 @@ def test_workflow_stages_failures_are_never_cached_and_degrade(mock_settings):
         mock_request.side_effect = [RuntimeError("governance down"), STAGE_ROWS_SAMPLE, STAGE_ROWS_SAMPLE]
 
         assert adapter.get_workflow_stages(139) == []
-        assert adapter.get_workflow_stages(139) == STAGE_ROWS_SAMPLE
-        assert adapter.get_workflow_stages(139) == STAGE_ROWS_SAMPLE
+        assert adapter.get_workflow_stages(139) == [
+            WorkflowStage(workflowStageId=420, workflowStageName="Stage One"),
+            WorkflowStage(workflowStageId=753, workflowStageName="Teste"),
+        ]
+        assert adapter.get_workflow_stages(139) == [
+            WorkflowStage(workflowStageId=420, workflowStageName="Stage One"),
+            WorkflowStage(workflowStageId=753, workflowStageName="Teste"),
+        ]
         assert mock_request.call_count == 2  # falha nao entrou em cache
 
 

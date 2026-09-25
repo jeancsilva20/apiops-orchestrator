@@ -1,8 +1,20 @@
 import platform
 from typer.testing import CliRunner
 from apiops_orchestrator.adapters.inbound.cli.cli_adapter import app
+from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter import (
+    _translate_row,
+)
+from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
+from apiops_orchestrator.domain.models.catalog_revision_model import CatalogRevisionInfo
+
 
 runner = CliRunner()
+
+
+def _entry(raw) -> ApiCatalogEntry:
+    e = _translate_row(raw)
+    assert e is not None
+    return e
 
 def test_help():
     """Test the --help flag to ensure the CLI is registered correctly."""
@@ -40,8 +52,8 @@ def test_api_list_success():
     from unittest.mock import MagicMock
     mock_service = MagicMock()
     mock_service.list_apis.return_value = [
-        {"id": 1, "name": "API 1", "basePath": "/api1", "version": "1.0.0"},
-        {"id": 2, "name": "API 2", "basePath": "/api2", "version": "2.0.0"},
+        _entry({"apiId": 1, "apiName": "API 1", "basePath": "/api1", "version": "1.0.0"}),
+        _entry({"apiId": 2, "apiName": "API 2", "basePath": "/api2", "version": "2.0.0"}),
     ]
 
     result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service_factory": lambda: mock_service})
@@ -60,7 +72,7 @@ def test_api_list_explicit_window_footer():
     from unittest.mock import MagicMock
     mock_service = MagicMock()
     mock_service.list_apis.return_value = [
-        {"id": 1, "name": "API 1", "basePath": "/api1"}
+        _entry({"apiId": 1, "apiName": "API 1", "basePath": "/api1"})
     ]
 
     result = runner.invoke(
@@ -77,14 +89,15 @@ def test_api_list_columns_values():
     from unittest.mock import MagicMock
     mock_service = MagicMock()
     mock_service.list_apis.return_value = [
-        {
-            "id": 400,
-            "name": "Orchestrator Auth API",
+        _entry({
+            "apiId": 400,
+            "apiName": "Orchestrator Auth API",
             "basePath": "/orq-auth/v1",
             "version": "1.0.1",
-            "lastRevision": {"id": 8882, "revisionNumber": 3},
-        },
-        {"id": 401, "name": "Sem Revision", "basePath": "/x/v1"},
+            "lastRevision": 8882,
+            "revisions": [{"id": 8882, "revisionNumber": 3}],
+        }),
+        _entry({"apiId": 401, "apiName": "Sem Revision", "basePath": "/x/v1"}),
     ]
 
     result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service_factory": lambda: mock_service})
@@ -138,7 +151,9 @@ def test_api_list_negative_offset_fails_pre_network():
 def test_api_list_query_passes_flags_to_service():
     from unittest.mock import MagicMock
     mock_service = MagicMock()
-    mock_service.list_apis.return_value = [{"id": 1, "name": "A", "basePath": "/b"}]
+    mock_service.list_apis.return_value = [
+        _entry({"apiId": 1, "apiName": "A", "basePath": "/b"})
+    ]
 
     result = runner.invoke(
         app,
@@ -156,7 +171,7 @@ def test_api_list_drilldown_single_row():
     from unittest.mock import MagicMock
     mock_service = MagicMock()
     mock_service.list_apis.return_value = [
-        {"id": 400, "name": "Orchestrator Auth API", "basePath": "/orq-auth/v1", "version": "1.0.1"}
+        _entry({"apiId": 400, "apiName": "Orchestrator Auth API", "basePath": "/orq-auth/v1", "version": "1.0.1"})
     ]
 
     result = runner.invoke(app, ["sen", "list", "api", "--id", "400"], obj={"api_listing_service_factory": lambda: mock_service})
@@ -168,13 +183,11 @@ def test_api_list_drilldown_single_row():
 
 def test_api_list_insufficient_session_translates_error():
     from unittest.mock import MagicMock
-    from apiops_orchestrator.domain.models.api_collection_model import (
+    from apiops_orchestrator.application.exceptions.listing_exceptions import (
         InsufficientSessionError,
     )
     mock_service = MagicMock()
-    mock_service.list_apis.side_effect = InsufficientSessionError(
-        "Sua sessão não possui grupos de acesso"
-    )
+    mock_service.list_apis.side_effect = InsufficientSessionError()
 
     result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service_factory": lambda: mock_service})
 
@@ -196,11 +209,12 @@ def test_api_list_json():
     """Test 'list api --output json'."""
     from unittest.mock import MagicMock
     mock_service = MagicMock()
-    data = [{"id": 1, "name": "API 1", "basePath": "/api1"}]
-    mock_service.list_apis.return_value = data
-    
+    mock_service.list_apis.return_value = [
+        _entry({"apiId": 1, "apiName": "API 1", "basePath": "/api1"})
+    ]
+
     result = runner.invoke(app, ["sen", "list", "api", "--output", "json"], obj={"api_listing_service_factory": lambda: mock_service})
-    
+
     assert result.exit_code == 0
     # The output contains rich syntax highlighting, so we check for key parts
     assert '"id": 1' in result.output
@@ -210,9 +224,10 @@ def test_api_list_yaml():
     """Test 'list api --output yaml'."""
     from unittest.mock import MagicMock
     mock_service = MagicMock()
-    data = [{"id": 1, "name": "API 1", "basePath": "/api1"}]
-    mock_service.list_apis.return_value = data
-    
+    mock_service.list_apis.return_value = [
+        _entry({"apiId": 1, "apiName": "API 1", "basePath": "/api1"})
+    ]
+
     result = runner.invoke(app, ["sen", "list", "api", "-o", "yaml"], obj={"api_listing_service_factory": lambda: mock_service})
 
     assert result.exit_code == 0
@@ -228,20 +243,14 @@ def test_revisions_drill_down_renders_canonical_grade():
     from unittest.mock import MagicMock
     mock_service = MagicMock()
     mock_service.api_revisions.return_value = [
-        {
-            "revision_id": 8862,
-            "revision_number": 1,
-            "stage_name": "Stage One",
-            "environments": "Default",
-            "complete": "85%",
-        },
-        {
-            "revision_id": 8948,
-            "revision_number": 4,
-            "stage_name": "Stage One",
-            "environments": "-",
-            "complete": "85%",
-        },
+        CatalogRevisionInfo(
+            revision_id=8862, revision_number=1, stage_name="Stage One",
+            environments="Default", completeness_score=85.0,
+        ),
+        CatalogRevisionInfo(
+            revision_id=8948, revision_number=4, stage_name="Stage One",
+            environments="-", completeness_score=85.0,
+        ),
     ]
 
     result = runner.invoke(

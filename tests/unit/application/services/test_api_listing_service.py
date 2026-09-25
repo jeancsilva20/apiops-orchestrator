@@ -1,13 +1,28 @@
-﻿import pytest
+import pytest
 from unittest.mock import MagicMock, call
 from apiops_orchestrator.application.services.api_listing_service import ApiListingService
 from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
 from apiops_orchestrator.domain.ports.manager_api_port import ApiCatalogPage
-from apiops_orchestrator.domain.models.api_collection_model import (
+from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter import (
+    _translate_row,
+)
+from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
+from apiops_orchestrator.domain.models.workflow_stage_model import WorkflowStage
+from apiops_orchestrator.application.exceptions.listing_exceptions import (
     ApiCollectionError,
     InsufficientSessionError,
 )
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
+
+
+def _wire(raw) -> ApiCatalogEntry:
+    entry = _translate_row(raw)
+    assert entry is not None
+    return entry
+
+
+def _page(rows, total):
+    return ApiCatalogPage(rows=[_wire(r) for r in rows], total=total)
 
 
 def _make_session(profile: str = "developer", groups=None) -> LoginSession:
@@ -36,9 +51,9 @@ class TestApiListingService:
         return ApiListingService(manager_api=mock_manager_api)
 
     def test_list_apis_without_id(self, mock_manager_api):
-        # Arrange: listagem nascida do finder (projecao canonica)
-        mock_manager_api.list_catalog_apis.return_value = ApiCatalogPage(
-            rows=[
+        # Arrange: listagem nascida do finder (port devolve TIPADO)
+        mock_manager_api.list_catalog_apis.return_value = _page(
+            [
                 {"apiId": 1, "apiName": "API 1", "description": "d", "version": "1",
                  "basePath": "/a1", "apiLifeCycle": "DRAFT", "lastRevision": 3,
                  "contextType": "ORGANIZATION",
@@ -55,17 +70,17 @@ class TestApiListingService:
         # Act
         result = service.list_apis()
 
-        # Assert — mundo inteiro (limit omitido) numa unica chamada
-        assert [row["id"] for row in result] == [1, 2]
-        # lastRevision = ID; número resolvido pelo revisions[] local (2 e 1)
-        assert [row["lastRevision"]["revisionNumber"] for row in result] == [2, 1]
-        mock_manager_api.list_catalog_apis.assert_called_once_with(limit=1)
+        # Assert - mundo inteiro (limit omitido) numa unica chamada
+        assert [entry.id for entry in result] == [1, 2]
+        # lastRevision = ID; numero resolvido pelo revisions[] local (2 e 1)
+        assert [entry.last_revision_number() for entry in result] == [2, 1]
+        mock_manager_api.list_catalog_apis.assert_called_once_with(limit=1, query=None)
         mock_manager_api.get_apis.assert_not_called()
         mock_manager_api.get_api_by_id.assert_not_called()
 
     def test_list_apis_with_id(self, mock_manager_api):
-        # Arrange: detalhe via catálogo (opção A)
-        mock_manager_api.list_api_detail.return_value = {
+        # Arrange: detalhe via catalogo (opcao A) - port devolve entry TIPADA
+        mock_manager_api.list_api_detail.return_value = _wire({
             "apiId": 123,
             "apiName": "API 123",
             "description": "d",
@@ -77,16 +92,15 @@ class TestApiListingService:
                 {"id": 77, "revisionNumber": 8},
                 {"id": 88, "revisionNumber": 9},
             ],
-        }
+        })
         service = ApiListingService(manager_api=mock_manager_api)
 
         # Act
         result = service.list_apis(api_id=123)
 
-        # lastRevision do finder = ID (88); número vem do revisions[] local
-        assert [row["id"] for row in result] == [123]
-        by_id = {row["id"]: row for row in result}
-        assert by_id[123]["lastRevision"]["revisionNumber"] == 9
+        # lastRevision do finder = ID (88); numero vem do revisions[] local
+        assert [entry.id for entry in result] == [123]
+        assert result[0].last_revision_number() == 9
         mock_manager_api.list_api_detail.assert_called_once_with(123)
         mock_manager_api.get_api_by_id.assert_not_called()
 
@@ -96,7 +110,7 @@ class TestVisibilityOnListing:
 
     Visibilidade calculada no CLIENTE sobre contextType/contextGroupName
     (GROUP exclusivamente por grupo; contextUserLogins so pesa em ME).
-    Paginacao server-side NAO caminha (skip inerte) — service pede
+    Paginacao server-side NAO caminha (skip inerte) - service pede
     _limit = offset+limit e janela client-side (A3).
     """
 
@@ -133,8 +147,8 @@ class TestVisibilityOnListing:
     @pytest.fixture
     def mock_manager_api(self):
         mock = MagicMock(spec=ManagerApiPort)
-        mock.list_catalog_apis.return_value = ApiCatalogPage(
-            rows=[dict(row) for row in self.FINDER_ROWS], total=len(self.FINDER_ROWS)
+        mock.list_catalog_apis.return_value = _page(
+            self.FINDER_ROWS, len(self.FINDER_ROWS)
         )
         return mock
 
@@ -145,32 +159,34 @@ class TestVisibilityOnListing:
 
         result = service.list_apis()
 
-        assert [row["id"] for row in result] == [1, 2, 3, 4]
-        # lastRevision do finder = ID; número resolve no revisions[] LOCAL da linha
-        by_id = {row["id"]: row for row in result}
-        assert by_id[1]["lastRevision"]["revisionNumber"] == 3
+        assert [entry.id for entry in result] == [1, 2, 3, 4]
+        # lastRevision do finder = ID; numero resolve no revisions[] LOCAL da linha
+        by_id = {entry.id: entry for entry in result}
+        assert by_id[1].last_revision_number() == 3
         # pagina inteira ja cobre o universo (len==total): NAO ha refetch
-        assert mock_manager_api.list_catalog_apis.call_args_list == [call(limit=1)]
+        assert mock_manager_api.list_catalog_apis.call_args_list == [
+            call(limit=1, query=None)
+        ]
 
     def test_server_pagination_inert_so_universe_refetch_grows(
         self, mock_manager_api
     ):
-        """A3-1c exige universo completo: skip inerte no server → refetch com total."""
+        """A3-1c exige universo completo: skip inerte no server -> refetch com total."""
         mock_manager_api.list_catalog_apis.side_effect = [
-            ApiCatalogPage(rows=[dict(self.FINDER_ROWS[0])], total=108),
-            ApiCatalogPage(rows=[dict(r) for r in self.FINDER_ROWS], total=108),
+            _page([self.FINDER_ROWS[0]], 108),
+            _page(self.FINDER_ROWS, 108),
         ]
         service = ApiListingService(manager_api=mock_manager_api)
 
         result = service.list_apis(offset=90, limit=5)
 
-        assert [row["id"] for row in result] == []  # offset 90 além do total (4 visíveis)
+        assert [entry.id for entry in result] == []  # offset 90 alem do total (4 visiveis)
         assert mock_manager_api.list_catalog_apis.call_count == 2
-        mock_manager_api.list_catalog_apis.assert_any_call(limit=95)
-        mock_manager_api.list_catalog_apis.assert_any_call(limit=108)
+        mock_manager_api.list_catalog_apis.assert_any_call(limit=95, query=None)
+        mock_manager_api.list_catalog_apis.assert_any_call(limit=108, query=None)
 
     def test_drill_down_does_not_pay_the_enrichment_call(self, mock_manager_api):
-        mock_manager_api.list_api_detail.return_value = {
+        mock_manager_api.list_api_detail.return_value = _wire({
             "apiId": 9,
             "apiName": "Qualquer",
             "description": "d",
@@ -178,12 +194,12 @@ class TestVisibilityOnListing:
             "basePath": "/q/v1",
             "lastRevision": 900,
             "revisions": [{"id": 900, "revisionNumber": 1}],
-        }
+        })
         service = ApiListingService(manager_api=mock_manager_api)
 
         result = service.list_apis(api_id=9)
 
-        assert result[0]["lastRevision"]["revisionNumber"] == 1
+        assert result[0].last_revision_number() == 1
         mock_manager_api.list_catalog_apis.assert_not_called()
 
     def test_without_session_passes_through_unfiltered_legacy(
@@ -193,7 +209,7 @@ class TestVisibilityOnListing:
 
         result = service.list_apis()
 
-        assert [row["id"] for row in result] == [1, 2, 3, 4]
+        assert [entry.id for entry in result] == [1, 2, 3, 4]
 
     def test_developer_session_filters_by_visibility(self, mock_manager_api):
         service = ApiListingService(
@@ -203,15 +219,15 @@ class TestVisibilityOnListing:
 
         result = service.list_apis()
 
-        # developer em APIOps vê ORGANIZATION (1) + GROUP APIOps (2);
+        # developer em APIOps ve ORGANIZATION (1) + GROUP APIOps (2);
         # ME alheia (3) some; Shared-ME (4) aparece via contextUserLogins
-        assert [row["id"] for row in result] == [1, 2, 4]
+        assert [entry.id for entry in result] == [1, 2, 4]
 
     def test_group_context_denied_when_only_in_context_user_logins(
         self, mock_manager_api
     ):
-        # Restrição selada: GROUP exige pertença ao GRUPO — a lista de logins
-        # não concede. isaac NÃO está em APIOps aqui.
+        # Restricao selada: GROUP exige pertenca ao GRUPO - a lista de logins
+        # nao concede. isaac NAO esta em APIOps aqui.
         service = ApiListingService(
             manager_api=mock_manager_api,
             session=_make_session(groups=["OutroGrupo"]),
@@ -219,7 +235,7 @@ class TestVisibilityOnListing:
 
         result = service.list_apis()
 
-        assert [row["id"] for row in result] == [1, 4]
+        assert [entry.id for entry in result] == [1, 4]
 
     def test_super_admin_session_sees_everything(self, mock_manager_api):
         service = ApiListingService(
@@ -229,7 +245,7 @@ class TestVisibilityOnListing:
 
         result = service.list_apis()
 
-        assert [row["id"] for row in result] == [1, 2, 3, 4]
+        assert [entry.id for entry in result] == [1, 2, 3, 4]
 
     def test_developer_session_without_groups_blocked(
         self, mock_manager_api
@@ -252,10 +268,10 @@ class TestVisibilityOnListing:
     def test_drill_down_by_id_ignores_visibility_session(
         self, mock_manager_api
     ):
-        mock_manager_api.list_api_detail.return_value = {
+        mock_manager_api.list_api_detail.return_value = _wire({
             "apiId": 9, "apiName": "Qualquer", "description": "d",
             "version": "1", "basePath": "/q/v1",
-        }
+        })
         session = MagicMock(spec=LoginSession)
         session.is_super_admin = False
         session.userName = "isaac.machado"
@@ -264,16 +280,16 @@ class TestVisibilityOnListing:
         service = ApiListingService(manager_api=mock_manager_api, session=session)
         result = service.list_apis(api_id=9)
 
-        assert [row["id"] for row in result] == [9]
+        assert [entry.id for entry in result] == [9]
 
 
 class TestApiRevisionsOrchestration:
-    """Task 6 — drill-down de revisões, opção A (fonte única = frame do catálogo)."""
+    """Task 6 - drill-down de revisoes, opcao A (fonte unica = frame do catalogo)."""
 
     @pytest.fixture
     def mock_manager_api(self):
         mock = MagicMock(spec=ManagerApiPort)
-        mock.list_api_detail.return_value = {
+        mock.list_api_detail.return_value = _wire({
             "apiId": 400,
             "apiName": "Orchestrator Auth API",
             "revisions": [
@@ -294,49 +310,47 @@ class TestApiRevisionsOrchestration:
                 {"workflowId": 139, "workflowStageId": 753, "apiRevision": 8876},
                 {"workflowId": 139, "workflowStageId": 420, "apiRevision": 8882},
             ],
-        }
+        })
         return mock
 
     def test_one_catalog_call_rows_ordered_stage_names_complete(
         self, mock_manager_api
     ):
         mock_manager_api.get_workflow_stages.return_value = [
-            {"workflowStageId": 420, "workflowStageName": "Stage One"},
-            {"workflowStageId": 753, "workflowStageName": "Teste"},
+            WorkflowStage(workflowStageId=420, workflowStageName="Stage One"),
+            WorkflowStage(workflowStageId=753, workflowStageName="Teste"),
         ]
         service = ApiListingService(manager_api=mock_manager_api)
 
         rows = service.api_revisions(400)
 
-        assert [row["revision_id"] for row in rows] == [8862, 8876, 8882]
-        assert [row["revision_number"] for row in rows] == ["1", "2", "3"] or [
-            row["revision_number"] for row in rows
-        ] == [1, 2, 3]
-        assert rows[0]["stage_name"] == "Stage One"
-        assert rows[1]["stage_name"] == "Teste"
-        assert rows[0]["complete"] == "85%"
-        assert rows[2]["complete"] == "-"
+        assert [row.revision_id for row in rows] == [8862, 8876, 8882]
+        assert [row.revision_number for row in rows] == [1, 2, 3]
+        assert rows[0].stage_name == "Stage One"
+        assert rows[1].stage_name == "Teste"
+        assert rows[0].completeness_score == 85.0
+        assert rows[2].completeness_score is None
 
-        # economia: 1 chamada de frame + 1 de stages (workflow 139 único)
+        # economia: 1 chamada de frame + 1 de stages (workflow 139 unico)
         mock_manager_api.list_api_detail.assert_called_once_with(400)
         mock_manager_api.get_workflow_stages.assert_called_once_with(139)
 
     def test_stage_failure_degrades_to_workflow_id(self, mock_manager_api):
-        mock_manager_api.get_workflow_stages.side_effect = RuntimeError("gov down")
+        mock_manager_api.get_workflow_stages.return_value = []
         service = ApiListingService(manager_api=mock_manager_api)
 
         rows = service.api_revisions(400)
 
-        assert all(row["stage_name"] == 139 for row in rows)
+        assert all(row.stage_name == 139 for row in rows)
 
     def test_created_and_last_deploy_are_placeholder_cells(self, mock_manager_api):
         service = ApiListingService(manager_api=mock_manager_api)
 
         rows = service.api_revisions(400)
 
-        # opção A: células não existentes no frame NEM entram nas linhas
-        assert all("created" not in row for row in rows)
-        assert all("last_deploy" not in row for row in rows)
+        # opcao A: celulas nao existentes no frame NEM entram nas linhas
+        assert all(not hasattr(row, "created") for row in rows)
+        assert all(not hasattr(row, "last_deploy") for row in rows)
 
     def test_not_found_raises_friendly_error(self, mock_manager_api):
         mock_manager_api.list_api_detail.return_value = None

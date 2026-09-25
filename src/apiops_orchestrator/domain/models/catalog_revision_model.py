@@ -25,7 +25,7 @@ class CatalogRevisionInfo:
     revision_number: int
     stage_name: Any
     environments: str
-    complete: str
+    completeness_score: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -33,5 +33,5 @@ class CatalogRevisionInfo:
             "revision_number": self.revision_number,
             "stage_name": self.stage_name,
             "environments": self.environments,
-            "complete": self.complete,
+            "completeness_score": self.completeness_score,
         }
