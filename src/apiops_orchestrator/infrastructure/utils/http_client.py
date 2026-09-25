@@ -1,5 +1,6 @@
 import logging
 import time
+
 import requests
 import typer
 from requests.exceptions import HTTPError, RequestException
@@ -21,12 +22,22 @@ class HttpClient:
             headers=None,
             max_retries: int = 3,
             interval: float = 5,
+            report_client_errors: bool = True,
+            return_headers: bool = False,
             **kwargs,
     ):
         """
-        Send an http request and retries in case of 5xx errors
+        Send an http request and retries in case of 5xx errors.
 
-        Returns: JSON or text
+        report_client_errors: when True (legacy default), prints the RFC 7807 body of
+        4xx responses to stderr; callers owning their own error UX (e.g. sen login)
+        pass False to keep messages exclusive to the service layer.
+
+        return_headers: default False devolve apenas o payload (contrato
+        histórico); True devolve (payload, headers-lowercase) — para when the
+        SERVER speaks through headers (ex.: api-finder `count`/`content-range`
+        = total do universo). Sao headers da propria resposta, logo um fetch
+        e tanto — so muda o formato de retorno.
         """
         logger = logging.getLogger(__name__)
         set_span_id()
@@ -53,10 +64,20 @@ class HttpClient:
                             raise Exception(f"Failed after {max_retries} retries, with {response.status_code} status")
                     response.raise_for_status()
                     try:
+                        response_headers = {
+                            key.lower(): value for key, value in response.headers.items()
+                        }
                         set_status("SUCCESS")
                         clear_operation_context()
-                        return response.json()
+                        payload = response.json()
+                        if return_headers:
+                            return payload, response_headers
+                        return payload
                     except ValueError:
+                        if return_headers:
+                            if response.text:
+                                return response.text, {}
+                            return {}, {}
                         if response.text:
                             return response.text
                         return {}
@@ -70,10 +91,11 @@ class HttpClient:
                         if 400 <= status_code < 500:
                             logger.debug(f"Client Error ({status_code}): {e}")
 
-                            rfc_error = HttpErrorMapper.map_to_rfc7807(e.response)
+                            if report_client_errors:
+                                rfc_error = HttpErrorMapper.map_to_rfc7807(e.response)
 
-                            error_console.print("\n[bold red] Error in Request:[/bold red]")
-                            error_console.print_json(data=rfc_error)
+                                error_console.print("\n[bold red] Error in Request:[/bold red]")
+                                error_console.print_json(data=rfc_error)
 
                             clear_operation_context()
                             raise typer.Exit(code=1)

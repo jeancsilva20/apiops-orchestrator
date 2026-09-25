@@ -83,7 +83,7 @@ class JsonToYamlService:
 
             return yaml_parts
         except Exception as e:
-            self.logger.error(f"Error building YAMLs", exc_info=e)
+            self.logger.error("Error building YAMLs", exc_info=e)
             raise
 
     def _create_api_basic_info_part(self) -> Dict[str, Any]:
@@ -117,7 +117,7 @@ class JsonToYamlService:
             self.logger.info("Basic information YAML document created successfully")
             return result
         except Exception as e:
-            self.logger.error(f"Error creating API basic information", exc_info=e)
+            self.logger.error("Error creating API basic information", exc_info=e)
             raise
 
     def _create_interceptors_part(self) -> Dict[str, Any]:
@@ -256,7 +256,7 @@ class JsonToYamlService:
             return ops_refs, operation_files
         except Exception as e:
             self.logger.error(
-                f"Error creating operation files and references", exc_info=e
+                "Error creating operation files and references", exc_info=e
             )
             raise
 

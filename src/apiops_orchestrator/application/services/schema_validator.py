@@ -6,7 +6,6 @@ from apiops_orchestrator.domain.ports.local_file_importer_port import LocalFileI
 from apiops_orchestrator.infrastructure.observability.logging import (
     log_duration,
     set_span_id,
-    clear_operation_context,
     set_status,
 )
 
