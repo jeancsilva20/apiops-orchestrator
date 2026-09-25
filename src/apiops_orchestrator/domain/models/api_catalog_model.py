@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from apiops_orchestrator.domain.models.catalog_revision_model import CatalogRevision
 
@@ -10,15 +10,6 @@ class OwnershipContext(StrEnum):
     ORGANIZATION = "organization"
     ME = "me"
     GROUP = "group"
-
-
-def _to_ownership_context(value: Any) -> Optional[OwnershipContext]:
-    if value is None:
-        return None
-    try:
-        return OwnershipContext(str(value).strip().lower())
-    except ValueError:
-        return None
 
 
 class ApiCatalogEntry(BaseModel):
@@ -40,12 +31,6 @@ class ApiCatalogEntry(BaseModel):
     lastRevisionNumber: Optional[int] = None
 
     revisions: List[CatalogRevision] = Field(default_factory=list)
-
-    @field_validator("contextType", mode="before")
-    @classmethod
-    def _tolerate_unknown_context(cls, value: Any) -> Any:
-        return _to_ownership_context(value)
-
 
     def to_listing_dict(self) -> Dict[str, Any]:
         return {

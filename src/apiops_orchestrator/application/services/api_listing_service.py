@@ -1,4 +1,4 @@
-﻿from typing import Any, List, Optional
+﻿from typing import Any, Dict, List, Optional
 
 from apiops_orchestrator.application.exceptions.listing_exceptions import (
     ApiNotFound,
@@ -113,15 +113,11 @@ class ApiListingService:
             rows, total = list(page.rows), page.total
         return rows
 
-    def _resolve_stage_names(self, workflow_ids: List[int]) -> dict[int, Any]:
-        resolved: dict[int, Any] = {}
+    def _resolve_stage_names(self, workflow_ids: List[int]) -> Dict[int, Optional[str]]:
+        resolved: Dict[int, Optional[str]] = {}
         for workflow_id in workflow_ids:
-            try:
-                for stage in self.manager_api.get_workflow_stages(workflow_id):
-                    if isinstance(stage, dict) and stage.get("workflowStageId") is not None:
-                        resolved[stage["workflowStageId"]] = stage.get("workflowStageName")
-            except Exception:
-                continue
+            for stage in self.manager_api.get_workflow_stages(workflow_id):
+                resolved[stage.workflowStageId] = stage.workflowStageName
         return resolved
 
     def _filter_visibility(

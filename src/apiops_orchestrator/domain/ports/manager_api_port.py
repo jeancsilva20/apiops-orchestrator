@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Dict, Any, List, Optional
 
 from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
+from apiops_orchestrator.domain.models.workflow_stage_model import WorkflowStage
 
 
 @dataclass(frozen=True)
@@ -29,8 +30,8 @@ class ManagerApiPort(ABC):
         pass
 
     @abstractmethod
-    def get_api_by_id(self, api_id: int) -> Dict[str, Any]:
-        """Contract to search data from the API by ID """
+    def get_api_by_id(self, api_id: Optional[int] = None) -> Dict[str, Any]:
+        """Contract to search data from the API by ID (manager)"""
         pass
 
     @abstractmethod
@@ -39,7 +40,7 @@ class ManagerApiPort(ABC):
         pass
 
     @abstractmethod
-    def get_workflow_stages(self, workflow_id: int) -> list[Dict[str, Any]]:
+    def get_workflow_stages(self, workflow_id: int) -> List[WorkflowStage]:
         """Contract to fetch the stages catalog of one workflow."""
         pass
 
