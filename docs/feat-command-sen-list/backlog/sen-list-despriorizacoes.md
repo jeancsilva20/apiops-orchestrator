@@ -30,3 +30,25 @@ Comprovado: corta interceptors/resources dos payloads de detail/revisões. Vale 
 
 - Ordenação alternativa client-side (`--sort name|version`) — hoje: `id asc` fixo (decisão A3-1a);
 - Export do resultado da listagem em arquivo (ex.: `--out json`) — candidato a acompanhar o canal de máquina.
+
+---
+
+## Pendências registradas no fechamento do change `add-sen-list` (25/09/2026)
+
+> Sobras de tasks do change, com nota do bloqueio comum: **nenhum smoke com credencial real foi executado** (sessão `.sen_session` expirada; `sen login` dependente de `SEN_CREDENTIALS` — mesmo bloqueio registrado no change irmão `add-sen-entrypoint`, task 2.2).
+
+### Bloqueadas pelo smoke de login (executar quando houver credencial)
+
+- **[task 7.2]** Smoke read-only E2: `sen list api --limit 5` + drill-down da API 400 (somente GETs). Evidência parcial já colhida: sem sessão válida, a CLI apresenta a mensagem educativa "Sessão inválida ou ausente: faça `sen login`…" com **rc 1** (comportamento correto, validado em 25/09).
+
+### Trabalho remanescente fora da fatia (D3/E1)
+
+- **[task 3.1]** Extrair o fluxo legacy para `scripts/generate_api_json.py` (com `--repo`/`--revision`: validação de estrutura + schema + conversão `ApiFull`), tirando-o de `main.py`. Fluxo bare permanece em `run_bare_pipeline` até lá (decisão D3).
+- **[task 3.2]** Auditar `pipeline.yaml`/`bitbucket-pipelines.yml` atrás de `python main.py` pelados e ajustar para o ponto de entrada definitivo após a extração.
+- **[task 6.3]** Catálogo humano de erros E1: 403 (permissão), 404 já live no drill-down (fundido educativo), rede caída → todos `exit 1` com texto amigável. Depende de resgatar a infra de `HttpCallError` (leva descartada); o 401 já está homogeneizado via `AuthenticationRejectedError`.
+
+### Qualidade global (transversal, não exclusiva do sen list)
+
+- **[task 7.1 — débito]** `mypy` nunca foi configurado no projeto (sem `[tool.mypy]`/`py.typed`): 132 erros pré-existentes em 31 arquivos ao tipar `src`. Precisa de setup próprio (cards/config) antes de virar gate.
+- **[task 7.1 — débito]** `black --check` reprova em 45 arquivos (formatação histórica divergente). Sanabilidade com um `poetry run black .` isolado, mas gera diff grande — agendar em leva separada.
+- `ruff` ficou limpo no fechamento (21 débits pontuais sanados: F401/F541/F841/E731).

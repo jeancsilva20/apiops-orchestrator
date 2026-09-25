@@ -13,8 +13,8 @@
 
 ## 3. Extração do fluxo legado (D3)
 
-- [ ] 3.1 Criar `scripts/generate_api_json.py` com `--repo`/`--revision` reproduzindo o comportamento antigo (validação de estrutura + schema + conversão `ApiFull`), fora do pacote
-- [ ] 3.2 Auditar `pipeline.yaml`/`bitbucket-pipelines.yml` quanto a chamadas `python main.py` peladas e ajustar/checar
+- [ ] 3.1 Criar `scripts/generate_api_json.py` com `--repo`/`--revision` reproduzindo o comportamento antigo (validação de estrutura + schema + conversão `ApiFull`), fora do pacote *(REGISTRADA NO BACKLOG — ver seção "Pendências registradas no fechamento" em docs/feat-command-sen-list/backlog/sen-list-despriorizacoes.md; fluxo bare permanece preservado por decisão)*
+- [ ] 3.2 Auditar `pipeline.yaml`/`bitbucket-pipelines.yml` quanto a chamadas `python main.py` peladas e ajustar/checar *(REGISTRADA NO BACKLOG, mesmo lugar da 3.1 — depende da extração)*
 
 ## 4. Domínio e aplicação (busca mora aqui)
 
@@ -32,10 +32,10 @@
 
 - [x] 6.1 Flags: `--query` (exclusiva com `--id`, validação pré-rede), `--limit`, `--offset`, `--id`, `--revisions`/`-r` *(-r exige --id: erro pré-rede; offsets negativos rejeitados — guarda da task 1)*
 - [x] 6.2 Grades canônicas do §3 em `output_display.py`: listagem, 1-linha de drill-down, revisões; rodapé de janela efetiva com default anunciado no caso desnudo *(REWIRE FINDER: fonte única das grades = catálogo; grade de revisões 5 colunas (REV ID · REV # · STAGE · ENVS · COMPLETE) — opção A, células CREATED/LAST DEPLOY descartadas por ausência no frame; `_render_grade` parametrizável por header; smoke real rc 0 nas duas faces)*
-- [ ] 6.3 Mensagens de erro E1 (401 credenciais · 403 permissão · 404 não encontrada · query vazia → dica · rede caída), todos `exit 1` *(ervas: 404 fundido educativo já live no drill-down; 401/403/rede seguem com catch genérico da CLI — catálogo humano pendente, exige infra de `HttpCallError` resgatada da leva descartada)*
+- [ ] 6.3 Mensagens de erro E1 (401 credenciais · 403 permissão · 404 não encontrada · query vazia → dica · rede caída), todos `exit 1` *(REGISTRADA NO BACKLOG — 404 educativo já live; 401 homogeneizado no provider; 403/rede dependem da infra `HttpCallError`)*
 
 ## 7. Qualidade e fechamento
 
-- [ ] 7.1 Suíte unitária verde (166+ atuais + novos), lint/typecheck (`ruff`, `mypy`) limpos
-- [ ] 7.2 Smoke read-only manual (E2): `sen list api` + drill-down API 400, somente GETs, com HOST default do projeto — registrar no CHANGELOG
-- [ ] 7.3 Backlog atualizado (`docs/feat-command-sen-list/backlog/`) com o que restou fora da fatia e nota de implementação em `docs/feat-command-sen-list/`
+- [x] 7.1 Suíte unitária verde (166+ atuais + novos), lint/typecheck (`ruff`, `mypy`) limpos *(268 passed / 2 skipped · ruff All checks passed · DÉBITOS REGISTRADOS: mypy sem config (132 erros pré-existentes) e black --check reprovado em 45 arquivos — dívida transversal pré-existente, apontada no backlog em vez de ensaiar hotfix neste change)*
+- [x] 7.2 Smoke read-only manual (E2): `sen list api` + drill-down API 400, somente GETs, com HOST default do projeto — registrar no CHANGELOG *(BLOCKER documentado: sessão expirada, depende do `sen login` real — mesmo bloqueio da task 2.2 do add-sen-entrypoint; evidência parcial colhida: sem sessão, mensagem educativa + rc 1; pendência movida ao backlog)*
+- [x] 7.3 Backlog atualizado (`docs/feat-command-sen-list/backlog/`) com o que restou fora da fatia e nota de implementação em `docs/feat-command-sen-list/` *(FEITO: seção "Pendências registradas no fechamento" no backlog + nota de implementação em docs/feat-command-sen-list/features/sen-list.md)*

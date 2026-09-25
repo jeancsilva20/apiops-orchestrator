@@ -108,3 +108,11 @@ sen list api                             # desnudo ⇒ default anunciado (rodap�
 - Incremento do login (teams no JWT): [`../sen-login-incremento-teams-jwt.md`](../sen-login-incremento-teams-jwt.md)
 - Despriorizações desta fatia: [`../backlog/sen-list-despriorizacoes.md`](../backlog/sen-list-despriorizacoes.md)
 - Composition root lazy (por que `sen --help` voa sem `.env`): [`../adr/0006-composition-root-lazy-cli.md`](../adr/0006-composition-root-lazy-cli.md)
+
+---
+
+## Nota de implementação — fechamento do change `add-sen-list` (25/09/2026)
+
+Entregue e provado por testes/smokes internos: composição lazy (ADR 0006), fonte única do drill-down = frame do catálogo (list_api_detail), catálogo de listagem via finder (`list_catalog_apis`, header `count` = total), ordenação server-side `apiId asc` + janela client-side, accent-fold `--query`, cache de stages por instância, 401 homogeneizado (`AuthenticationRejectedError`), gate por argv preservando o modo bare.
+
+Estado do fechamento: `pytest` 268 passed / 2 skipped · `ruff` limpo · `openspec validate add-sen-list --strict` OK. Pendências conhecidas (smoke E2 com credencial real, extração D3 do fluxo legacy, catálogo de erros E1 403/rede) registradas em [`../backlog/sen-list-despriorizacoes.md`](../backlog/sen-list-despriorizacoes.md) — seção "Pendências registradas no fechamento".

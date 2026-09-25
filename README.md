@@ -40,8 +40,15 @@ Authenticates the user against the Orchestrator Auth API and saves the session l
 #    AUTH_LOGIN_PATH=/cli-2/orq-auth/v1/oauth2/token
 
 # 3. Run:
-poetry run python src/apiops_orchestrator/main.py sen login
+poetry run sen login
 ```
+
+> **Nota (console script `sen`):** o binário `sen` é criado pelo Poetry via
+> `[tool.poetry.scripts]` no `pyproject.toml`. Em ambientes criados **antes**
+> dessa seção existir, rode `poetry install` uma vez para (re)gerar o shim
+> (`poetry run where sen` confirma). A alternativa `poetry run python
+> src/apiops_orchestrator/main.py sen <comando>` continua funcionando e
+> aceita os mesmos comandos.
 
 The credential file lives in the **package directory** (`src/apiops_orchestrator/.sen`, git-ignored) — see
 [`docs/features/sen-login.md`](docs/features/sen-login.md).

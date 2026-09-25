@@ -95,7 +95,17 @@ AUTH_LOGIN_PATH="/cli-2/orq-auth/v1/oauth2/token"    # sem default em código
 
 # execução local (venv criado por scripts\setup.ps1, sem Poetry):
 .\.venv\Scripts\python.exe src\apiops_orchestrator\main.py sen login
+
+# forma canônica (console script criado pelo Poetry):
+poetry run sen login
 ```
+
+> **Instalação/regeneração do shim `sen`:** o binário vem de
+> `[tool.poetry.scripts]` (`sen = "apiops_orchestrator.main:main"`). Ambientes
+> venv criados antes dessa seção podem não ter o shim — basta rodar
+> `poetry install` novamente para gerá-lo. A invocação indireta
+> (`python .../main.py sen login`) permanece equivalente (gate por argv em
+> `main.py`).
 
 Comportamentos entregues:
 
