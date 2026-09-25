@@ -1,9 +1,7 @@
 import json
 import logging
-import threading
 import pytest
 import uuid
-from io import StringIO
 from unittest.mock import MagicMock, patch
 from enum import Enum
 

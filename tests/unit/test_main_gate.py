@@ -63,8 +63,12 @@ def recording_app(monkeypatch):
 
 def test_invoked_argv_builds_lazy_factories_and_never_runs_pipeline(recording_app, monkeypatch):
     fake_app = recording_app
-    login_marker = lambda: "LOGIN_SERVICE"
-    listing_marker = lambda: "LISTING_SERVICE"
+    def login_marker():
+        return "LOGIN_SERVICE"
+
+    def listing_marker():
+        return "LISTING_SERVICE"
+
     constructions = []
 
     def login_factory():
@@ -92,7 +96,10 @@ def test_invoked_argv_builds_lazy_factories_and_never_runs_pipeline(recording_ap
 
 def test_invoked_argv_other_commands_share_same_gate(recording_app, monkeypatch):
     fake_app = recording_app
-    listing_marker = lambda: "LISTING_SERVICE"
+
+    def listing_marker():
+        return "LISTING_SERVICE"
+
     monkeypatch.setattr(
         main_mod, "build_login_service_factory", lambda: lambda: "LOGIN_SERVICE"
     )

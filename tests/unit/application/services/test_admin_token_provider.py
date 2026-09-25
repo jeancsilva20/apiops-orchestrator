@@ -7,13 +7,11 @@ from apiops_orchestrator.adapters.outbound.http.orchestrator_auth_api.orchestrat
 )
 from apiops_orchestrator.application.exceptions.login_exceptions import (
     AuthenticationRejectedError,
-    AuthenticationUnavailableError,
 )
 from apiops_orchestrator.application.services.admin_token_provider import (
     AdminTokenProvider,
 )
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
-from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
 from apiops_orchestrator.infrastructure.secure_storage.session_store import (
     SessionStore,
 )

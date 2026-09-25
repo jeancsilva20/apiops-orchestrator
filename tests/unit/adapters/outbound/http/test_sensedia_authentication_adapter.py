@@ -26,7 +26,6 @@ def test_authenticate_success(mock_request, adapter):
 
 @patch(MOCK_PATH)
 def test_authenticate_propagates_exception(mock_request, adapter):
-    import requests
     mock_response = Mock()
     mock_response.status_code = 401
     mock_response.url = "http://fake"
