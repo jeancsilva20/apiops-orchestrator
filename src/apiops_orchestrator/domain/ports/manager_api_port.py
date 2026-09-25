@@ -1,18 +1,15 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
+
+from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
 
 
 @dataclass(frozen=True)
 class ApiCatalogPage:
-    """Uma pagina do catalogo (api-finder) com o total do universo.
+    """Uma pagina do catalogo (api-finder) com o total de registros."""
 
-    `total` vem do header `count` — o server fala o tamanho do universo
-    (sondas r5b: count=108 com _limit=10). Serve para rodapes e para
-    offset-beyond-total sem guessing.
-    """
-
-    rows: list[Dict[str, Any]]
+    rows: List[ApiCatalogEntry]
     total: int
 
 
@@ -26,42 +23,24 @@ class ManagerApiPort(ABC):
     def list_catalog_apis(
         self,
         limit: int,
-        order_by: str = "apiId",
-        sort: str = "asc",
+        query: Optional[str] = None,
     ) -> ApiCatalogPage:
-        """Fonte da LISTAGEM de `sen list api` — catalogo api-finder.
-
-        GET /api-finder/api/v3/apis com onlyMyContextApi=false (visibilidade
-        eh calculada pelo CLIENTE sobre contextType/contextGroupName).
-        Medido em sondas (r5c, 21/09/2026): o servidor NAO caminha com
-        skip/offset/page (inertes) — o `_limit` apenas TRUNCA a janela iniciada
-        na posicao 0 da ordenacao; offset profundo eh client-side (service
-        pede `_limit = offset + limit` e faz o slice). Row shape:
-        {apiId, apiName, description, version, creationDate, updateDate,
-        basePath, owner, contextType, contextGroupName, contextUserLogins,
-        apiLifeCycle, lastRevision(NUMERO), plans[], ...}.
-        """
+        """Contract to search the APIs catalog with query filter."""
         pass
 
     @abstractmethod
     def get_api_by_id(self, api_id: int) -> Dict[str, Any]:
-        """Contract to search data from the API by ID (manager)"""
+        """Contract to search data from the API by ID """
         pass
 
     @abstractmethod
-    def list_api_detail(self, api_id: int) -> Optional[Dict[str, Any]]:
-        """Search API detail from the CATALOG (api-finder, customSearch=(apiId:{id}))."""
+    def list_api_detail(self, api_id: int) -> Optional[ApiCatalogEntry]:
+        """Search API detail from the CATALOG."""
         pass
 
     @abstractmethod
     def get_workflow_stages(self, workflow_id: int) -> list[Dict[str, Any]]:
-        """Contract to fetch the stages catalog of one workflow.
-
-        GET /api-governance/api/v3/workflows/{id}/stages (DIFFERENT base path
-        from the manager calls) — consumed via a per-execution cache (one call
-        per distinct workflow, never per row). Each row:
-        {workflowStageId, workflowStageName, position, deployableEnvironments, ...}.
-        """
+        """Contract to fetch the stages catalog of one workflow."""
         pass
 
     @abstractmethod
