@@ -2,9 +2,12 @@ from unittest.mock import MagicMock
 
 import pytest
 import requests
-import typer
 
 from apiops_orchestrator.infrastructure.utils.http_client import HttpClient
+from apiops_orchestrator.infrastructure.exceptions.http_client_exceptions import (
+    HttpClient4xxError,
+    HttpClientServerError,
+)
 
 
 def _unauthorized_response():
@@ -21,45 +24,58 @@ def _unauthorized_response():
     return response
 
 
-def test_report_client_errors_true_keeps_legacy_stdout_report(monkeypatch, capfd):
+def test_4xx_raises_typed_error_with_mapped_rfc7807_details(monkeypatch):
     monkeypatch.setattr(requests, "request", MagicMock(return_value=_unauthorized_response()))
 
-    with pytest.raises(typer.Exit):
-        HttpClient.request(
-            method="POST",
-            url="https://api.example.com/token",
-            report_client_errors=True,
-        )
+    with pytest.raises(HttpClient4xxError) as excinfo:
+        HttpClient.request(method="POST", url="https://api.example.com/token")
 
-    captured = capfd.readouterr()
-    combined = captured.out + captured.err
-    assert "Unauthorized" in combined
-    assert "401" in combined
+    error = excinfo.value
+    assert error.status_code == 401
+    assert error.title == "Unauthorized"
+    assert "Authentication required" in error.detail
+    assert error.url == "https://api.example.com/cli-2/orq-auth/v1/oauth2/token"
+    assert "Unauthorized (401)" in str(error)
+    assert "Authentication required" in str(error)
 
 
-def test_report_client_errors_false_suppresses_response_body_report(monkeypatch, capfd):
+def test_4xx_never_prints_to_stdout_or_stderr(monkeypatch, capfd):
+    """Cliente neutro: a apresentação do problema é de quem chama (UX própria)."""
     monkeypatch.setattr(requests, "request", MagicMock(return_value=_unauthorized_response()))
 
-    with pytest.raises(typer.Exit):
-        HttpClient.request(
-            method="POST",
-            url="https://api.example.com/token",
-            report_client_errors=False,
-        )
-
-    captured = capfd.readouterr()
-    combined = captured.out + captured.err
-    assert "Unauthorized" not in combined
-    assert "Authentication required" not in combined
-    assert '"status"' not in combined
-
-
-def test_report_client_errors_defaults_to_true(monkeypatch, capfd):
-    monkeypatch.setattr(requests, "request", MagicMock(return_value=_unauthorized_response()))
-
-    with pytest.raises(typer.Exit):
+    with pytest.raises(HttpClient4xxError):
         HttpClient.request(method="POST", url="https://api.example.com/token")
 
     captured = capfd.readouterr()
-    combined = captured.out + captured.err
-    assert "Unauthorized" in combined
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_4xx_raises_the_same_typed_contract_regardless_of_caller(monkeypatch):
+    """Não existe mais modo silencioso: todo 4xx sinaliza tipado pela mesma porta."""
+    monkeypatch.setattr(requests, "request", MagicMock(return_value=_unauthorized_response()))
+
+    with pytest.raises(HttpClient4xxError):
+        HttpClient.request(method="GET", url="https://api.example.com/resource")
+
+
+def test_5xx_after_retries_raises_typed_server_error(monkeypatch):
+    def exhausted_response():
+        response = MagicMock(spec=requests.Response)
+        response.status_code = 503
+        response.url = "https://api.example.com/token"
+        return response
+
+    responses = [exhausted_response() for _ in range(3)]
+    monkeypatch.setattr(requests, "request", MagicMock(side_effect=responses))
+
+    with pytest.raises(HttpClientServerError) as excinfo:
+        HttpClient.request(
+            method="POST",
+            url="https://api.example.com/token",
+            max_retries=2,
+            interval=0,
+        )
+
+    assert "503" in str(excinfo.value)
+    assert "after 2 retries" in str(excinfo.value)

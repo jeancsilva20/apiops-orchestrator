@@ -1,12 +1,8 @@
 import logging
 import os
 
-import typer
 from pydantic import ValidationError
 
-from apiops_orchestrator.adapters.outbound.http.orchestrator_auth_api.orchestrator_auth_adapter import (
-    build_login_url,
-)
 from apiops_orchestrator.application.exceptions.login_exceptions import (
     AuthenticationRejectedError,
     AuthenticationUnavailableError,
@@ -18,20 +14,25 @@ from apiops_orchestrator.application.exceptions.login_exceptions import (
 from apiops_orchestrator.config import settings as settings_module
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.models.login_session_model import (
+    LOGIN_PROTOCOL_PROFILE_REQUIRED_KEYS,
     PROFILE_DEVELOPER,
-    PROFILE_SUPER_ADMIN,
     LoginSession,
 )
-from apiops_orchestrator.domain.ports.orchestrator_auth_port import OrchestratorAuthPort
+from apiops_orchestrator.domain.ports.orchestrator_auth_port import (
+    AuthEndpointNotConfiguredError,
+    AuthTransportRejectedError,
+    AuthTransportUnavailableError,
+    OrchestratorAuthPort,
+)
+from apiops_orchestrator.domain.ports.session_store_port import (
+    SessionStoreError,
+    SessionStorePort,
+)
 from apiops_orchestrator.infrastructure.observability.logging import (
     clear_operation_context,
     log_duration,
     set_span_id,
     set_status,
-)
-from apiops_orchestrator.infrastructure.secure_storage.session_store import (
-    SessionStorageError,
-    SessionStore,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,11 +43,6 @@ REQUIRED_SESSION_FIELDS = (
     "expires_in",
     "extra_info",
 )
-
-PROFILE_REQUIRED_FIELDS = {
-    PROFILE_DEVELOPER: ("scope", "user_name", "user_email", "user_groups"),
-    PROFILE_SUPER_ADMIN: ("scope", "admin_access_token"),
-}
 
 PAYLOAD_INVALID_MESSAGE = "Falha na autenticação. " "Tente efetuar login novamente."
 
@@ -63,10 +59,17 @@ def resolve_credential(settings: Settings) -> str:
 
 
 class LoginService:
+    """Casos de uso do fluxo `sen login`.
+
+    Dependências: SOMENTE ports (`OrchestratorAuthPort`,
+    `SessionStorePort`) e configuração. Nenhum import de adapter, infra
+    ou framework de inbound chega a este módulo.
+    """
+
     def __init__(
         self,
         auth_adapter: OrchestratorAuthPort,
-        session_store: SessionStore,
+        session_store: SessionStorePort,
         settings: Settings,
     ) -> None:
         self.auth_adapter = auth_adapter
@@ -96,17 +99,6 @@ class LoginService:
         self._log_active_sources()
         credential = resolve_credential(self.settings)
         logger.info("auth.credentials.source resolved_from=SEN_CREDENTIALS")
-        try:
-            build_login_url(self.settings)
-        except RuntimeError as exc:
-            detail = str(exc)
-            if "AUTH_LOGIN_PATH" in detail:
-                raise LoginError(
-                    "Path de autenticação não configurado: defina AUTH_LOGIN_PATH."
-                ) from exc
-            raise LoginError(
-                "Endpoint de autenticação não configurado: defina AUTH_HOST."
-            ) from exc
         return credential
 
     @staticmethod
@@ -124,15 +116,26 @@ class LoginService:
         )
 
     def _perform_login(self, credential: str) -> dict:
+        """Chama o port e traduz os sinais de contrato em erros categorizados.
+
+        O guard de endpoint é antecipado aqui (fail-fast observável como
+        categoria antes da rede, pois o adapter valida URL pré-request).
+        Exceções fora do contrato do port são rede de segurança → unavailable.
+        """
         try:
             with log_duration("auth.login.request"):
                 return self.auth_adapter.login(credential)
-        except typer.Exit:
+        except AuthEndpointNotConfiguredError as exc:
+            raise LoginError(str(exc)) from exc
+        except AuthTransportRejectedError:
             raise AuthenticationRejectedError(
                 "Credencial recusada."
             )
-        except LoginError:
-            raise
+        except AuthTransportUnavailableError:
+            logger.exception("auth.login.network_failure")
+            raise AuthenticationUnavailableError(
+                "API de autenticação indisponível ou falha de conexão após tentativas."
+            )
         except Exception:
             logger.exception("auth.login.network_failure")
             raise AuthenticationUnavailableError(
@@ -154,7 +157,7 @@ class LoginService:
             raise LoginProtocolError(PAYLOAD_INVALID_MESSAGE)
         try:
             profile = str(extra_info.get("profile") or "")
-            if profile not in PROFILE_REQUIRED_FIELDS:
+            if profile not in LOGIN_PROTOCOL_PROFILE_REQUIRED_KEYS:
                 self._log_payload_invalid(
                     ["profile"], reason=f"unsupported_profile={profile}"
                 )
@@ -166,7 +169,7 @@ class LoginService:
                 raise LoginProtocolError(PAYLOAD_INVALID_MESSAGE)
             missing_by_profile = [
                 field
-                for field in PROFILE_REQUIRED_FIELDS[profile]
+                for field in LOGIN_PROTOCOL_PROFILE_REQUIRED_KEYS[profile]
                 if not extra_info.get(field)
             ]
             if missing_by_profile:
@@ -215,5 +218,5 @@ class LoginService:
     def _persist(self, session: LoginSession) -> None:
         try:
             self.session_store.save(session)
-        except SessionStorageError as exc:
+        except SessionStoreError as exc:
             raise SessionPersistenceError(str(exc)) from exc

@@ -9,18 +9,19 @@ from pydantic import ValidationError
 
 from apiops_orchestrator.config import settings as settings_module
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
+from apiops_orchestrator.domain.ports.session_store_port import (
+    SessionStoreError,
+    SessionStorePort,
+)
 
 logger = logging.getLogger(__name__)
 
 SESSION_FILE_NAME = ".sen_session"
 
 
-class SessionStorageError(Exception):
-    """Raised when the local session file cannot be persisted. Never carries session content."""
-
-
-class SessionStore:
-    """Stores the login session in a hidden, atomically-written file.
+class SessionStore(SessionStorePort):
+    """Outbound adapter do port `SessionStorePort`: grava a sessão em arquivo
+    oculto, com escrita atômica e permissões restritivas.
 
     Default destination is the package directory (`PACKAGE_ROOT`), co-located
     with the `.sen` credential file; callers may inject another `directory`
@@ -61,7 +62,7 @@ class SessionStore:
                     temp_path.unlink(missing_ok=True)
                 except OSError:
                     logger.warning("auth.storage.temp_cleanup_failed")
-            raise SessionStorageError(
+            raise SessionStoreError(
                 "Não foi possível gravar a sessão local (verifique as permissões do diretório do aplicativo)."
             ) from exc
 

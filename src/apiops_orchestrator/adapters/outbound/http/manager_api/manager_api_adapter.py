@@ -1,7 +1,14 @@
 import logging
 from typing import Dict, Any, List, Optional
 
-from apiops_orchestrator.domain.ports.manager_api_port import ApiCatalogPage, ManagerApiPort
+from requests.exceptions import RequestException
+
+from apiops_orchestrator.domain.ports.manager_api_port import (
+    ApiCatalogPage,
+    ManagerApiPort,
+    ManagerApiTransportRejectedError,
+    ManagerApiTransportUnavailableError,
+)
 from apiops_orchestrator.domain.models.api_catalog_model import (
     ApiCatalogEntry,
     OwnershipContext,
@@ -9,6 +16,10 @@ from apiops_orchestrator.domain.models.api_catalog_model import (
 from apiops_orchestrator.domain.models.catalog_revision_model import CatalogRevision
 from apiops_orchestrator.domain.models.workflow_stage_model import WorkflowStage
 from apiops_orchestrator.config.settings import Settings
+from apiops_orchestrator.infrastructure.exceptions.http_client_exceptions import (
+    HttpClient4xxError,
+    HttpClientServerError,
+)
 from apiops_orchestrator.infrastructure.utils.http_client import HttpClient
 
 logger = logging.getLogger(__name__)
@@ -180,17 +191,38 @@ class ManagerApiAdapter(ManagerApiPort):
         base_path: Optional[str] = None,
         **kwargs,
     ) -> Any:
+        """Executa a chamada e traduz transporte → sinais do port.
+
+        Mesma fronteira de tradução do OrchestratorAuthAdapter: exceções do
+        HttpClient/requests NÃO atravessam — o consumidor do port só vê os
+        dois desfechos de falha tipados. Demais exceções inesperadas
+        atravessam (rede de segurança no caller).
+        """
         path_prefix = base_path if base_path is not None else self.base_path
         url = f"{self.host}{path_prefix}{endpoint}"
         headers = self._get_headers()
 
-        return HttpClient.request(
-            method=method,
-            url=url,
-            headers=headers,
-            max_retries=self.max_retries,
-            **kwargs
-        )
+        try:
+            return HttpClient.request(
+                method=method,
+                url=url,
+                headers=headers,
+                max_retries=self.max_retries,
+                **kwargs
+            )
+        except HttpClient4xxError as exc:
+            logger.info("manager_api.transport.rejected status_code=%s", exc.status_code)
+            raise ManagerApiTransportRejectedError(
+                status_code=exc.status_code, title=exc.title
+            ) from exc
+        except HttpClientServerError as exc:
+            logger.info("manager_api.transport.unavailable reason=server_error")
+            raise ManagerApiTransportUnavailableError(str(exc)) from exc
+        except RequestException as exc:
+            logger.info("manager_api.transport.unavailable reason=connection_failure")
+            raise ManagerApiTransportUnavailableError(
+                "Manager API connection failed or timed out"
+            ) from exc
 
     def get_apis(self) -> list[Dict[str, Any]]:
         endpoint = "apis"
@@ -201,7 +233,6 @@ class ManagerApiAdapter(ManagerApiPort):
             "GET",
             "apis",
             base_path=FINDER_BASE_PATH,
-            report_client_errors=False,
             return_headers=True,
             params={"customSearch": f"(apiId:{api_id})"},
         )
@@ -229,7 +260,6 @@ class ManagerApiAdapter(ManagerApiPort):
             "GET",
             "apis",
             base_path=FINDER_BASE_PATH,
-            report_client_errors=False,
             return_headers=True,
             params=params,
         )

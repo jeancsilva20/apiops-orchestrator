@@ -6,6 +6,26 @@ from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
 from apiops_orchestrator.domain.models.workflow_stage_model import WorkflowStage
 
 
+class ManagerApiError(Exception):
+    """Base dos sinais de contrato do port do API Manager/Finder."""
+
+
+class ManagerApiTransportRejectedError(ManagerApiError):
+    """A plataforma Manager/Finder recusou o pedido (HTTP 4xx).
+
+    Carrega `status_code` para diagnóstico; mensagem é neutra de tecnologia.
+    """
+
+    def __init__(self, status_code: int, title: str) -> None:
+        self.status_code = status_code
+        self.title = title
+        super().__init__(f"Manager API rejected the request (HTTP {status_code}: {title})")
+
+
+class ManagerApiTransportUnavailableError(ManagerApiError):
+    """Manager/Finder inalcançável ou 5xx persistente após esgotar retries."""
+
+
 @dataclass(frozen=True)
 class ApiCatalogPage:
     """Uma pagina do catalogo (api-finder) com o total de registros."""

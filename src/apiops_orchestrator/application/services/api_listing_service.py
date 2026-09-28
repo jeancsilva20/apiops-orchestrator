@@ -1,6 +1,7 @@
-﻿from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from apiops_orchestrator.application.exceptions.listing_exceptions import (
+    ApiCollectionError,
     ApiNotFound,
     InsufficientSessionError,
     InvalidWindow,
@@ -9,9 +10,29 @@ from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
 from apiops_orchestrator.domain.models.catalog_revision_model import CatalogRevisionInfo
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
 from apiops_orchestrator.domain.services.catalog_visibility import finder_rows_visible_to
-from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
+from apiops_orchestrator.domain.ports.manager_api_port import (
+    ManagerApiPort,
+    ManagerApiTransportRejectedError,
+    ManagerApiTransportUnavailableError,
+)
 
 _FETCH_GROW_CAP = 2000
+
+
+def _catalog_access_error(
+    exc: ManagerApiTransportRejectedError | ManagerApiTransportUnavailableError,
+) -> ApiCollectionError:
+    """Tradução única sinais-do-port → erro categorizado (mensagem PT-BR educativa)."""
+    if isinstance(exc, ManagerApiTransportRejectedError):
+        return ApiCollectionError(
+            "Consulta recusada pela plataforma Manager "
+            f"(HTTP {exc.status_code}: {exc.title}). "
+            "Faça `sen login` novamente e, se persistir, acione o time de acesso."
+        )
+    return ApiCollectionError(
+        "Plataforma Manager indisponível ou falha de conexão. "
+        "Tente novamente em instantes."
+    )
 
 
 class ApiListingService:
@@ -29,6 +50,21 @@ class ApiListingService:
         query: Optional[str] = None,
         offset: Optional[int] = None,
         limit: Optional[int] = None,
+    ) -> List[ApiCatalogEntry]:
+        try:
+            return self._list_apis_internal(
+                api_id=api_id, query=query, offset=offset, limit=limit
+            )
+        except (ManagerApiTransportRejectedError, ManagerApiTransportUnavailableError) as exc:
+            # Sinais do port → erro categorizado (a CLI só conhece esta hierarquia).
+            raise _catalog_access_error(exc) from exc
+
+    def _list_apis_internal(
+        self,
+        api_id: Optional[int],
+        query: Optional[str],
+        offset: Optional[int],
+        limit: Optional[int],
     ) -> List[ApiCatalogEntry]:
         if api_id is not None:
             entry = self.manager_api.list_api_detail(api_id)
@@ -49,6 +85,12 @@ class ApiListingService:
         return self._slice_window(rows, offset, limit)
 
     def api_revisions(self, api_id: int) -> List[CatalogRevisionInfo]:
+        try:
+            return self._api_revisions_internal(api_id)
+        except (ManagerApiTransportRejectedError, ManagerApiTransportUnavailableError) as exc:
+            raise _catalog_access_error(exc) from exc
+
+    def _api_revisions_internal(self, api_id: int) -> List[CatalogRevisionInfo]:
         entry = self.manager_api.list_api_detail(api_id)
         if not entry:
             raise ApiNotFound(api_id)

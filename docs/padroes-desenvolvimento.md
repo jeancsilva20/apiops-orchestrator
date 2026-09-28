@@ -157,7 +157,8 @@ Exceção técnica atual: `repo_path` em `main.py` ainda é hardcoded/absoluto (
       def __init__(self, message: str, exit_code: int | None = None): ...
   ```
 
-- Subclasses **categorizam** o modo de falha com `exit_code` estável (ex.: `CredentialNotFoundError`=2, `AuthenticationRejectedError`=3, `LoginProtocolError`=4, `SessionPersistenceError`=5). Erros puramente de infraestrutura nem sempre entram na hierarquia (ex.: `SessionStorageError` em `session_store.py`) e são traduzidos pela camada de aplicação em erro categorizado (`raise XxxError(...) from exc`).
+- Subclasses **categorizam** o modo de falha com `exit_code` estável (ex.: `CredentialNotFoundError`=2, `AuthenticationRejectedError`=3, `LoginProtocolError`=4, `SessionPersistenceError`=5). Erros puramente de infraestrutura nem sempre entram na hierarquia (ex.: `SessionStoreError` no port `session_store_port.py`) e são traduzidos pela camada de aplicação em erro categorizado (`raise XxxError(...) from exc`).
+- **Sinais do port ("port outcomes")**: todo outbound port declara, **no próprio arquivo do port**, suas falhas previsíveis como exceções tipadas neutras (ex.: `OrchestratorAuthPort` → `AuthTransportRejectedError`/`AuthTransportUnavailableError`/`AuthEndpointNotConfiguredError`; `ManagerApiPort` → `ManagerApiTransportRejectedError`/`ManagerApiTransportUnavailableError`). Regra de fronteira: **exceção de transporte/framework (requests, `HttpClient*`, typer) jamais atravessa o port** — o adapter traduz para os sinais; a application traduz os sinais para a hierarquia `application/exceptions/` (mensagem PT-BR educativa + `exit_code`); a CLI só conhece essa última. A regra vale para erros **consumidos por decisão** na outra ponta; falhas "fire-and-forget" (ninguém trata) podem nascer onde são lançadas.
 - Mensagem de exceção: texto PT-BR **orientando a ação do usuário** ("configure a variável … e rode `sen login` novamente"), nunca conteúdo de segredos/sessão.
 - Na borda da CLI: capturar erro do módulo → `rprint("[bold red]...[/bold red]")` → `raise typer.Exit(code=e.exit_code)`; `CliError(message, exit_code)` cobre erros genéricos de CLI; `main.py` também trata `pydantic.ValidationError` (lista vars faltantes em caixa alta) e sai com `1`.
 
@@ -188,10 +189,10 @@ logger.info("auth.session.expired")
   - retry em 5xx (`max_retries`, default 3; espera `interval`, default 5s);
   - timeout default 30s (`REQUEST_TIMEOUT` no settings base);
   - log e status de observabilidade (`set_span_id`, `log_duration`, `set_status`);
-  - mapeamento de erros 4xx para corpo **RFC 7807** (`HttpErrorMapper`), impresso em `stderr` por `Console(stderr=True)` — pode ser suprimido por quem possui próprio UX de erro (`report_client_errors=False`, adotado pelo fluxo `sen login`).
+  - falhas previsíveis sinalizadas por **exceções tipadas e neutras de framework** (`infrastructure/exceptions/http_client_exceptions.py`): 4xx → `HttpClient4xxError` (problema RFC 7807 embutido — `status_code`/`title`/`detail`/`url`); 5xx pós-esgotamento de retries → `HttpClientServerError`. O cliente **não imprime nada e nunca usa `typer.Exit`** — quem chama decide a apresentação.
 - Adapters HTTP não fazem `requests` direto; eles compõem `url = host + base_path + endpoint`, montam headers num helper `_get_headers()` (`Authorization: Bearer ...`) e delegam ao `HttpClient`.
 - Método recebido sempre em caixa-alta (`"GET"`, `"POST"`); respostas consumidas como `dict` (`response.json()`), com fallback para texto/`{}`.
-- Clientes da CLI para HTTP devem propagar erro via `typer.Exit` (4xx) ou exceção — nunca engolir.
+- Erros HTTP **nunca engolem**: quem chama re-propaga a exceção tipada ou a traduz na própria fronteira (a CLI converte em mensagem amigável + `typer.Exit`; a application converte em erro categorizado, ex. `AuthenticationRejectedError`).
 
 ## 8. CLI (Typer + Rich)
 

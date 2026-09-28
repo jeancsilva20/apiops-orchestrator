@@ -1,13 +1,15 @@
 from unittest.mock import patch
 
 import pytest
-import typer
 
 from apiops_orchestrator.adapters.outbound.http.orchestrator_auth_api.orchestrator_auth_adapter import (
     OrchestratorAuthAdapter,
     build_login_url,
 )
 from apiops_orchestrator.config.settings import Settings
+from apiops_orchestrator.infrastructure.exceptions.http_client_exceptions import (
+    HttpClient4xxError,
+)
 
 MOCK_PATH = "apiops_orchestrator.infrastructure.utils.http_client.HttpClient.request"
 
@@ -69,14 +71,15 @@ def test_login_posts_basic_header_and_payload_intact(mock_request, adapter):
     assert kwargs["method"] == "POST"
     assert kwargs["url"] == "https://auth.example.com/cli-2/orq-auth/v1/oauth2/token"
     assert kwargs["headers"]["Authorization"] == f"Basic {credential}"
-    assert kwargs["report_client_errors"] is False
     assert kwargs["json"] == {"grantType": "client_credentials", "scope": "apis/all"}
 
 
 @patch(MOCK_PATH)
-def test_login_surfaces_http_client_exit_for_4xx(mock_request, adapter):
-    mock_request.side_effect = typer.Exit(code=1)
-    with pytest.raises(typer.Exit):
+def test_login_propagates_typed_4xx_from_http_client(mock_request, adapter):
+    mock_request.side_effect = HttpClient4xxError(
+        status_code=401, title="Unauthorized", detail="Authentication required"
+    )
+    with pytest.raises(HttpClient4xxError):
         adapter.login("cred")
 
 

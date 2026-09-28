@@ -20,7 +20,7 @@ from apiops_orchestrator.adapters.outbound.http.user_management_api.sensedia_aut
     SensediaAuthenticationAdapter,
 )
 from apiops_orchestrator.application.services.admin_token_provider import (
-    resolve_admin_token,
+    AdminTokenProvider,
 )
 from apiops_orchestrator.application.services.api_listing_service import (
     ApiListingService,
@@ -64,29 +64,48 @@ def _load_settings() -> Settings:
         ) from e
 
 
+def _build_session_store(settings: Settings) -> SessionStore:
+    """Única fábrica de `SessionStore` (evita stores divergentes: um dia cada
+    factory apontar um diretório diferente é bug silencioso de sessão)."""
+    return SessionStore(directory=settings.PACKAGE_ROOT)
+
+
 def build_login_service_factory():
     def factory() -> LoginService:
         settings = _load_settings()
         return LoginService(
             auth_adapter=OrchestratorAuthAdapter(settings=settings, max_retries=3),
-            session_store=SessionStore(directory=settings.PACKAGE_ROOT),
+            session_store=_build_session_store(settings),
             settings=settings,
         )
 
     return factory
 
 
+def _build_admin_token(settings: Settings) -> str:
+    """Montagem concreta (composition root): adapter + store + provider.
+
+    Aqui É o lugar da instância concreta — a application recebe apenas ports.
+    """
+    provider = AdminTokenProvider(
+        auth_adapter=OrchestratorAuthAdapter(settings=settings, max_retries=3),
+        settings=settings,
+        session_store=_build_session_store(settings),
+    )
+    return provider.obtain()
+
+
 def build_listing_service_factory():
     def factory() -> ApiListingService:
         settings = _load_settings()
         manager_adapter = ManagerApiAdapter(
-            token=resolve_admin_token(settings),
+            token=_build_admin_token(settings),
             base_path="/api-manager/api/v3/",
             max_retries=3,
             api_id=cast(int, settings.API_ID),
             settings=settings,
         )
-        session = SessionStore(directory=settings.PACKAGE_ROOT).load()
+        session = _build_session_store(settings).load()
         return ApiListingService(manager_adapter, session=session)
 
     return factory

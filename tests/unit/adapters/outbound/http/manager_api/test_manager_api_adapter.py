@@ -1,9 +1,11 @@
 import pytest
 from unittest.mock import patch, Mock
-import typer
 from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter import ManagerApiAdapter
 from apiops_orchestrator.domain.models.workflow_stage_model import WorkflowStage
 from apiops_orchestrator.config.settings import Settings
+from apiops_orchestrator.infrastructure.exceptions.http_client_exceptions import (
+    HttpClient4xxError,
+)
 
 MOCK_PATH = "apiops_orchestrator.infrastructure.utils.http_client.HttpClient.request"
 
@@ -43,12 +45,14 @@ def test_get_api_re_raises_exception(mock_settings):
         settings=mock_settings
     )
     with patch(MOCK_PATH) as mock_request:
-        mock_request.side_effect = typer.Exit(code=1)
+        mock_request.side_effect = HttpClient4xxError(
+            status_code=401, title="Unauthorized", detail="Authentication required"
+        )
 
-        with pytest.raises(typer.Exit) as excinfo:
+        with pytest.raises(HttpClient4xxError) as excinfo:
             adapter.get_api_by_id()
 
-        assert excinfo.value.exit_code == 1
+        assert excinfo.value.status_code == 401
 
 def test_get_custom_interceptor_by_id_success(mock_settings):
     adapter = ManagerApiAdapter(token="password123", base_path="/api-manager/api/v3/", max_retries=3, api_id=123,
@@ -119,7 +123,6 @@ def test_list_catalog_apis_hits_finder_with_params_and_reads_count(mock_settings
             url="http://urltest.com/api-finder/api/v3/apis",
             headers={"Authorization": "Bearer tok", "Content-Type": "application/json"},
             max_retries=3,
-            report_client_errors=False,
             return_headers=True,
             params={
                 "_limit": "95",
@@ -174,8 +177,7 @@ def test_list_catalog_apis_non_list_payload_normalizes_to_empty(mock_settings):
         assert page.rows == []
 
 
-def test_list_catalog_apis_reports_client_errors_false_inherited(mock_settings):
-    """UX própria: o corpo cru de 4xx nunca impressiona a tela do usuário."""
+def test_list_catalog_apis_hits_finder_with_window_defaults(mock_settings):
     adapter = ManagerApiAdapter(
         token="tok", base_path="/api-manager/api/v3/", max_retries=3,
         api_id=123, settings=mock_settings,
@@ -186,7 +188,8 @@ def test_list_catalog_apis_reports_client_errors_false_inherited(mock_settings):
 
         adapter.list_catalog_apis(limit=1)
 
-        assert mock_req.call_args.kwargs["report_client_errors"] is False
+        params = mock_req.call_args.kwargs["params"]
+        assert params["_limit"] == "1" and params["orderBy"] == "apiId"
 
 
 def _make_adapter(mock_settings):

@@ -3,7 +3,6 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-import typer
 
 from apiops_orchestrator.application.exceptions.login_exceptions import (
     AuthenticationRejectedError,
@@ -23,6 +22,9 @@ from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
 from apiops_orchestrator.infrastructure.secure_storage.session_store import (
     SessionStorageError,
+)
+from apiops_orchestrator.infrastructure.exceptions.http_client_exceptions import (
+    HttpClient4xxError,
 )
 
 CREDENTIAL = "dXNlcm5hbWU6cGFzc3dvcmQ="
@@ -209,7 +211,9 @@ def test_login_blank_auth_login_path_fails_before_network(deps):
 
 def test_login_4xx_maps_to_rejected_category(deps):
     service, auth_adapter, _ = deps
-    auth_adapter.login.side_effect = typer.Exit(code=1)
+    auth_adapter.login.side_effect = HttpClient4xxError(
+        status_code=401, title="Unauthorized", detail="Authentication required"
+    )
 
     with pytest.raises(AuthenticationRejectedError) as excinfo:
         service.login()

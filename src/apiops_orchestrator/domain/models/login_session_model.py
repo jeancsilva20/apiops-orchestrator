@@ -8,6 +8,15 @@ PROFILE_SUPER_ADMIN = "super-admin"
 
 Profile = Literal["developer", "super-admin"]
 
+# Chaves OBRIGATÓRIAS no payload da rota (wire, snake_case), por perfil.
+# Fonte única de verdade para (a) checagem de shape do payload na application
+# e (b) as invariantes de estado do próprio modelo — um só lugar conhece o
+# contrato de campos por perfil; mudou o protocolo, mudou aqui apenas.
+LOGIN_PROTOCOL_PROFILE_REQUIRED_KEYS = {
+    PROFILE_DEVELOPER: ("scope", "user_name", "user_email", "user_groups"),
+    PROFILE_SUPER_ADMIN: ("scope", "admin_access_token"),
+}
+
 
 class LoginSession(BaseModel):
     """Authenticated session returned by the Orchestrator.

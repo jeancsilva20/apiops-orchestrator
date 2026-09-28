@@ -2,14 +2,14 @@ import logging
 import time
 
 import requests
-import typer
 from requests.exceptions import HTTPError, RequestException
-from rich.console import Console
 from apiops_orchestrator.adapters.outbound.http.common.http_error_mapper import HttpErrorMapper
 from apiops_orchestrator.infrastructure.observability.logging import set_status, set_span_id, clear_operation_context, \
     log_duration
-
-error_console = Console(stderr=True)
+from apiops_orchestrator.infrastructure.exceptions.http_client_exceptions import (
+    HttpClient4xxError,
+    HttpClientServerError,
+)
 
 
 class HttpClient:
@@ -22,16 +22,21 @@ class HttpClient:
             headers=None,
             max_retries: int = 3,
             interval: float = 5,
-            report_client_errors: bool = True,
             return_headers: bool = False,
             **kwargs,
     ):
         """
-        Send an http request and retries in case of 5xx errors.
+        Send an http request and retry in case of 5xx errors.
 
-        report_client_errors: when True (legacy default), prints the RFC 7807 body of
-        4xx responses to stderr; callers owning their own error UX (e.g. sen login)
-        pass False to keep messages exclusive to the service layer.
+        Cliente compartilhado NEUTRO de framework: nunca imprime no stdout/
+        stderr do CLI e nunca levanta `typer.Exit`. Falhas previsíveis são
+        sinalizadas por exceções tipadas deste módulo de exceções — a
+        apresentação/tradução é responsabilidade de quem chama:
+
+        - `HttpClient4xxError`: 4xx carregando o problema mapeado em
+          RFC 7807 (`status_code`, `title`, `detail`, `url`);
+        - `HttpClientServerError`: 5xx persistente após esgotar os retries;
+        - outras `RequestException` (rede/timeout) propagam sem tradução.
 
         return_headers: default False devolve apenas o payload (contrato
         histórico); True devolve (payload, headers-lowercase) — para when the
@@ -61,7 +66,9 @@ class HttpClient:
                         else:
                             set_status("FAILURE")
                             logger.error(f"Server Error: {response.status_code} - After {max_retries} retries")
-                            raise Exception(f"Failed after {max_retries} retries, with {response.status_code} status")
+                            raise HttpClientServerError(
+                                f"Failed after {max_retries} retries, with {response.status_code} status"
+                            )
                     response.raise_for_status()
                     try:
                         response_headers = {
@@ -91,16 +98,15 @@ class HttpClient:
                         if 400 <= status_code < 500:
                             logger.debug(f"Client Error ({status_code}): {e}")
 
-                            if report_client_errors:
-                                rfc_error = HttpErrorMapper.map_to_rfc7807(e.response)
-
-                                error_console.print("\n[bold red] Error in Request:[/bold red]")
-                                error_console.print_json(data=rfc_error)
-
+                            problem = HttpErrorMapper.map_to_rfc7807(e.response)
                             clear_operation_context()
-                            raise typer.Exit(code=1)
-                        else:
-                            logger.error(f"HTTP Error: {e}")
+                            raise HttpClient4xxError(
+                                status_code=status_code,
+                                title=str(problem.get("title", "Client Error")),
+                                detail=str(problem.get("detail", "")),
+                                url=str(problem.get("instance", e.response.url)),
+                            ) from e
+                        logger.error(f"HTTP Error: {e}")
                     else:
                         logger.error(f"Connection Error: {e}")
 
