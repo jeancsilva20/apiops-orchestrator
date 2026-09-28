@@ -3,7 +3,6 @@ from apiops_orchestrator.domain.models.api_catalog_model import (
     OwnershipContext,
 )
 from apiops_orchestrator.domain.models.catalog_revision_model import (
-    CatalogRevision,
     CatalogRevisionInfo,
 )
 
@@ -63,7 +62,7 @@ def test_revisions_hold_the_aggregate_shape():
                     "id": 10,
                     "revisionNumber": 2,
                     "environments": ["Development"],
-                    "completenessScore": 70.5,
+                    "completeness": {"score": 70.5, "suggestions": []},
                     "workflowId": 7,
                     "workflowStageId": 12,
                 }
@@ -75,7 +74,9 @@ def test_revisions_hold_the_aggregate_shape():
     assert rev.id == 10
     assert rev.revisionNumber == 2
     assert rev.environments == ["Development"]
-    assert rev.completenessScore == 70.5
+    assert rev.completeness is not None
+    assert rev.completeness.score == 70.5
+    assert rev.completeness.suggestions == []
     assert rev.workflowId == 7
     assert rev.workflowStageId == 12
 
@@ -86,6 +87,14 @@ def test_revisions_environments_defaults_to_empty():
     )
 
     assert entry.revisions[0].environments == []
+
+
+def test_revision_completeness_is_optional_nested_object():
+    entry = ApiCatalogEntry.model_validate(
+        {"id": 1, "revisions": [{"id": 10}]}
+    )
+
+    assert entry.revisions[0].completeness is None
 
 
 def test_last_revision_number_without_source_is_none():

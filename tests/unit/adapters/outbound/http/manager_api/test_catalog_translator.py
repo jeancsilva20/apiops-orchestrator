@@ -103,8 +103,11 @@ def test_merge_attaches_environments_completeness_and_workflow():
 
     assert revisions[5514].environments == ["Development"]
     assert revisions[5513].environments == ["Homologação"]
-    assert revisions[5513].completenessScore == 70.5
-    assert revisions[5514].completenessScore == 85.0
+    assert revisions[5513].completeness is not None
+    assert revisions[5513].completeness.score == 70.5
+    assert revisions[5513].completeness.suggestions == []
+    assert revisions[5514].completeness is not None
+    assert revisions[5514].completeness.score == 85.0
     assert revisions[5514].workflowStageId is None
     assert revisions[5513].workflowStageId == 12
 
@@ -120,7 +123,8 @@ def test_merge_first_score_wins_and_later_is_ignored():
 
     (rev,) = _merge_wire_blocks(raw)
 
-    assert rev.completenessScore == 10.0
+    assert rev.completeness is not None
+    assert rev.completeness.score == 10.0
 
 
 def test_merge_last_workflow_ref_wins():

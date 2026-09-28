@@ -3,6 +3,9 @@ from dataclasses import dataclass
 from typing import Dict, Any, List, Optional
 
 from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
+from apiops_orchestrator.domain.models.catalog_revision_model import (
+    CatalogRevisionCompleteness,
+)
 from apiops_orchestrator.domain.models.workflow_stage_model import WorkflowStage
 
 
@@ -57,6 +60,11 @@ class ManagerApiPort(ABC):
     @abstractmethod
     def list_api_detail(self, api_id: int) -> Optional[ApiCatalogEntry]:
         """Search API detail from the CATALOG."""
+        pass
+
+    @abstractmethod
+    def get_revision_completeness(self, revision_id: int) -> CatalogRevisionCompleteness:
+        """Contract to fetch the completeness report of one revision."""
         pass
 
     @abstractmethod

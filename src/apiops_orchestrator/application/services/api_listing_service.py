@@ -118,7 +118,11 @@ class ApiListingService:
                         stage_name if stage_name else revision.workflowId
                     ),
                     environments=", ".join(revision.environments),
-                    completeness_score=revision.completenessScore,
+                    completeness_score=(
+                        revision.completeness.score
+                        if revision.completeness is not None
+                        else None
+                    ),
                 )
             )
         rows.sort(key=lambda row: row.revision_number)

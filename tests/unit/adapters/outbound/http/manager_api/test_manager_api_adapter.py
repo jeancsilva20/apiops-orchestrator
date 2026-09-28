@@ -1,11 +1,28 @@
+import json
+from pathlib import Path
+
 import pytest
 from unittest.mock import patch, Mock
-from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter import ManagerApiAdapter
+from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter import (
+    ManagerApiAdapter,
+    _translate_completeness,
+)
 from apiops_orchestrator.domain.models.workflow_stage_model import WorkflowStage
+from apiops_orchestrator.domain.ports.manager_api_port import (
+    ManagerApiTransportRejectedError,
+    ManagerApiTransportUnavailableError,
+)
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.infrastructure.exceptions.http_client_exceptions import (
     HttpClient4xxError,
+    HttpClientServerError,
 )
+
+FIXTURES_DIR = Path(__file__).parents[5] / "fixtures"
+
+
+def load_completeness_fixture() -> dict:
+    return json.loads((FIXTURES_DIR / "completeness_bean_payload.json").read_text(encoding="utf-8"))
 
 MOCK_PATH = "apiops_orchestrator.infrastructure.utils.http_client.HttpClient.request"
 
@@ -266,3 +283,72 @@ def test_stages_cache_lives_only_within_adapter_instance(mock_settings):
         adapter_b.get_workflow_stages(139)   # B não vê cache do A
 
         assert mock_request.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Completeness por revisão
+# ---------------------------------------------------------------------------
+
+def test_get_revision_completeness_hits_manager_endpoint_with_fixture_payload(mock_settings):
+    adapter = _make_adapter(mock_settings)
+    bean = load_completeness_fixture()
+
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.return_value = bean
+        reading = adapter.get_revision_completeness(5513)
+
+        assert type(reading).__name__ == "CatalogRevisionCompleteness"
+        assert reading.score == 85.0
+        assert reading.suggestions == bean["suggestions"]
+        mock_request.assert_called_once_with(
+            method="GET",
+            url="http://urltest.com/api-manager/api/v3/revisions/5513/completeness",
+            headers={"Authorization": "Bearer token123", "Content-Type": "application/json"},
+            max_retries=3,
+        )
+
+
+def test_translate_completeness_discards_blank_suggestions():
+    raw = {
+        "completenessScore": 142.0,
+        "suggestions": ["dica real", "   ", None, "segunda dica"],
+    }
+
+    reading = _translate_completeness(raw)
+
+    assert reading.score == 142.0  # model é honesto: sanitizar é trabalho do render
+    assert reading.suggestions == ["dica real", "segunda dica"]
+
+
+def test_translate_completeness_anomalous_wire_degrades_to_zero(monkeypatch=None):
+    reading = _translate_completeness({"completenessScore": "not-a-number", "suggestions": None})
+
+    assert reading.score == 0.0
+    assert reading.suggestions == []
+
+    empty = _translate_completeness(None)
+    assert empty.score == 0.0 and empty.suggestions == []
+
+
+def test_get_revision_completeness_4xx_raises_transport_rejected_signal(mock_settings):
+    adapter = _make_adapter(mock_settings)
+
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.side_effect = HttpClient4xxError(
+            status_code=404, title="Not Found", detail="revision 5513 not found"
+        )
+
+        with pytest.raises(ManagerApiTransportRejectedError) as excinfo:
+            adapter.get_revision_completeness(5513)
+
+        assert excinfo.value.status_code == 404
+
+
+def test_get_revision_completeness_exhausted_5xx_raises_transport_unavailable_signal(mock_settings):
+    adapter = _make_adapter(mock_settings)
+
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.side_effect = HttpClientServerError("Bad Gateway: upstream exploded")
+
+        with pytest.raises(ManagerApiTransportUnavailableError):
+            adapter.get_revision_completeness(5513)

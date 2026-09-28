@@ -1,10 +1,12 @@
 # ADR 0008 — `sen completeness`: port dedicada + AG direto como fonte primária
 
+> ⚠️ **SUPERSEDÊNCIA PARCIAL (2026-09-28, change `add-sen-completeness`):** a **fonte primária AG foi aposentada** — as sondas de produção (`problemas.md`) provaram que o AG só mantém report da **última revisão**, tornando `--revision` obrigatório inútil para qualquer revisão anterior (recusa `exit 2` garantida). O comando consome **`GET /api-manager/api/v3/revisions/{rid}/completeness`** (Manager, `CompletenessBean`: `{completenessScore, suggestions[]}`), que responde **para qualquer revisão** com a mesma moeda de autenticação. Com a fonte voltando ao próprio Manager, a **port dedicada `CompletenessPort` também não se realizou**: a fronteira real segue `ManagerApiPort`/`ManagerApiAdapter` (método `get_revision_completeness`). Itens PRESERVADOS deste ADR: `CompletenessService` próprio (gêmeo do futuro `sen validate`), satélite api-finder com degradação suave, contrato versionado `apiops.sen-completeness/v1`, gate 70% (P10). Detalhes: `openspec/changes/add-sen-completeness/design.md` (D1, D4, D9/D9.b, D10).
+
 ## Metadados
 
 | Campo | Valor |
 |---|---|
-| Status | Aceito (documentado; **implementação congelada** pela regra de processo do projeto) |
+| Status | Aceito (documentado; **implementação congelada** pela regra de processo do projeto) — **SUPERSEDIDO PARCIALMENTE em 2026-09-28** (fonte primária AG → Manager; port dedicada afastada — ver callout acima) |
 | Data | 2026-09-24 |
 | Autor do documento | Jean Silva |
 | Supersedes | — |

@@ -13,7 +13,10 @@ from apiops_orchestrator.domain.models.api_catalog_model import (
     ApiCatalogEntry,
     OwnershipContext,
 )
-from apiops_orchestrator.domain.models.catalog_revision_model import CatalogRevision
+from apiops_orchestrator.domain.models.catalog_revision_model import (
+    CatalogRevision,
+    CatalogRevisionCompleteness,
+)
 from apiops_orchestrator.domain.models.workflow_stage_model import WorkflowStage
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.infrastructure.exceptions.http_client_exceptions import (
@@ -88,8 +91,8 @@ def _merge_wire_blocks(raw: Dict[str, Any]) -> List[CatalogRevision]:
             continue
         rev = by_id.get(_wire_int(scored.get("apiRevision")))
         score = _wire_float(scored.get("score"))
-        if rev is not None and rev.completenessScore is None and score is not None:
-            rev.completenessScore = score
+        if rev is not None and rev.completeness is None and score is not None:
+            rev.completeness = CatalogRevisionCompleteness(score=score)
 
     for wf in raw.get("wokflow") or raw.get("workflow") or []:
         if not isinstance(wf, dict):
@@ -169,14 +172,30 @@ def _build_custom_search(query: str) -> str:
     return f'(apiName:"{sanitized}" OR description:"{sanitized}")'
 
 
+def _translate_completeness(raw: Any) -> CatalogRevisionCompleteness:
+    """Traduz o CompletenessBean do Manager para a leitura tipada de domínio."""
+    payload = raw if isinstance(raw, dict) else {}
+    texts = (
+        item if isinstance(item, str) else str(item)
+        for item in (payload.get("suggestions") or [])
+        if item is not None
+    )
+    suggestions = [stripped for stripped in (text.strip() for text in texts) if stripped]
+    score = _wire_float(payload.get("completenessScore"))
+    return CatalogRevisionCompleteness(
+        score=score if score is not None else 0.0,
+        suggestions=suggestions,
+    )
+
+
 class ManagerApiAdapter(ManagerApiPort):
-    def __init__(self, token: str, base_path: str, max_retries: int, api_id: int, settings: Settings):
-        self.host = settings.HOST
+    def __init__(self, token: str, base_path: str, max_retries: int, api_id: Optional[int] = None, settings: Optional[Settings] = None):
+        self.host = settings.HOST if settings is not None else None
         self.token = token
         self.api_id = api_id
         self.base_path = base_path
         self.max_retries = max_retries
-        self._stages_cache: Dict[int, List[Dict[str, Any]]] = {}
+        self._stages_cache: Dict[int, List[WorkflowStage]] = {}
 
     def _get_headers(self) -> Dict[str, str]:
         return {
@@ -199,7 +218,7 @@ class ManagerApiAdapter(ManagerApiPort):
         atravessam (rede de segurança no caller).
         """
         path_prefix = base_path if base_path is not None else self.base_path
-        url = f"{self.host}{path_prefix}{endpoint}"
+        url = f"{self.host or ''}{path_prefix}{endpoint}"
         headers = self._get_headers()
 
         try:
@@ -241,6 +260,11 @@ class ManagerApiAdapter(ManagerApiPort):
         if rows and isinstance(rows[0], dict):
             return _translate_row(rows[0])
         return None
+
+    def get_revision_completeness(self, revision_id: int) -> CatalogRevisionCompleteness:
+        endpoint = f"revisions/{revision_id}/completeness"
+        payload = self._request("GET", endpoint)
+        return _translate_completeness(payload)
 
     def list_catalog_apis(
         self,

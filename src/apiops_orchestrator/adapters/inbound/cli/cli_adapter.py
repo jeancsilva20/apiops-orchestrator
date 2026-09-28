@@ -1,6 +1,7 @@
 import importlib.metadata
 import platform
 import sys
+import textwrap
 import time
 import typer
 from typing import Any, Callable, Optional, cast
@@ -16,9 +17,16 @@ from rich.text import Text
 from apiops_orchestrator.application.services.api_listing_service import (
     ApiListingService,
 )
+from apiops_orchestrator.application.services.completeness_service import (
+    CompletenessService,
+)
 from apiops_orchestrator.adapters.inbound.cli.output_format import OutputFormat
 from apiops_orchestrator.adapters.inbound.cli.output_display import display_output
 from apiops_orchestrator.application.exceptions.login_exceptions import LoginError
+from apiops_orchestrator.application.exceptions.completeness_exceptions import (
+    CompletenessError,
+)
+from apiops_orchestrator.domain.models.completeness_view import CompletenessView
 from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
 from apiops_orchestrator.domain.models.catalog_revision_model import CatalogRevisionInfo
 from apiops_orchestrator.application.exceptions.listing_exceptions import ApiCollectionError
@@ -522,3 +530,187 @@ def main_callback(
     if verbose:
         # TODO: Ajustar nível de log quando houver integração com logging
         pass
+
+
+# ---------------------------------------------------------------------------
+# sen completeness — espelho integral de completude por revisão
+# ---------------------------------------------------------------------------
+
+COMPLETENESS_BAR_WIDTH = 30
+COMPLETENESS_WRAP_WIDTH = 92
+
+
+def _completeness_glyph(kind: str) -> str:
+    """Glifo ASCII-seguro: portável em cp1252 sem adaptations especiais."""
+    return {"fill": "#", "empty": ".", "gate": "|", "warn": "!"}[kind]
+
+
+def _completeness_bar(score: float, gate_percent: float) -> Text:
+    """Barra de 30 glifos escalada ao score, com marcador fixo de gate.
+
+    Honesto com o wire: percentuais fora de 0..100 saturam na borda — o
+    clamp é política de RENDER (o dado cru permanece no contrato).
+    """
+    clamped = max(0.0, min(100.0, score))
+    filled = round(clamped / 100 * COMPLETENESS_BAR_WIDTH)
+    gate_index = round(gate_percent / 100 * COMPLETENESS_BAR_WIDTH)
+    cells = []
+    for position in range(COMPLETENESS_BAR_WIDTH):
+        if position == gate_index:
+            cells.append(_completeness_glyph("gate"))
+        elif position < filled:
+            cells.append(_completeness_glyph("fill"))
+        else:
+            cells.append(_completeness_glyph("empty"))
+    text = Text("", style="white")
+    text.append(f"[{''.join(cells)}]")
+    return text
+
+
+def _completeness_below_gate(score: float, gate_percent: float) -> Optional[str]:
+    if score >= gate_percent:
+        return None
+    deficit = round(gate_percent - max(0.0, min(100.0, score)), 1)
+    return f"faltam {deficit} pts para o gate"
+
+
+def _completeness_field_grid(view: CompletenessView) -> Table:
+    api = view.api
+    grid = Table.grid(padding=(0, 1))
+    grid.add_column(justify="left", min_width=11, no_wrap=True)
+    grid.add_column(justify="left")
+
+    name = api.name or "-"
+    version = api.version or "-"
+    grid.add_row(
+        Text("API:", style="bold white"),
+        Text(f"{name} ({version}) · #{api.manager_id}"),
+    )
+    revision_label = str(view.revision_id)
+    if view.revision_number is not None:
+        revision_label += f" (#{view.revision_number})"
+    grid.add_row(Text("REVISÃO:", style="bold white"), Text(revision_label))
+    if api.context:
+        label_bits = [bit for bit in (api.context.type,) if bit]
+        owner_bits = [
+            bit for bit in (api.context.group_name, api.context.owner) if bit
+        ]
+        possession = " · ".join(label_bits + owner_bits) or "-"
+        grid.add_row(Text("POSSE:", style="bold white"), Text(possession))
+    return grid
+
+
+def _render_completeness_headline(view: CompletenessView, score_only: bool) -> Group:
+    body_bits: list[Any] = [_completeness_field_grid(view), Text("")]
+
+    bar_line = Text.assemble(
+        ("COMPLETUDE  ", "bold white"),
+        (f"{view.score:.1f}%", "bold white"),
+        ("  ", "white"),
+        _completeness_bar(view.score, view.gate_percent),
+        (f" (gate: ≥{view.gate_percent:.0f}%)", "white"),
+    )
+    body_bits.append(bar_line)
+
+    deficit = _completeness_below_gate(view.score, view.gate_percent)
+    if deficit:
+        body_bits.append(Text(f"{_completeness_glyph('warn')} {deficit}", style="yellow"))
+
+    if score_only:
+        return Group(*body_bits)
+
+    suggestions = view.suggestions
+    body_bits.append(Text(""))
+    if not suggestions:
+        body_bits.append(Text("Nenhuma sugestão de melhoria para esta revisão.", style="white"))
+        return Group(*body_bits)
+
+    body_bits.append(Text(f"SUGESTÕES ({len(suggestions)}):", style="bold white"))
+    wrapper = textwrap.TextWrapper(
+        width=COMPLETENESS_WRAP_WIDTH,
+        subsequent_indent="      ",
+    )
+    for item in suggestions:
+        lines = wrapper.wrap(item.text)
+        if not lines:
+            continue
+        numbered = Text("")
+        numbered.append(f"  {item.index:>2}. ", style="bold white")
+        numbered.append(lines[0])
+        body_bits.append(numbered)
+        for continuation in lines[1:]:
+            body_bits.append(Text(f"      {continuation}"))
+    return Group(*body_bits)
+
+
+def _render_completeness_text(view: CompletenessView, score_only: bool) -> None:
+    width = _framed_logo_width()
+    body = _render_completeness_headline(view, score_only)
+    panel = Panel(
+        body,
+        box=box.ROUNDED if _stdout_supports_rounded_box() else box.ASCII,
+        border_style="grey53",
+        padding=(0, 1),
+        width=width,
+    )
+    rprint(Align.center(panel))
+    rprint()
+
+
+MISSING_TARGET_MESSAGE = (
+    "Informe a API e a revisão: --api-id e --revision são obrigatórios. "
+    "Para descobrir os REV ID: sen list api --id X --revisions. "
+    "Detalhes: sen completeness --help"
+)
+
+
+@sen_app.command("completeness")
+def completeness(
+    ctx: typer.Context,
+    api_id: Optional[int] = typer.Option(
+        None, "--api-id", help="Manager ID of the API."
+    ),
+    revision: Optional[int] = typer.Option(
+        None, "--revision", help="Revision ID (REV ID from the revisions drill-down)."
+    ),
+    score_only: bool = typer.Option(
+        False, "--score-only", help="Show only headline and bar/gate."
+    ),
+    output: OutputFormat = typer.Option(
+        OutputFormat.TEXT, "--output", "-o", help="Output format (text, json, yaml)."
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbosity only."),
+):
+    """
+    Show the completeness report of one API revision (Sensedia Manager).
+    """
+    if api_id is None or revision is None:
+        rprint(f"[bold red]Erro:[/bold red] {MISSING_TARGET_MESSAGE}")
+        raise typer.Exit(code=1)
+
+    try:
+        service_factory = (ctx.obj or {}).get("completeness_service_factory")
+        if not callable(service_factory):
+            rprint(
+                "[bold red]Erro:[/bold red] Serviço de completude indisponível "
+                "no contexto."
+            )
+            raise typer.Exit(code=1)
+
+        service = cast(Callable[[], CompletenessService], service_factory)()
+        view = service.get_completeness(api_id=api_id, revision_id=revision)
+
+        display_output(
+            view.to_document(),
+            output_format=output,
+            text_callback=lambda: _render_completeness_text(view, score_only),
+        )
+
+    except typer.Exit:
+        raise
+    except CompletenessError as e:
+        rprint(f"[bold red]Erro:[/bold red] {e.message}")
+        raise typer.Exit(code=e.exit_code)
+    except Exception as e:
+        rprint(f"[bold red]Erro ao consultar completude:[/bold red] {e}")
+        raise typer.Exit(code=1)

@@ -25,6 +25,9 @@ from apiops_orchestrator.application.services.admin_token_provider import (
 from apiops_orchestrator.application.services.api_listing_service import (
     ApiListingService,
 )
+from apiops_orchestrator.application.services.completeness_service import (
+    CompletenessService,
+)
 from apiops_orchestrator.application.services.conversor_service import ConversorService
 from apiops_orchestrator.application.services.login_service import LoginService
 from apiops_orchestrator.application.services.repo_importer_service import (
@@ -102,11 +105,25 @@ def build_listing_service_factory():
             token=_build_admin_token(settings),
             base_path="/api-manager/api/v3/",
             max_retries=3,
-            api_id=cast(int, settings.API_ID),
             settings=settings,
         )
         session = _build_session_store(settings).load()
         return ApiListingService(manager_adapter, session=session)
+
+    return factory
+
+
+def build_completeness_service_factory():
+    def factory() -> CompletenessService:
+        settings = _load_settings()
+        manager_adapter = ManagerApiAdapter(
+            token=_build_admin_token(settings),
+            base_path="/api-manager/api/v3/",
+            max_retries=3,
+            settings=settings,
+        )
+        session = _build_session_store(settings).load()
+        return CompletenessService(manager_adapter, session=session)
 
     return factory
 
@@ -197,6 +214,7 @@ def main():
         ctx_obj = {
             "login_service_factory": build_login_service_factory(),
             "api_listing_service_factory": build_listing_service_factory(),
+            "completeness_service_factory": build_completeness_service_factory(),
         }
         app(obj=ctx_obj)
 

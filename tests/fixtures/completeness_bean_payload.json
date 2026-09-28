@@ -1,0 +1,9 @@
+{
+  "completenessScore": 85.0,
+  "suggestions": [
+    "Response code 200 of operation POST /oauth2/token/validation has a description \"OK\" that is too short. Use more than 4 characters to describe the outcome.",
+    "Response code 200 of operation POST /oauth2/token has a description \"OK\" that is too short. Use more than 4 characters to describe the outcome.",
+    "Response code 200 of operation GET /users/{username}/groups has a description \"OK\" that is too short. Use more than 4 characters to describe the outcome.",
+    "Operation GET /users/{username}/groups description \"\" is too short."
+  ]
+}

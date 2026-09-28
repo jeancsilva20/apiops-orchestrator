@@ -1,7 +1,14 @@
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+
+
+class CatalogRevisionCompleteness(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    score: float
+    suggestions: List[str] = []
 
 
 class CatalogRevision(BaseModel):
@@ -9,14 +16,13 @@ class CatalogRevision(BaseModel):
 
     id: Optional[int] = None
     revisionNumber: Optional[int] = None
-    creationDate: Optional[Any] = None
-
+    creationDate: Optional[Any] = None 
     environments: List[str] = []
 
     workflowId: Optional[int] = None
     workflowStageId: Optional[int] = None
 
-    completenessScore: Optional[float] = None
+    completeness: Optional[CatalogRevisionCompleteness] = None
 
 
 @dataclass(frozen=True)
