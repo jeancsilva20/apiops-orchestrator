@@ -333,7 +333,7 @@ def test_completeness_without_revision_fails_pre_network_guiding_revisions():
 
     result = runner.invoke(
         app,
-        ["sen", "completeness", "--api-id", "375"],
+        ["sen", "completeness", "--id", "375"],
         obj={"completeness_service_factory": factory},
     )
 
@@ -348,14 +348,14 @@ def test_completeness_without_api_id_fails_pre_network():
     result, factory = _invoke_completeness(["--revision", "5513"], MagicMock())
 
     assert result.exit_code == 1
-    assert "--api-id" in result.output
+    assert "--id" in result.output
     factory.assert_not_called()
 
 
 def test_completeness_missing_service_factory_is_environment_error():
     result = runner.invoke(
         app,
-        ["sen", "completeness", "--api-id", "375", "--revision", "5513"],
+        ["sen", "completeness", "--id", "375", "--revision", "5513"],
         obj={},
     )
 
@@ -365,7 +365,7 @@ def test_completeness_missing_service_factory_is_environment_error():
 
 def test_completeness_text_rendering_literally():
     result, _ = _invoke_completeness(
-        ["--api-id", "375", "--revision", "5513"], MagicMock(get_completeness=lambda **kw: SAMPLE_VIEW)
+        ["--id", "375", "--revision", "5513"], MagicMock(get_completeness=lambda **kw: SAMPLE_VIEW)
     )
 
     assert result.exit_code == 0
@@ -384,7 +384,7 @@ def test_completeness_text_rendering_literally():
 
 def test_completeness_score_only_suppresses_suggestions():
     result, _ = _invoke_completeness(
-        ["--api-id", "375", "--revision", "5513", "--score-only"],
+        ["--id", "375", "--revision", "5513", "--score-only"],
         MagicMock(get_completeness=lambda **kw: SAMPLE_VIEW),
     )
 
@@ -397,7 +397,7 @@ def test_completeness_score_only_suppresses_suggestions():
 
 def test_completeness_json_matches_v1_tree():
     result, _ = _invoke_completeness(
-        ["--api-id", "375", "--revision", "5513", "-o", "json"],
+        ["--id", "375", "--revision", "5513", "-o", "json"],
         MagicMock(get_completeness=lambda **kw: SAMPLE_VIEW),
     )
 
@@ -423,7 +423,7 @@ def test_completeness_404_maps_to_exit2_notfound_guidance():
 
     result = runner.invoke(
         app,
-        ["sen", "completeness", "--api-id", "375", "--revision", "5501"],
+        ["sen", "completeness", "--id", "375", "--revision", "5501"],
         obj={"completeness_service_factory": lambda: mock_service},
     )
 
@@ -441,7 +441,7 @@ def test_completeness_401_maps_to_exit2_guiding_sen_login():
 
     result = runner.invoke(
         app,
-        ["sen", "completeness", "--api-id", "375", "--revision", "5513"],
+        ["sen", "completeness", "--id", "375", "--revision", "5513"],
         obj={"completeness_service_factory": lambda: mock_service},
     )
 
@@ -455,7 +455,7 @@ def test_completeness_success_outputs_never_leak_credentials():
 
     result = runner.invoke(
         app,
-        ["sen", "completeness", "--api-id", "375", "--revision", "5513", "-o", "yaml"],
+        ["sen", "completeness", "--id", "375", "--revision", "5513", "-o", "yaml"],
         obj={"completeness_service_factory": lambda: mock_service},
     )
 
@@ -468,7 +468,7 @@ def test_completeness_success_outputs_never_leak_credentials():
 def test_completeness_flags_accepted_together():
     result, factory = _invoke_completeness(
         [
-            "--api-id", "375", "--revision", "5513",
+            "--id", "375", "--revision", "5513",
             "--score-only", "-o", "json", "-v",
         ],
         MagicMock(get_completeness=lambda **kw: SAMPLE_VIEW),

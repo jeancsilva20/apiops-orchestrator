@@ -1,0 +1,9 @@
+- [x] 1. Renomear flag no CLI
+  - [x] 1.1 `adapters/inbound/cli/cli_adapter.py`: trocar declaração da opção `--api-id` por `--id` no comando `completeness` (o parâmetro interno `api_id` permanece com o mesmo nome)
+  - [x] 1.2 Atualizar `MISSING_TARGET_MESSAGE` para citar `--id e --revision`
+- [x] 2. Testes unitários
+  - [x] 2.1 `tests/unit/adapters/inbound/cli/test_cli_adapter.py`: substituir invocações `--api-id` por `--id` e ajustar assertion que verifica o texto do erro
+  - [x] 2.2 Rodar `pytest tests/unit/adapters/inbound/cli/test_cli_adapter.py` e garantir verde (fracasso pré-existente de `test_version_flag` fora do escopo)
+- [x] 3. Consistência
+  - [x] 3.1 Sem alias legado: `--api-id` deve ser rejeitado pelo parser (falha silenciosa é aceitável — break é anunciado no proposal)
+  - [x] 3.2 Contrato JSON, service e adapters inalterados

@@ -658,7 +658,7 @@ def _render_completeness_text(view: CompletenessView, score_only: bool) -> None:
 
 
 MISSING_TARGET_MESSAGE = (
-    "Informe a API e a revisão: --api-id e --revision são obrigatórios. "
+    "Informe a API e a revisão: --id e --revision são obrigatórios. "
     "Para descobrir os REV ID: sen list api --id X --revisions. "
     "Detalhes: sen completeness --help"
 )
@@ -668,7 +668,7 @@ MISSING_TARGET_MESSAGE = (
 def completeness(
     ctx: typer.Context,
     api_id: Optional[int] = typer.Option(
-        None, "--api-id", help="Manager ID of the API."
+        None, "--id", help="Manager ID of the API."
     ),
     revision: Optional[int] = typer.Option(
         None, "--revision", help="Revision ID (REV ID from the revisions drill-down)."
