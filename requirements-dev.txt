@@ -1,8 +1,8 @@
 -r requirements.txt
 
 # Dependencias de DEV/QA (pins exatos do poetry.lock).
-# Necessarias apenas para rodar testes, linters e docs — o usuario final
-# do produto deve instalar somente o requirements.txt.
+# Necessarias apenas para rodar testes, linters e scans de seguranca —
+# o usuario final do produto deve instalar somente o requirements.txt.
 
 pytest==8.4.2
 pytest-cov==7.0.0
@@ -13,8 +13,3 @@ mypy==1.18.2
 deptry==0.23.1
 bandit==1.8.6
 safety==3.6.2
-pre-commit==4.3.0
-tox==4.31.0
-sphinx==8.2.3
-sphinxawesome-theme==5.3.2
-tbump==6.11.0
