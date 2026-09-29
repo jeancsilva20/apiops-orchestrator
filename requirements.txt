@@ -1,0 +1,41 @@
+# Dependencias de RUNTIME do apiops-orchestrator.
+#
+# Espelho do grafo principal do poetry.lock (diretas + transitivas),
+# pinado versao a versao para reproduzir o mesmo conjunto validado.
+# Fluxo sem Poetry (PODER completo em scripts/setup.ps1):
+#   python -m venv .venv
+#   .venv\Scripts\pip install -r requirements.txt
+#   .venv\Scripts\pip install -e .          <- instala o pacote (src-layout) e o comando sen
+#
+# Quem usa Poetry continua com `poetry install` normalmente — este arquivo
+# nao substitui o poetry.lock, apenas espelha suas versoes.
+
+# --- diretas ---
+typer==0.19.2
+rich==14.2.0
+pydantic==2.12.0
+pydantic-settings==2.11.0
+python-dotenv==1.1.1
+pyyaml==6.0.3
+jsonschema==4.25.1
+requests==2.32.5
+
+# --- transitivas (resolvidas pelo poetry.lock) ---
+annotated-types==0.7.0
+attrs==25.4.0
+certifi==2025.10.5
+charset-normalizer==3.4.3
+click==8.3.0
+colorama==0.4.6          # via click em Windows
+idna==3.11
+jsonschema-specifications==2025.9.1
+markdown-it-py==4.0.0
+mdurl==0.1.2
+pydantic-core==2.41.1
+pygments==2.19.2
+referencing==0.37.0
+rpds-py==0.27.1
+shellingham==1.5.4
+typing-extensions==4.15.0
+typing-inspection==0.4.2
+urllib3==2.5.0
