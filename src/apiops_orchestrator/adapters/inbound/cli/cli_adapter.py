@@ -29,7 +29,9 @@ from apiops_orchestrator.application.exceptions.completeness_exceptions import (
 from apiops_orchestrator.domain.models.completeness_view import CompletenessView
 from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
 from apiops_orchestrator.domain.models.catalog_revision_model import CatalogRevisionInfo
-from apiops_orchestrator.application.exceptions.listing_exceptions import ApiCollectionError
+from apiops_orchestrator.application.exceptions.listing_exceptions import (
+    ApiCollectionError,
+)
 
 main_app = typer.Typer(
     no_args_is_help=True,
@@ -75,6 +77,7 @@ def cli_version() -> str:
         return importlib.metadata.version(_CLI_PACKAGE)
     except importlib.metadata.PackageNotFoundError:
         return "-"
+
 
 WELCOME_LOGO = """\
   ████    ██████    ██████    ████    ██████    ████████               ███████  ██        ██████
@@ -210,11 +213,15 @@ def login(ctx: typer.Context):
     try:
         login_service_factory = (ctx.obj or {}).get("login_service_factory")
         if not callable(login_service_factory):
-            rprint("[bold red]Erro:[/bold red] Serviço de login indisponível no contexto.")
+            rprint(
+                "[bold red]Erro:[/bold red] Serviço de login indisponível no contexto."
+            )
             raise typer.Exit(code=1)
 
         print_welcome()
-        session = _authenticate_with_feedback(cast(Callable[[], Any], login_service_factory))
+        session = _authenticate_with_feedback(
+            cast(Callable[[], Any], login_service_factory)
+        )
     except LoginError as e:
         rprint(f"[bold red]Erro de login:[/bold red] {e.message}")
         raise typer.Exit(code=e.exit_code)
@@ -339,23 +346,61 @@ def _listing_cells(api: ApiCatalogEntry) -> tuple:
     )
 
 
-def _render_grade(cells_rows, header=LIST_HEADER) -> None:
-    """Grade alinhada estilo monospace (A3/C2): colunas alinhadas à esquerda."""
-    widths = [len(col) for col in header]
-    flat_rows = [header] + [
-        (cells if isinstance(cells, tuple) else tuple(cells)) for cells in cells_rows
-    ]
-    for row in flat_rows:
-        for index, cell in enumerate(row):
-            widths[index] = max(widths[index], len(cell))
-    rprint(
-        "[bold cyan]"
-        + "  ".join(header[i].ljust(widths[i]) for i in range(len(header)))
-        + "[/bold cyan]"
+_GRADE_BOX = box.ROUNDED if _stdout_supports_rounded_box() else box.ASCII
+
+
+def _score_cell(value: str) -> Text:
+    """Coloração decorativa do score (≤80 verde, 50–79 amarelo, <50 vermelho).
+
+    Política puramente de render — os limiares fixos NÃO substituem o gate
+    real por revisão (que vive no `sen completeness`); o dado cru segue idêntico.
+    """
+    if not value.endswith("%"):
+        return Text(value)
+    try:
+        score = float(value[:-1])
+    except ValueError:
+        return Text(value)
+    style = "green" if score >= 80 else "yellow" if score >= 50 else "red"
+    return Text(value, style=style)
+
+
+def _render_grade(
+    cells_rows,
+    header=LIST_HEADER,
+    column_justify: Optional[tuple] = None,
+    column_decorators: Optional[tuple] = None,
+) -> None:
+    """Grade Rich (estilização da grade canônica C2; mesmas colunas do §4).
+
+    Cai para box ASCII em consoles sem glifos arredondados, coerente com o
+    resto do CLI (`_stdout_supports_rounded_box`). Sem `cell_style` os valores
+    não recebem marcação — conteúdos ordinários cruzam como str simples.
+    """
+    table = Table(
+        box=_GRADE_BOX,
+        header_style="bold cyan",
+        border_style="grey53",
+        padding=(0, 1),
+        pad_edge=False,
     )
+    for index, column in enumerate(header):
+        table.add_column(
+            column,
+            justify=(column_justify[index] if column_justify else None) or "left",
+        )
     for row in cells_rows:
         values = row if isinstance(row, tuple) else tuple(row)
-        rprint("  ".join(values[i].ljust(widths[i]) for i in range(len(header))))
+        decorated = []
+        for index, value in enumerate(values):
+            decorator = (
+                column_decorators[index]
+                if column_decorators and index < len(column_decorators)
+                else None
+            )
+            decorated.append(decorator(value) if decorator else value)
+        table.add_row(*decorated)
+    rprint(table)
 
 
 def _window_footer(limit_value: Optional[int], offset_value: Optional[int]) -> None:
@@ -444,7 +489,17 @@ def list_apis(
             return
 
         def print_text():
-            _render_grade([_listing_cells(entry) for entry in apis])
+            _render_grade(
+                [_listing_cells(entry) for entry in apis],
+                column_justify=("right", None, None, None, "right"),
+                column_decorators=(
+                    (lambda v: Text(str(v), style="dim")),
+                    None,
+                    None,
+                    None,
+                    None,
+                ),
+            )
             if api_id is None:
                 _window_footer(limit, offset)
 
@@ -465,7 +520,11 @@ def list_apis(
 
 
 REVISIONS_HEADER = (
-    "REV #", "REV ID", "STAGE", "ENVS", "COMPLETE",
+    "REV #",
+    "REV ID",
+    "STAGE",
+    "ENVS",
+    "COMPLETE",
 )
 
 
@@ -493,10 +552,21 @@ def _render_revisions_grade(
 
     def print_text():
         _render_grade(
-            [_revision_cells(row) for row in rows], header=REVISIONS_HEADER
+            [_revision_cells(row) for row in rows],
+            header=REVISIONS_HEADER,
+            column_justify=(None, None, None, None, "right"),
+            column_decorators=(
+                (lambda v: Text(str(v), style="bold white")),
+                None,
+                None,
+                None,
+                _score_cell,
+            ),
         )
 
-    display_output([row.to_dict() for row in rows], output_format=output, text_callback=print_text)
+    display_output(
+        [row.to_dict() for row in rows], output_format=output, text_callback=print_text
+    )
 
 
 def display_version():
@@ -592,9 +662,7 @@ def _completeness_field_grid(view: CompletenessView) -> Table:
     grid.add_row(Text("REVISÃO:", style="bold white"), Text(revision_label))
     if api.context:
         label_bits = [bit for bit in (api.context.type,) if bit]
-        owner_bits = [
-            bit for bit in (api.context.group_name, api.context.owner) if bit
-        ]
+        owner_bits = [bit for bit in (api.context.group_name, api.context.owner) if bit]
         possession = " · ".join(label_bits + owner_bits) or "-"
         grid.add_row(Text("POSSE:", style="bold white"), Text(possession))
     return grid
@@ -614,7 +682,9 @@ def _render_completeness_headline(view: CompletenessView, score_only: bool) -> G
 
     deficit = _completeness_below_gate(view.score, view.gate_percent)
     if deficit:
-        body_bits.append(Text(f"{_completeness_glyph('warn')} {deficit}", style="yellow"))
+        body_bits.append(
+            Text(f"{_completeness_glyph('warn')} {deficit}", style="yellow")
+        )
 
     if score_only:
         return Group(*body_bits)
@@ -622,7 +692,9 @@ def _render_completeness_headline(view: CompletenessView, score_only: bool) -> G
     suggestions = view.suggestions
     body_bits.append(Text(""))
     if not suggestions:
-        body_bits.append(Text("Nenhuma sugestão de melhoria para esta revisão.", style="white"))
+        body_bits.append(
+            Text("Nenhuma sugestão de melhoria para esta revisão.", style="white")
+        )
         return Group(*body_bits)
 
     body_bits.append(Text(f"SUGESTÕES ({len(suggestions)}):", style="bold white"))
@@ -667,9 +739,7 @@ MISSING_TARGET_MESSAGE = (
 @sen_app.command("completeness")
 def completeness(
     ctx: typer.Context,
-    api_id: Optional[int] = typer.Option(
-        None, "--id", help="Manager ID of the API."
-    ),
+    api_id: Optional[int] = typer.Option(None, "--id", help="Manager ID of the API."),
     revision: Optional[int] = typer.Option(
         None, "--revision", help="Revision ID (REV ID from the revisions drill-down)."
     ),
