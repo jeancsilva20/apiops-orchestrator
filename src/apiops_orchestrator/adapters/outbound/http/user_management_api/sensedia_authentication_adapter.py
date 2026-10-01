@@ -1,4 +1,3 @@
-import typer
 from requests.auth import HTTPBasicAuth
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.ports.authentication_port import AuthenticationPort

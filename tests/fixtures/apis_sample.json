@@ -1,0 +1,47 @@
+[
+  {
+    "id": 400,
+    "name": "Orchestrator Auth API",
+    "version": "1.0.0",
+    "basePath": "/orq-auth/v1",
+    "description": "Autenticacao da orquestracao (oauth2 token)",
+    "lastRevision": {"id": 8882, "revisionNumber": 3},
+    "lifeCycle": "DRAFT"
+  },
+  {
+    "id": 530,
+    "name": "Framework Notificações Push",
+    "version": "0.9.0",
+    "basePath": "/push/v1",
+    "description": "Envio de notificacoes push mobile",
+    "lastRevision": {"id": 8601, "revisionNumber": 1},
+    "lifeCycle": "DRAFT"
+  },
+  {
+    "id": 312,
+    "name": "Checkout Pedidos",
+    "version": "2.3.1",
+    "basePath": "/checkout/v2",
+    "description": "Operacoes de pedidos do checkout",
+    "lastRevision": {"id": 8122, "revisionNumber": 7},
+    "lifeCycle": "PUBLISHED"
+  },
+  {
+    "id": 512,
+    "name": "Logística Entregas",
+    "version": "1.2.0",
+    "basePath": "/logistics/v1",
+    "description": "Consulta e atualizacao de entregas",
+    "lastRevision": {"id": 8500, "revisionNumber": 4},
+    "lifeCycle": "PUBLISHED"
+  },
+  {
+    "id": 401,
+    "name": "Autenticação do Consumidor",
+    "version": "3.1.0",
+    "basePath": "/consumer-auth/v3",
+    "description": "Serviços de autenticação do consumidor",
+    "lastRevision": {"id": 8901, "revisionNumber": 12},
+    "lifeCycle": "PUBLISHED"
+  }
+]

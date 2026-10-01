@@ -157,6 +157,12 @@ ENV/
 env.bak/
 venv.bak/
 
+# CLI local session (sen login) — nunca versionar (ADR 0006)
+.sen_session*
+# Credentials do pacote (sen login) — arquivo real nunca versionado; o gabarito .sen.example fica trackeado
+.sen
+.sen_session.*.tmp
+
 # Spyder project settings
 .spyderproject
 .spyproject

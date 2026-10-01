@@ -1,16 +1,75 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from dataclasses import dataclass
+from typing import Dict, Any, List, Optional
+
+from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
+from apiops_orchestrator.domain.models.catalog_revision_model import (
+    CatalogRevisionCompleteness,
+)
+from apiops_orchestrator.domain.models.workflow_stage_model import WorkflowStage
+
+
+class ManagerApiError(Exception):
+    """Base dos sinais de contrato do port do API Manager/Finder."""
+
+
+class ManagerApiTransportRejectedError(ManagerApiError):
+    """A plataforma Manager/Finder recusou o pedido (HTTP 4xx).
+
+    Carrega `status_code` para diagnóstico; mensagem é neutra de tecnologia.
+    """
+
+    def __init__(self, status_code: int, title: str) -> None:
+        self.status_code = status_code
+        self.title = title
+        super().__init__(f"Manager API rejected the request (HTTP {status_code}: {title})")
+
+
+class ManagerApiTransportUnavailableError(ManagerApiError):
+    """Manager/Finder inalcançável ou 5xx persistente após esgotar retries."""
+
+
+@dataclass(frozen=True)
+class ApiCatalogPage:
+    """Uma pagina do catalogo (api-finder) com o total de registros."""
+
+    rows: List[ApiCatalogEntry]
+    total: int
 
 
 class ManagerApiPort(ABC):
     @abstractmethod
     def get_apis(self) -> list[Dict[str, Any]]:
-        """Contract to search all APIs"""
+        """Contract to search all APIs (manager cru — fluxo legado/bare)."""
         pass
 
     @abstractmethod
-    def get_api_by_id(self, api_id: int) -> Dict[str, Any]:
-        """Contract to search data from the API by ID"""
+    def list_catalog_apis(
+        self,
+        limit: int,
+        query: Optional[str] = None,
+    ) -> ApiCatalogPage:
+        """Contract to search the APIs catalog with query filter."""
+        pass
+
+    @abstractmethod
+    def get_api_by_id(self, api_id: Optional[int] = None) -> Dict[str, Any]:
+        """Contract to search data from the API by ID (manager)"""
+        pass
+
+    @abstractmethod
+    def list_api_detail(self, api_id: int) -> Optional[ApiCatalogEntry]:
+        """Search API detail from the CATALOG."""
+        pass
+
+    @abstractmethod
+    def get_revision_completeness(self, revision_id: int) -> CatalogRevisionCompleteness:
+        """Contract to fetch the completeness report of one revision."""
+        pass
+
+    @abstractmethod
+    def get_workflow_stages(self, workflow_id: int) -> List[WorkflowStage]:
+        """Contract to fetch the stages catalog of one workflow."""
         pass
 
     @abstractmethod

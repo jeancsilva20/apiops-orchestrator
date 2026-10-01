@@ -1,6 +1,5 @@
 import pytest
-import os
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 from pathlib import Path
 
 from apiops_orchestrator.adapters.outbound.files_exporter.local_file_exporter_adapter import (
