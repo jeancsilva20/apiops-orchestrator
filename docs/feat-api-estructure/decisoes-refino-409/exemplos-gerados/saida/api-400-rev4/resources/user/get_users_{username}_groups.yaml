@@ -1,0 +1,7 @@
+path: /users/{username}/groups
+destination:
+  url: https://platform-production.sensedia.com/user-management/v1/users/{username}/groups
+description: ""
+
+inherit: true
+# heranca pura: nenhum item proprio nesta operacao

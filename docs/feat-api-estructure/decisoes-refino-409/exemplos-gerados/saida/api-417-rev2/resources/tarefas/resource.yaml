@@ -1,0 +1,8 @@
+name: "Tarefas"
+description: "Gerenciamento de tarefas de busca de letra de obras musicais"
+destination:
+  url: https://google.com
+  timeout: '30'
+
+inherit: true
+# heranca preservada ; nenhum interceptor proprio neste recurso

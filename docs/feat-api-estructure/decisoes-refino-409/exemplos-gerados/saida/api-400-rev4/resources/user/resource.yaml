@@ -1,0 +1,15 @@
+name: "User"
+description: ""
+destination:
+  url: ''            # vazio = herda do escopo acima
+
+inherit: true
+# heranca preservada ; o que vem abaixo SOMA ao fluxo da revision
+
+interceptors_request:
+  - type: Client ID validation
+    content:
+      location: HEADER
+      name: client_id
+      responseContentType: APPLICATION_JSON
+      ignoreBodyValidationMultiPartFormData: false

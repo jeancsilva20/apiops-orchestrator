@@ -1,0 +1,7 @@
+name: "Token"
+description: "Recurso de token"
+destination:
+  url: ''            # vazio = herda do escopo acima
+
+inherit: true
+# heranca preservada ; nenhum interceptor proprio neste recurso
