@@ -1,0 +1,11 @@
+path: /tarefas
+destination:
+  url: https://dev-backend.ecad.org.br/app-demo/servico-letras/v1/tarefas
+description: >-
+  Retorna uma lista paginada de tarefas de busca de letra, permitindo filtrar pelo status
+  atual da tarefa (PENDENTE, EM_ANDAMENTO, CONCLUIDA). Os resultados são ordenados por data de
+  criação decrescente.
+
+inherit: true
+# TOMBSTONE: o fluxo herdado vale, MENOS -> XSS threat protection
+# a remocao ainda nao tem representacao no YAML (item V-25 do refino)
