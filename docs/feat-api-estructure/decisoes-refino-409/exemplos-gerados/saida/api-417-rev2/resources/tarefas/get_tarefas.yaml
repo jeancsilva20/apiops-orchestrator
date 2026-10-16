@@ -1,11 +1,49 @@
 path: /tarefas
 destination:
-  url: https://dev-backend.ecad.org.br/app-demo/servico-letras/v1/tarefas
+  url: "https://dev-backend.ecad.org.br/app-demo/servico-letras/v1/tarefas"
 description: >-
   Retorna uma lista paginada de tarefas de busca de letra, permitindo filtrar pelo status
   atual da tarefa (PENDENTE, EM_ANDAMENTO, CONCLUIDA). Os resultados são ordenados por data de
   criação decrescente.
 
-inherit: true
-# TOMBSTONE: o fluxo herdado vale, MENOS -> XSS threat protection
-# a remocao ainda nao tem representacao no YAML (item V-25 do refino)
+inherit: false
+# este ponto executa o fluxo herdado, menos: XSS threat protection
+# a lista abaixo é completa de propósito: o Manager não tem como
+# dizer "herde tudo, exceto um" — lista vazia sempre significa herdar
+
+interceptors_request:
+  - type: Custom
+    id: 32
+  - type: Log
+    content:
+      acceptedTerms: true
+      encryptContent: false
+      encryptPathAndParameters: false
+  - type: Custom
+    id: 178
+  - type: Rate limit
+    content:
+      quota: "1000"
+      interval: SECOND
+      limitBy: IP
+      soft: false
+      softvalue: ""
+      ignoreBodyValidationMultiPartFormData: false
+      noHeaderBehavior: null
+      headerKey: null
+      rateLimitHeader: true
+  - type: Payload size
+    content:
+      maxSize: "2048"
+  - type: Log
+    content:
+      acceptedTerms: true
+      encryptContent: false
+      encryptPathAndParameters: false
+
+interceptors_response:
+  - type: Log
+    content:
+      acceptedTerms: true
+      encryptContent: false
+      encryptPathAndParameters: false

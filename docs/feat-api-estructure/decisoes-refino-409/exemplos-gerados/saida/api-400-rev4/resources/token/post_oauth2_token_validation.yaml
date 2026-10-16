@@ -1,10 +1,11 @@
 path: /oauth2/token/validation
 destination:
   url: ''            # vazio = herda do escopo acima
-description: "Validação de token"
+description: Validação de token
 
 inherit: false
-# heranca quebrada: o fluxo abaixo substitui o herdado (ausentes: nenhum)
+# o fluxo abaixo substitui o herdado, e é o que este ponto executa
+# não executa, do herdado: nada
 
 interceptors_request:
   - type: Log
@@ -16,7 +17,7 @@ interceptors_request:
       location: BODY
       regexToReplace: "(?<=(\"access_token\"|\"admin_access_token\"|\"user_name\"|\"user_email\")\\s?:\\s?\"[0-9A-Za-z]{3})[a-zA-Z0-9!@#$%^&*()_+\\-=\\[\\];':\"\\|.<>\\/?\\sÀ-ü]*"
       attr: null
-      replaceChar: ******
+      replaceChar: "******"
       ignoreBodyValidationMultiPartFormData: false
   - type: Custom
     id: 1
@@ -25,7 +26,7 @@ interceptors_request:
       location: HEADER
       regexToReplace: \w.*
       attr: client_secret
-      replaceChar: *****
+      replaceChar: "*****"
       ignoreBodyValidationMultiPartFormData: false
   - type: Log
     content:

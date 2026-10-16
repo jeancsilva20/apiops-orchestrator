@@ -29,7 +29,7 @@ falha **silenciosa** — HTTP 200 com perda — ou 500 sem mensagem.
 | **W-4** | O Manager guarda o fluxo **resolvido**; o repositório guarda o **delta** | publicar o delta cru **apaga** o herdado |
 | **W-6** | A operação **pertence ao recurso**; `id` de operação não é global | operação que muda de recurso é **descartada**, com 200 |
 | **W-7** | O gate do AG está no `PUT /revisions`, **não** no `PUT /apis` | escrever nos dois deixa estado meio-aplicado |
-| **W-2** | O repositório pode referenciar um `Custom` que não existe mais | falha só na publicação; deveria falhar na gramática |
+| **W-2** | O repositório pode referenciar um `Custom` que não existe mais | falha só na publicação — **decidido em 2026-10-15:** passa a abortar na validação, nomeando o id |
 | **W-8** | **HTTP 200 não é prova de sucesso** | três perdas silenciosas distintas nesta investigação |
 
 ### A regra de identidade, condensada
@@ -40,9 +40,14 @@ idTemp    →  do PAYLOAD   (único em toda a chamada)
 id        →  null em item novo; preservado em item existente
 ```
 
-O orquestrador **já tem** essa convenção em
-`domain/models/interceptors_model.py:17` (`set_ids_from_position`). O modelo está
-certo — quem montar payload fora dele precisa respeitá-la.
+> ⚠️ **Correção (2026-10-15).** Uma versão anterior deste guia afirmava que
+> `domain/models/interceptors_model.py` já implementava essa convenção. **Não
+> implementa.** O `set_ids_from_position` deriva `idTemp` de `position` — que é
+> do **escopo** — e com isso fabrica exatamente a colisão da armadilha #2 do §8.
+> Além disso, `id` e `idTemp` são `int` obrigatórios, então "`id` nulo em item
+> novo" não é sequer representável. O modelo precisa ser **separado** em
+> declarativo (o que o YAML expressa) e wire (o que o payload exige), como o §2
+> já indica.
 
 ---
 
@@ -121,9 +126,18 @@ bloqueio de governança, **um sinal de domínio próprio** (§7).
 ### Uma correção necessária no adapter
 
 `get_custom_interceptor_by_id` chama `GET /custom-interceptors/{id}` e **assume
-que existe** (`json_response["id"]` estoura em KeyError). Comprovado: o endpoint
-devolve **404** para ids apagados. Precisa devolver `None` e deixar a decisão para
-a camada de aplicação.
+que existe**. Comprovado: o endpoint devolve **404** para ids apagados.
+
+> ⚠️ **Correção (2026-10-15).** O mecanismo não é `KeyError`. O `_request` traduz
+> 4xx em `ManagerApiTransportRejectedError` **antes** de o corpo ser lido, então
+> `json_response["id"]` nunca chega a executar. Trocar o acesso por `.get()` não
+> corrigiria nada: o que falta é **capturar o 404** e devolver `None`.
+
+E o destino desse `None` está decidido: **aborta**. O repositório que referencia um
+`Custom` inexistente falha na validação, nomeando o id. O protótipo faz diferente —
+repõe o `content` varrendo revisions antigas da própria API (`indexar_customs_da_api`) —
+e isso **não deve ser transplantado**: ressuscita uma referência que um administrador
+apagou de propósito e, quando não acha, descarta o item em silêncio.
 
 ---
 
@@ -174,6 +188,8 @@ def montar_fluxo(
     raiz          → publica exatamente o que o repositório declara
     inherit:true  → PRESERVA a lista remota (herança materializada, W-4) + append
     inherit:false → publica SOMENTE os itens declarados
+                    ATENÇÃO: lista VAZIA não zera o fluxo — ela HERDA (W-5, T06).
+                    "Rota que não executa nada" não existe na plataforma.
 
     `position` NÃO é renumerada nos itens reusados (W-3).
     """
@@ -402,14 +418,22 @@ serialização do §4.1.
 
 ## 10. O que ainda falta decidir
 
-| # | Pendência | Bloqueia |
+**Fila fechada em 2026-10-15.** Os seis itens foram decididos no refino do
+`sen validate` e alimentaram a change OpenSpec `add-sen-validate`.
+
+| # | Pendência | Desfecho |
 |---|---|---|
-| **V-25** | gramática do tombstone — W-5 mostra que a opção (a), lista completa, é a única expressável | round-trip fiel |
-| **D-20** | o `validate` reenvia o stage atual ou avança para o próximo? Reenviar **pula** o gate do AG | a etapa E4 ter sentido |
-| **W-2** | validar na gramática que um `Custom` referenciado existe no tenant | falha tardia |
-| **D-5** | shape por tipo de interceptor, perdido ao remover os `*-default-interceptors` | `quota: "abacaxi"` só falha na publicação |
-| **D-6 / V-18** | nome e gramática do arquivo do escopo `all` | descoberta na E1 |
-| **P-2** | desfecho quando a régua está inalcançável | E2 |
+| **V-25** | gramática do tombstone | **lista completa explícita** — única forma expressável; o T06 provou que lista vazia herda. [V-25](decisoes-refino-409/V-25-tombstone.md) |
+| **D-20** | stage do AG no payload | **lido em runtime** da revisão alvo e reenviado intacto. A pergunta estava mal formulada: o stage 1401 nunca esteve na Draft, e reenviar o atual **dispara** o AG. [D-020](d020-stage-do-adaptive-governance.md) |
+| **W-2** | `Custom` referenciado que não existe | **aborta**, nomeando o id. Sem reposição por revisão antiga, sem descarte silencioso. O catálogo é autoridade: `404` significa ausente |
+| **D-5** | shape por tipo de interceptor | **dissolvido na API template**, que valida tipo e preenchimento no regime `INFO`/`WARNING`. Os 7 `*-default-interceptors` saem |
+| **D-6 / V-18** | arquivo do escopo `all` | **`all.yaml`**, obrigatório pelo nome exato; ausência aborta na E1. [V-18](decisoes-refino-409/V-18-arquivo-do-escopo-raiz.md) |
+| **P-2** | régua inalcançável | **aborta nos dois modos**, e também com `spec.template` vazio |
+
+> ⚠️ **Correção (2026-10-15).** A linha da D-5 dizia que o shape fora *"perdido ao
+> remover os `*-default-interceptors`"*. Eles **não foram removidos** — estão em
+> `domain/schemas/`, sete arquivos, ~128 KB. Não é perda: é aposentadoria
+> planejada, e a substituição é a API template.
 
 ---
 

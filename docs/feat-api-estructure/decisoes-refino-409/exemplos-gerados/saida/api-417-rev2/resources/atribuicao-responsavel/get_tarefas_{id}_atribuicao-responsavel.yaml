@@ -1,7 +1,6 @@
 path: /tarefas/{id}/atribuicao-responsavel
 destination:
   url: ''            # vazio = herda do escopo acima
-description: ""
 
 inherit: true
-# heranca pura: nenhum item proprio nesta operacao
+# apenas herda o fluxo do nível acima: nenhum interceptor próprio

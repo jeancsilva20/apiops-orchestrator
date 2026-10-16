@@ -1,7 +1,7 @@
-name: "Letras"
-description: "Cadastro e exclusão de letras de obras musicais do catálogo ECAD"
+name: Letras
+description: Cadastro e exclusão de letras de obras musicais do catálogo ECAD
 destination:
   url: ''            # vazio = herda do escopo acima
 
 inherit: true
-# heranca preservada ; nenhum interceptor proprio neste recurso
+# apenas herda o fluxo do nível acima: nenhum interceptor próprio

@@ -1,27 +1,22 @@
 apiVersion: api-management.sensedia.com/v1
 kind: ApiBasicInfo
 spec:
-  # id fisico da API no Manager; readOnly, gravado no import
   id: 417
-  name: "Serviço de Letras 2.0.0"
-  version: "1.0.0"
-  # basePath: readOnly, imutavel
-  basePath: "/letras/v2"
+  name: Serviço de Letras 2.0.0
+  version: 1.0.0
+  basePath: /letras/v2
   description: >-
     API REST para gerenciamento de tarefas e letras de obras musicais do catálogo ECAD. Permite
     criar tarefas de busca de letra, atribuir responsável a tarefas pendentes, cadastrar letras
     vinculadas a tarefas e remover letras.
-  # id da API-regua de interceptors (Golden Path). Declarado SEMPRE;
-  # vazio = esta API nao tem regua e a validacao nao roda. Nao vem do wire:
-  # a plataforma nao tem a chave `template` (8 confirmacoes de ausencia).
   template: ''
-  # apiResponsible: read-only no MVP; declarado sempre, mesmo vazio
   apiResponsible:
-    username: "paulo.silva"
+    username: paulo.silva
     groupName: ""
-  # lista declarativa completa de pares (attributeName, tags[])
   apiTags:
-    - attributeName: "My new"
-      tags: ["Tag1"]
-    - attributeName: "teste giroto"
-      tags: ["teste giroto"]
+    - attributeName: teste giroto
+      tags:
+        - teste giroto
+    - attributeName: My new
+      tags:
+        - Tag1

@@ -279,15 +279,15 @@ efetivo pelo grupo · stage usado na validação · se a `position` é obrigató
 | # | Item | Tipo | Bloqueia | Status |
 |---|---|---|---|---|
 | **P-0** | **Rodada de validação read-only** — executar §8.1 (V-a … V-g) e registrar os achados | evidência | P-1 a P-4 e o conteúdo da proposal | **PRÓXIMO** |
-| P-5 | **Granularidade da change proposal** — 4 changes OpenSpec espelhando as ondas, ou uma com fases | processo | tudo | ABERTO (depois do P-0) |
+| P-5 | **Granularidade da change proposal** — 4 changes OpenSpec espelhando as ondas, ou uma com fases | processo | tudo | **FECHADO (2026-10-15)** — **uma change com as ondas em fases**: `add-sen-validate`. As quatro ondas viram grupos de tarefas, com o mesmo critério de corte |
 | P-6 | ~~`openspec/` vazio~~ — **corrigido**: o OpenSpec do CLI tem specs (`api-catalog`, `cli-auth`, `sen-completeness`, `sen-list`), archive com changes e 1 change ativa. A proposal nasce em `CLI/apiops-orchestrator/openspec/`, seguindo o padrao do archive | processo | — | **RESOLVIDO** |
-| P-2 | **Régua inalcançável** — desfecho quando o GET da API-régua falha (sem rede, 401, 404, id de outro tenant); difere entre `local` e `pipeline`? | decisão de produto | onda 2 | ABERTO |
-| P-3 | **Snapshot da régua no relatório** — gravar id + `revisionNumber` + hash do fluxo para tornar o achado reproduzível | decisão de desenho | onda 2 | ABERTO |
-| P-4 | **V-25 — tombstone** — escolher entre lista completa explícita (a) e gramática de remoção (b); se (b), definir a chave de identificação do item | decisão de layout | onda 3 | ABERTO |
-| P-7 | **README dos exemplos gerados** — alinhar a regra de nome de arquivo ao código e à D-005 §4 | correção documental | nada | ABERTO |
-| P-8 | **Ambiente de escrita** — provisionar para validar `PUT /revisions/{id}`, herança em runtime, `''`↔`null` e as inferências do AG | infraestrutura | onda 3 | ABERTO |
+| P-2 | **Régua inalcançável** — desfecho quando o GET da API-régua falha | decisão de produto | onda 2 | **FECHADO (2026-10-15)** — **aborta nos dois modos**, e também com `spec.template` vazio. Não difere entre `local` e `pipeline`: é falha técnica. Medido: id inexistente devolve **404**; token inválido devolve **403**, não 401 — a mensagem nomeia sessão expirada e id de outro tenant como causas possíveis. Ver D-3 no plano §9 |
+| P-3 | **Snapshot da régua no relatório** — gravar id + `revisionNumber` + hash do fluxo para tornar o achado reproduzível | decisão de desenho | onda 2 | **FECHADO (2026-10-15)** — **grava**, dentro do contrato `apiops.sen-validate/v1`. Ver D-4 no plano §9 |
+| P-4 | **V-25 — tombstone** — escolher entre lista completa explícita (a) e gramática de remoção (b) | decisão de layout | onda 3 | **FECHADO (2026-10-15)** — **(a)**, e não por preferência: o T06 provou que lista vazia **herda**, então a (b) teria de ser expandida para a lista completa na publicação de qualquer forma. Ver [V-25](decisoes-refino-409/V-25-tombstone.md) |
+| P-7 | **README dos exemplos gerados** | correção documental | nada | **RESOLVIDO (2026-10-15)** — a afirmação "155 YAML, todos parseiam" foi corrigida (dois arquivos de `api-400-rev4` não parseavam, por `replaceChar: *****` sem aspas), e os exemplos foram regerados pelo materializador de produção, já com `all.yaml` e os reparos de serialização |
+| P-8 | **Ambiente de escrita** | infraestrutura | onda 3 | **RESOLVIDO (2026-10-15)** — a **API 417** serviu de alvo (é específica do projeto). Os 10 cenários do caderno rodaram pelo comando implementado, com backup e restauração, e o estado final voltou idêntico ao baseline. A equivalência `''`↔`null` na escrita foi medida e **refutada**: a plataforma guarda literalmente o que recebe (ver [V-01 §6](decisoes-refino-409/V-01-destination-timeout-escopos.md)). Herança em **runtime** segue sem cobertura, por exigir deploy e tráfego — é Non-Goal da change |
 | P-1 | **`position` no payload** — ver nota abaixo | serialização | onda 3 | **REBAIXADO** |
-| P-9 | **Rotação da credencial** usada nos testes ao vivo | segurança | nada | PENDENTE (herdado) |
+| P-9 | **Rotação da credencial** usada nos testes ao vivo | segurança | nada | **RESOLVIDO (2026-10-15)** — o token versionado em `provar_sen_validate.py` é do protótipo e tem validade de 24 h (expirou em 2026-10-15 15:16 UTC). O orquestrador não usa token fixo: o `sen login` gera um em runtime a partir de `OAUTH_CLIENT_ID`/`OAUTH_CLIENT_SECRET`, que vivem no `.env` **gitignorado** (`.gitignore:151`) |
 
 ### Nota sobre o P-1 (rebaixado em 2026-10-14)
 

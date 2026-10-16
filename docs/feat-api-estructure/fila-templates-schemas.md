@@ -60,3 +60,28 @@ Itens que a [D-005](d005-layout-revisado.md) acrescenta a esta fila:
 
 Protótipo determinístico das regras de nome e arvore, exercitado em 6 APIs reais:
 `decisoes-refino-409/exemplos-gerados/extrair_estrutura.py`.
+
+## 5. Incremento do refino do `sen validate` (2026-10-15)
+
+Decisões tomadas ao fechar a fila do §10 do [guia](guia-implementacao-sen-validate.md). Alimentam a
+change OpenSpec `add-sen-validate`.
+
+| # | Alvo | O que fazer |
+|---|---|---|
+| 22 | `decisoes-refino-409/exemplos-gerados/extrair_estrutura.py:354` | emitir **`all.yaml`** no lugar do literal `all-all.yaml` ([V-18](decisoes-refino-409/V-18-arquivo-do-escopo-raiz.md)) |
+| 23 | `extrair_estrutura.py` — serialização | **citar escalar iniciado por indicador YAML** (`*` `&` `!` `\|` `>` `%` `@` crase `[` `{` `,` `?`); o caso real foi `replaceChar: *****`, que quebra o parse |
+| 24 | `extrair_estrutura.py` — serialização | **preservar string numérica** vinda do wire (`"quota": "1000"`, `timeout: '30'`); converter em inteiro quebra o round-trip e gera achado falso na conformidade |
+| 25 | `extrair_estrutura.py` — tombstone | materializar a remoção como **lista completa explícita** com `inherit: false`, em vez de gravar comentário ([V-25](decisoes-refino-409/V-25-tombstone.md)) |
+| 26 | `exemplos-gerados/saida/` | **regerar** os dois repositórios com os itens 22 a 25 aplicados |
+| 27 | `exemplos-gerados/README.md` | alinhar a regra de nome de arquivo ao código e à D-005 §4 — fecha o **P-7** |
+| 28 | descoberta da E1 | `all.yaml` e `resource.yaml` **obrigatórios pelo nome exato**; ausência aborta antes de qualquer rede (fecha o **I-7**) |
+| 29 | validador de conformidade | `content` comparado **nos tipos nativos**; `Custom` casa por `customInterceptorId` **sem** comparar `content`; normalizar escalar numérico antes de comparar |
+| 30 | validador de conformidade | `WARNING` de **deriva de override**: comparar o escopo também com o fluxo do pai, e avisar quando a diferença for maior que a supressão declarada |
+| 31 | `manager_api_adapter.get_custom_interceptor_by_id` | capturar o **404** (`ManagerApiTransportRejectedError`) e devolver `None`; a camada de aplicação **aborta**, nomeando o id — sem repor conteúdo de revisão antiga |
+| 32 | `domain/models/interceptors_model.py` | **separar** declarativo (YAML) e wire; remover a derivação de `idTemp` a partir de `position`, que fabrica a colisão do W-9 |
+| 33 | publisher | preservar `workflowId`/`workflowStageId` lidos da revisão alvo, sem reescrever ([D-020](d020-stage-do-adaptive-governance.md)) |
+| 34 | publisher | **conferência pós-publicação** obrigatória: comparar enviado × publicado e tratar divergência como falha, mesmo sob HTTP 200 |
+| 35 | `ValidateView` | **snapshot da régua** (`id`, `revisionNumber`, hash do fluxo) no contrato `apiops.sen-validate/v1` |
+| 36 | `extrair_estrutura.py` — `nome_pasta` | **Defeito encontrado ao transplantar (2026-10-15).** A desambiguação é medida sobre o nome **já reescrito** quando o slug cai em nome reservado do Windows (`con`, `aux`, `lpt1`…): isso faz a reescrita parecer truncamento e impede o recurso de se encontrar entre os homônimos, somando um sufixo legível desnecessário (`con` → `con-recurso-x` em vez de `con-recurso`). Nunca apareceu porque nenhuma das 6 APIs reais tem recurso com nome reservado. Já corrigido em `domain/services/repo_layout.py`; aplicar também no extrator ao regerar |
+| 37 | gramática do `destination` vazio | ✅ **DECIDIDO (2026-10-15): padroniza-se em `null`.** Medido: a plataforma guarda uma string vazia real (`len=0`), não aspas literais — nada está quebrado nela. Mas `null` e `""` são idênticos em significado (ambos herdam), então manter os dois só cria deriva. O YAML mantém `url: ''` como única grafia de vazio e sempre publica `null`. **Sem mudança de código** — o publisher já fazia isso. Ver [V-01 §6](decisoes-refino-409/V-01-destination-timeout-escopos.md) |
+| 38 | conferência pós-publicação | ✅ **FEITO:** `destination` e `timeout` por escopo entraram na conferência, que antes só olhava operações, interceptors e recursos. Sem isso a deriva do item 37 passaria despercebida |

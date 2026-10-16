@@ -174,7 +174,9 @@ A descrição e as validações técnicas correspondentes estão detalhadas em [
 
 1. Fechar as pendências restantes de D-002/D-003 (separação do Adaptive Governance; fluxo admin de `id`/`basePath`/responsável).
 2. Especificar a esteira de publish/revision (alvo por ambiente) e o mecanismo de validação contra o template do Manager.
-3. Planejar a portabilidade de Custom interceptors (referência por nome/alias) e o versionamento de scripts.
+3. ~~Planejar a portabilidade de Custom interceptors (referência por nome/alias)~~ — **decidido em
+   2026-10-15:** permanece o `id` numérico, estável dentro de um ambiente; a validação na troca é do
+   dev, e o aborto por `Custom` inexistente a torna visível. Segue aberto o versionamento de scripts.
 4. Detalhar validação de destination por rota e de valores do template (rate limit etc.).
 5. Criar a proposal de implementação a partir da fila de impactos da [D-003](d003-layout-repo.md#9-impactos-de-implementação-fila-de-proposta).
 6. Só então alinhar importer, models, schemas, exportador e publicador ao contrato aprovado.

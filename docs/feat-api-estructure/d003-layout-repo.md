@@ -221,7 +221,12 @@ Fechados no refinamento de 2026-09-29 (ver §7 itens 17–20): `spec.tags[]`, `i
 - Governança de valores do template (rate limit e similares);
 - Fluxo administrativo para mudança legítima de `id`/`basePath`/responsável;
 - Sintaxe de flow a nível resource (cenário MAG);
-- Portabilidade de Custom entre tenants.
+- Portabilidade de Custom entre tenants. **Revisitado em 2026-10-15:** permanece o `id` numérico.
+  O id é estável dentro de um ambiente; quando muda — por exemplo ao mover o repositório entre
+  ambientes — a validação é responsabilidade do dev, e o aborto por `Custom` inexistente (W-2) torna
+  a troca visível em vez de silenciosa. Referenciar por nome, ou pelo par id + nome, foi descartado:
+  trocaria a chave de identidade por um campo que a plataforma não garante único, para cobrir um caso
+  que não é falha de rotina.
 
 ## 9. Impactos de implementação (fila de proposta)
 

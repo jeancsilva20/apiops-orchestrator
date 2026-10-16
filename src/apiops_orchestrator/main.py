@@ -25,6 +25,10 @@ from apiops_orchestrator.application.services.admin_token_provider import (
 from apiops_orchestrator.application.services.api_listing_service import (
     ApiListingService,
 )
+from apiops_orchestrator.application.services.regua_service import ReguaService
+from apiops_orchestrator.application.services.validate_service import (
+    ValidateService,
+)
 from apiops_orchestrator.application.services.completeness_service import (
     CompletenessService,
 )
@@ -128,6 +132,66 @@ def build_completeness_service_factory():
     return factory
 
 
+def build_validate_service_factory():
+    """Factory do `sen validate`, montada preguiçosamente.
+
+    `Settings` só é lida quando o comando roda — assim `sen --help` e os demais
+    comandos não exigem configuração do `validate`.
+    """
+
+    def factory() -> ValidateService:
+        settings = _load_settings()
+        manager_adapter = ManagerApiAdapter(
+            token=_build_admin_token(settings),
+            base_path="/api-manager/api/v3/",
+            max_retries=3,
+            settings=settings,
+        )
+        session = _build_session_store(settings).load()
+        return ValidateService(
+            manager_api=manager_adapter,
+            importer=LocalFileImporterAdapter(),
+            settings=settings,
+            session=session,
+        )
+
+    return factory
+
+
+def build_manager_api_factory():
+    """Adapter do Manager + settings, para os diagnósticos somente leitura."""
+
+    def factory():
+        settings = _load_settings()
+        return (
+            ManagerApiAdapter(
+                token=_build_admin_token(settings),
+                base_path="/api-manager/api/v3/",
+                max_retries=3,
+                settings=settings,
+            ),
+            settings,
+        )
+
+    return factory
+
+
+def build_regua_service_factory():
+    """Factory do serviço de régua, usada pelo diagnóstico `sen diag template`."""
+
+    def factory() -> ReguaService:
+        settings = _load_settings()
+        manager_adapter = ManagerApiAdapter(
+            token=_build_admin_token(settings),
+            base_path="/api-manager/api/v3/",
+            max_retries=3,
+            settings=settings,
+        )
+        return ReguaService(manager_api=manager_adapter, settings=settings)
+
+    return factory
+
+
 def validate_recursively(
     path: Path, importer, schema_validator, kind_to_schema: dict
 ) -> None:
@@ -215,6 +279,9 @@ def main():
             "login_service_factory": build_login_service_factory(),
             "api_listing_service_factory": build_listing_service_factory(),
             "completeness_service_factory": build_completeness_service_factory(),
+            "validate_service_factory": build_validate_service_factory(),
+            "regua_service_factory": build_regua_service_factory(),
+            "manager_api_factory": build_manager_api_factory(),
         }
         app(obj=ctx_obj)
 

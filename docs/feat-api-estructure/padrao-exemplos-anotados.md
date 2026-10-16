@@ -32,5 +32,6 @@ Sempre que um arquivo do layout fechar no refinamento, o fechamento **inclui** a
 | `api-basic-info.yaml` | D-003 §3 + refinamento 2026-09-29 | API 405 + [varredura 110 APIs](evidencia-tags-e-atributos.md) |
 | `resources/<slug>/resource.yaml` | D-003 §5 + D-005 §3 | APIs reais do tenant (409, 417) |
 | `resources/<slug>/<método>_<path>.yaml` | D-003 §4 + D-005 §4/§6 | APIs reais do tenant (409, 417) |
+| [`all.yaml`](all-yaml-exemplo-anotado.yaml) | **V-18** (2026-10-15) + V-01 §5 | API 417, revision 9175 |
 
 Próximos arquivos entrarão nesta tabela ao fecharem.

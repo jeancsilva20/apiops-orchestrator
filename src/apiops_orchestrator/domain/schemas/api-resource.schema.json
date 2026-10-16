@@ -1,102 +1,142 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Resource Schema",
+  "$id": "api-resource.schema.json",
+  "title": "Recurso (resources/<slug>/resource.yaml)",
+  "description": "Arquivo plano, sem involucro apiVersion/kind. Layout canonico da D-005 3/4; interceptors pela V-26 (inherit) e V-25 (tombstone).",
   "type": "object",
-  "required": [
-    "apiVersion",
-    "kind",
-    "items"
-  ],
   "additionalProperties": false,
+  "required": [
+    "name"
+  ],
   "properties": {
-    "apiVersion": {
+    "name": {
       "type": "string",
-      "const": "api-management.sensedia.com/v1"
+      "minLength": 1,
+      "description": "Nome do recurso no Manager. NAO precisa casar com o nome da pasta (D-005 3)."
     },
-    "kind": {
-      "type": "string",
-      "const": "Resource"
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
     },
-    "items": {
+    "destination": {
+      "$ref": "#/$defs/destination"
+    },
+    "inherit": {
+      "type": "boolean",
+      "description": "true = os itens declarados sao acrescentados ao fluxo herdado, que e preservado integralmente (W-4). false = vale exatamente o fluxo declarado. Lista vazia HERDA (W-5): nao existe 'escopo sem fluxo'."
+    },
+    "interceptors_request": {
+      "$ref": "#/$defs/fluxo",
+      "description": "Mapeia para o execution point FIRST. A ordem da lista e a fonte declarativa."
+    },
+    "interceptors_response": {
+      "$ref": "#/$defs/fluxo",
+      "description": "Mapeia para o execution point SECOND. A ordem da lista e a fonte declarativa."
+    }
+  },
+  "$defs": {
+    "destination": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "url"
+      ],
+      "properties": {
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "String vazia significa herdar do escopo acima (V-03). Aceita variavel de ambiente ($var)."
+        },
+        "timeout": {
+          "type": [
+            "string",
+            "integer",
+            "null"
+          ],
+          "description": "Em segundos, teto de 60s do gateway. O wire devolve como STRING: preservar as aspas."
+        }
+      }
+    },
+    "fluxo": {
       "type": "array",
       "items": {
-        "type": "object",
-        "required": [
-          "name",
-          "description",
-          "destination"
-        ],
-        "additionalProperties": false,
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "destination": {
-            "type": "string"
-          },
-          "timeout": {
-            "type": [
-              "string",
-              "integer",
-              "null"
+        "$ref": "#/$defs/interceptor"
+      }
+    },
+    "interceptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "id": {
+          "type": "integer",
+          "description": "Somente para type: Custom."
+        },
+        "content": {
+          "description": "Somente para tipos nativos.",
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Custom"
+              }
+            },
+            "required": [
+              "type"
             ]
           },
-          "interceptors": {
-            "type": "array",
-            "items": {
-              "type": "object",
+          "then": {
+            "required": [
+              "id"
+            ],
+            "not": {
               "required": [
-                "position",
-                "type",
-                "content",
-                "executionPoint",
-                "status"
-              ],
-              "additionalProperties": false,
-              "properties": {
-                "position": {
-                  "type": [
-                    "integer",
-                    "string"
-                  ]
-                },
-                "type": {
-                  "type": "string"
-                },
-                "content": {
-                  "anyOf": [
-                    {
-                      "type": "object"
-                    },
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "integer"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "executionPoint": {
-                  "type": "string",
-                  "enum": [
-                    "FIRST",
-                    "SECOND"
-                  ]
-                },
-                "status": {
-                  "type": "string"
-                }
-              }
+                "content"
+              ]
+            }
+          },
+          "else": {
+            "not": {
+              "required": [
+                "id"
+              ]
             }
           }
         }
-      }
+      ]
     }
   }
 }

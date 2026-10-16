@@ -342,14 +342,56 @@ class ManagerApiAdapter(ManagerApiPort):
         return normalized
 
     def get_custom_interceptor_by_id(self, custom_interceptor_id: int) -> Dict[str, str] | None:
+        """Custom do catálogo, ou `None` quando o id não existe mais.
+
+        O `404` é desfecho **esperado**: ids de Custom são estáveis dentro de um
+        ambiente, mas um repositório que mudou de ambiente pode referenciar id
+        inexistente. Deixar o `ManagerApiTransportRejectedError` subir faria isso
+        virar falha de transporte, quando é informação de negócio — quem decide o
+        que fazer com a ausência é a camada de aplicação.
+        """
         endpoint = f"custom-interceptors/{custom_interceptor_id}"
 
-        json_response = self._request("GET", endpoint)
-        formatted_content = {"id": json_response["id"], "name": json_response["name"],
-                             "script": json_response["script"]}
+        try:
+            json_response = self._request("GET", endpoint)
+        except ManagerApiTransportRejectedError as exc:
+            if exc.status_code == 404:
+                logger.info(
+                    "manager_api.custom_interceptor.ausente id=%s", custom_interceptor_id
+                )
+                return None
+            raise
 
-        return formatted_content
+        return {
+            "id": json_response.get("id"),
+            "name": json_response.get("name"),
+            "script": json_response.get("script"),
+        }
 
     def publish_api_changes(self, data: Dict[str, Any]) -> Dict[str, Any]:
         endpoint = "revisions"
         return self._request("POST", endpoint=endpoint, json=data)
+
+    def get_revision(self, revision_id: int) -> Dict[str, Any]:
+        return self._request("GET", f"revisions/{revision_id}")
+
+    def update_revision(
+        self, revision_id: int, payload: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """PUT denso na revisão — atualiza a existente, nunca cria (D-005 §9)."""
+        return self._request("PUT", f"revisions/{revision_id}", json=payload)
+
+    def get_workflow(self, workflow_id: int) -> Dict[str, Any]:
+        return self._request(
+            "GET", f"workflows/{workflow_id}", base_path=GOVERNANCE_BASE_PATH
+        )
+
+    def list_attributes(self) -> List[Dict[str, Any]]:
+        payload = self._request("GET", "attributes", base_path=GOVERNANCE_BASE_PATH)
+        if isinstance(payload, list):
+            return payload
+        if isinstance(payload, dict):
+            for chave in ("content", "data", "attributes"):
+                if isinstance(payload.get(chave), list):
+                    return payload[chave]
+        return []

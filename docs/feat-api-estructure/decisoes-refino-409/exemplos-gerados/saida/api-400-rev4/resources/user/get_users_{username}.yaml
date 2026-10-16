@@ -1,7 +1,6 @@
 path: /users/{username}
 destination:
-  url: https://platform-production.sensedia.com/user-management/v1/users/{username}
-description: ""
+  url: "https://platform-production.sensedia.com/user-management/v1/users/{username}"
 
 inherit: true
-# heranca pura: nenhum item proprio nesta operacao
+# apenas herda o fluxo do nível acima: nenhum interceptor próprio

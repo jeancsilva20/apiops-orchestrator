@@ -33,7 +33,7 @@
 | api-5-rev1 | 1 | 1 | 4 | 38 |
 
 Cada pasta traz `api-basic-info.yaml` (D-003 §3), `all-all.yaml` (escopo revision) e a árvore
-`resources/`. **155 YAML gerados no total, todos parseiam.**
+`resources/`. **155 YAML gerados no total.** ⚠️ *Corrigido em 2026-10-15:* a afirmação original ("todos parseiam") estava errada — dois arquivos de `api-400-rev4` emitiam `replaceChar: *****` sem aspas e **não eram parseáveis** (`yaml.safe_load` tentava ler um alias). O defeito foi reparado e os exemplos foram regerados pelo materializador de produção (`domain/services/repo_materializer.py`); hoje todos parseiam de fato.
 
 Fluxos classificados: **3 append · 3 override · 3 tombstone**. Colisões não resolvidas pela regra:
 **nenhuma**. Slugs truncados pelo orçamento de caminho: **76**.

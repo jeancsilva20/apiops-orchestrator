@@ -2,14 +2,17 @@ import importlib.metadata
 import platform
 import sys
 import textwrap
+from contextlib import contextmanager
 import time
+from pathlib import Path
+
 import typer
 from typing import Any, Callable, Optional, cast
 from rich import print as rprint
 from rich import box
 from rich import get_console
 from rich.align import Align
-from rich.console import Group
+from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
@@ -26,7 +29,15 @@ from apiops_orchestrator.application.exceptions.login_exceptions import LoginErr
 from apiops_orchestrator.application.exceptions.completeness_exceptions import (
     CompletenessError,
 )
+from apiops_orchestrator.application.exceptions.validate_exceptions import (
+    ValidateError,
+)
 from apiops_orchestrator.domain.models.completeness_view import CompletenessView
+from apiops_orchestrator.domain.models.validate_view import (
+    ESCOPO_REPOSITORIO,
+    SEVERIDADE_WARNING,
+    ValidateView,
+)
 from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
 from apiops_orchestrator.domain.models.catalog_revision_model import CatalogRevisionInfo
 from apiops_orchestrator.application.exceptions.listing_exceptions import (
@@ -784,3 +795,631 @@ def completeness(
     except Exception as e:
         rprint(f"[bold red]Erro ao consultar completude:[/bold red] {e}")
         raise typer.Exit(code=1)
+
+
+# ---------------------------------------------------------------------------
+# sen validate
+# ---------------------------------------------------------------------------
+
+_SEVERIDADE_ESTILO = {"WARNING": "yellow", "INFO": "cyan"}
+
+
+def _painel_validate(titulo: str, corpo, width=None) -> Panel:
+    """Caixa de seção, no mesmo desenho do painel de sessão do `sen login`."""
+    return Panel(
+        corpo,
+        title=f"[bold white]{titulo}[/bold white]",
+        title_align="left",
+        box=box.ROUNDED if _stdout_supports_rounded_box() else box.ASCII,
+        border_style="grey53",
+        padding=(0, 1),
+        width=width,
+    )
+
+
+def _grade_de_campos(linhas) -> Table:
+    """Pares rótulo/valor alinhados — mesma grade do `_session_panel`."""
+    grid = Table.grid(padding=(0, 1))
+    grid.add_column(justify="left", min_width=12, no_wrap=True)
+    grid.add_column(justify="left", overflow="fold")
+    for rotulo, valor in linhas:
+        grid.add_row(f"[bold white]{rotulo}[/bold white]", valor)
+    return grid
+
+
+def _largura_validate() -> int:
+    """Largura única das seções do `validate`.
+
+    Tudo — painel, tabela e avisos — usa a mesma referência do `sen login`, e
+    nunca ultrapassa o terminal. Sem isso o painel sai com 108 colunas e a
+    tabela com a largura do console, e as bordas não se alinham.
+    """
+    return min(_framed_logo_width(), get_console().width)
+
+
+def _tabela_achados(achados, largura: Optional[int] = None) -> Table:
+    """Achados em tabela, como o `sen list` faz com as APIs.
+
+    Em lista corrida de 38 achados nada se distingue; em colunas, o olho varre
+    a severidade e para no que interessa.
+    """
+    tabela = Table(
+        box=_GRADE_BOX,
+        header_style="bold cyan",
+        border_style="grey53",
+        padding=(0, 1),
+        pad_edge=False,
+        width=largura,
+    )
+    # ONDE quebra em vez de truncar: `POST /tarefas/{id}/atribuicao-responsavel`
+    # cortado em "…atribuicao-res…" não identifica rota nenhuma.
+    tabela.add_column("SEVERIDADE", no_wrap=True, width=10)
+    tabela.add_column("ONDE", overflow="fold", max_width=30)
+    tabela.add_column("O QUE", overflow="fold", ratio=1)
+    for achado in achados:
+        estilo = _SEVERIDADE_ESTILO.get(achado.severity, "white")
+        tabela.add_row(
+            Text(achado.severity, style=estilo),
+            Text(achado.scope or "-", style="white"),
+            Text(achado.message, style="white"),
+        )
+    return tabela
+
+
+def _render_avisos_do_repo(avisos) -> None:
+    """Avisos do repositório, em blocos — não em tabela.
+
+    São textos de várias frases, com quebra de linha própria, que dizem o que
+    vai mudar na plataforma. Espremidos numa coluna de tabela viram uma coluna
+    de palavras soltas; em bloco, de largura inteira, continuam legíveis.
+    """
+    marcador = "▸" if _supports_text("▸") else "!"
+    grid = Table.grid(padding=(0, 1))
+    grid.width = _largura_validate()
+    grid.add_column(justify="left", width=1, no_wrap=True)
+    grid.add_column(overflow="fold", ratio=1)
+    for achado in avisos:
+        grid.add_row(f"[yellow]{marcador}[/yellow]", Text(achado.message, style="white"))
+    rprint(grid)
+
+
+def _render_validate_text(view: ValidateView) -> None:
+    """Renderiza a resposta do `validate` para leitura no terminal.
+
+    Mesma árvore que alimenta `json`/`yaml` — os três formatos nunca divergem.
+    O desenho segue o do `sen login` e do `sen list`: caixa para identidade,
+    tabela para itens repetidos, grade de rótulos para pares chave/valor.
+    """
+    width = _largura_validate()
+
+    # --- identidade: quem está sendo validado, e onde ------------------------
+    identidade = [("API", f"[bold white]{view.api.name or '-'}[/bold white]")]
+    detalhe = f"id {view.api.manager_id}"
+    if view.api.version:
+        detalhe += f"  ·  v{view.api.version}"
+    if view.api.base_path:
+        detalhe += f"  ·  {view.api.base_path}"
+    identidade.append(("", f"[grey53]{detalhe}[/grey53]"))
+
+    revisao = f"[white]#{view.revision.revision_number}[/white]" if (
+        view.revision.revision_number is not None
+    ) else "[white]-[/white]"
+    identidade.append(
+        ("Rascunho", f"{revisao} [grey53](id {view.revision.manager_id})[/grey53]")
+    )
+
+    if view.regua.template_id is not None:
+        alvo = f"[white]API {view.regua.template_id}[/white]"
+        complemento = []
+        if view.regua.revision_number is not None:
+            complemento.append(f"revisão #{view.regua.revision_number}")
+        if view.regua.interceptors_count is not None:
+            complemento.append(f"{view.regua.interceptors_count} interceptor(es)")
+        if view.regua.flow_hash:
+            # O snapshot é o que torna um achado reproduzível depois (D-4/P-3).
+            complemento.append(view.regua.flow_hash)
+        if complemento:
+            alvo += f"  [grey53]{'  ·  '.join(complemento)}[/grey53]"
+    else:
+        alvo = "[grey53]não vinculada — conformidade não executada[/grey53]"
+    identidade.append(("Template", alvo))
+    identidade.append(("Modo", f"[grey53]{view.execution_mode}[/grey53]"))
+
+    rprint()
+    rprint(_painel_validate("Validação", _grade_de_campos(identidade), width=width))
+    rprint()
+
+    # --- conformidade: nunca bloqueia (V-11 §3) ------------------------------
+    do_repo = [a for a in view.achados if a.scope == ESCOPO_REPOSITORIO]
+    da_template = [a for a in view.achados if a.scope != ESCOPO_REPOSITORIO]
+
+    if da_template:
+        avisos = sum(
+            1 for a in da_template if a.severity == SEVERIDADE_WARNING
+        )
+        rprint(
+            f"[bold]Conformidade com a API-template[/bold]  "
+            f"[yellow]{avisos} aviso(s)[/yellow] · "
+            f"[cyan]{len(da_template) - avisos} informativo(s)[/cyan]"
+        )
+        rprint(_tabela_achados(da_template, largura=width))
+        rprint("[grey53]Nenhum deles impede a publicação.[/grey53]")
+        rprint()
+    elif view.regua.template_id is not None:
+        rprint(
+            "[bold]Conformidade com a API-template[/bold]  "
+            "[green]sem divergências[/green]"
+        )
+        rprint()
+
+    # --- o que o repositório vai mudar na plataforma -------------------------
+    if do_repo:
+        rprint(
+            f"[bold]O que vai mudar no Manager[/bold]  "
+            f"[yellow]{len(do_repo)} aviso(s)[/yellow]"
+        )
+        _render_avisos_do_repo(do_repo)
+        rprint()
+
+    # --- governança: o faltante é calculado, não extraído de texto (V-23 §4) --
+    gov = view.governanca
+    if gov.stage_id is not None:
+        if gov.missing:
+            faltantes = ", ".join((m.name or str(m.attribute_id)) for m in gov.missing)
+            rprint(f"[bold red]Governança[/bold red]  falta: {faltantes}")
+        else:
+            rprint(
+                f"[bold]Governança[/bold]  [green]liberada[/green] "
+                f"[grey53]({len(gov.required)} atributo(s) exigido(s), nenhum "
+                "faltando)[/grey53]"
+            )
+        rprint(
+            f"  [grey53]workflow {gov.workflow_id} · stage {gov.stage_id} "
+            "(lidos da revisão)[/grey53]"
+        )
+        rprint()
+
+    # --- publicação: HTTP 200 não é prova de sucesso (W-8) -------------------
+    pub = view.publicacao
+    if pub.attempted:
+        if pub.verified:
+            rprint(
+                "[bold]Rascunho[/bold]  [green]gravado e conferido[/green] "
+                "[grey53](nenhum ambiente recebeu deploy)[/grey53]"
+            )
+        elif pub.accepted:
+            rprint(
+                "[bold red]Rascunho[/bold red]  aceito pelo Manager, mas o que "
+                "ficou gravado não é o que foi enviado:"
+            )
+            for d in pub.divergences:
+                rprint(f"  [red]•[/red] {d}")
+        else:
+            rprint("[bold red]Rascunho[/bold red]  recusado")
+        rprint()
+    else:
+        rprint("[grey53]Rascunho não gravado — publicação não confirmada.[/grey53]")
+        rprint()
+
+    # --- quality score: informativo aqui; o gate trava em DEV+ ---------------
+    comp = view.completeness
+    if comp.score is not None:
+        # `≥` quebra em console cp1252 (UnicodeEncodeError), e o comando não
+        # pode morrer por causa de um glifo decorativo.
+        maior_igual = "≥" if _supports_text("≥") else ">="
+        gate = (
+            f"  [grey53]Quality gate: {maior_igual}{comp.gate_percent:.0f}%[/grey53]"
+            if comp.gate_percent is not None
+            else ""
+        )
+        rprint(f"[bold]Quality score[/bold]  {comp.score:.1f}%{gate}")
+        if comp.suggestions:
+            sugestoes = Table.grid(padding=(0, 1))
+            sugestoes.add_column(justify="right", width=3, no_wrap=True)
+            sugestoes.add_column(overflow="fold")
+            for i, s in enumerate(comp.suggestions, start=1):
+                sugestoes.add_row(f"[grey53]{i}.[/grey53]", f"[white]{s}[/white]")
+            rprint(sugestoes)
+        rprint()
+
+
+_STDERR_CONSOLE: Optional[Console] = None
+
+
+def _stderr_console() -> Console:
+    """Console de stderr, para o que é progresso e não resultado."""
+    global _STDERR_CONSOLE
+    if _STDERR_CONSOLE is None:
+        _STDERR_CONSOLE = Console(stderr=True)
+    return _STDERR_CONSOLE
+
+
+class _ProgressoValidate:
+    """Barra de etapas do `validate`, com pausa para a confirmação.
+
+    O comando faz cinco chamadas de rede em sequência e pode parar no meio para
+    perguntar se grava o rascunho. Uma `Live` animando por baixo de um
+    `typer.confirm` embaralha o prompt — então a confirmação a suspende e a
+    retoma depois.
+
+    Duas salvaguardas para não contaminar saída legível por máquina:
+
+    * em `-o json`/`-o yaml` o progresso **não existe** — nem animação, nem
+      linha. O stdout carrega o documento que a esteira vai parsear, e muita
+      esteira captura `2>&1`, então stderr também não serve;
+    * fora de terminal, cada etapa sai como uma linha só em **stderr**, porque a
+      animação viraria uma enxurrada de frames no log — mesmo motivo do `login`.
+    """
+
+    def __init__(self, rotulo_inicial: str = "Validando", narrar: bool = True):
+        self._interativo = narrar and get_console().is_terminal
+        self._narrar = narrar
+        self._barra = _LoadingBar(f"{rotulo_inicial}...")
+        self._live = (
+            Live(
+                Align.center(self._barra),
+                console=get_console(),
+                refresh_per_second=10,
+                transient=True,
+            )
+            if self._interativo
+            else None
+        )
+
+    def __enter__(self):
+        if self._live is not None:
+            self._live.start()
+        return self
+
+    def __exit__(self, *_exc):
+        if self._live is not None:
+            self._live.stop()
+        return False
+
+    def etapa(self, texto: str) -> None:
+        """Narra em que ponto a espera está — a `Live` relê o rótulo no refresh."""
+        self._barra.label = f"{texto}..."
+        if self._live is None and self._narrar:
+            _stderr_console().print(f"[dim]{texto}...[/dim]")
+
+    @contextmanager
+    def pausado(self):
+        if self._live is None:
+            yield
+            return
+        self._live.stop()
+        try:
+            yield
+        finally:
+            self._live.start()
+
+
+def _confirmar_publicacao(
+    mensagem: str, progresso: Optional["_ProgressoValidate"] = None
+) -> bool:
+    """Guarda 2: confirmação interativa, só em EXECUTION_MODE=local.
+
+    Vive na CLI, não no service — o use-case recebe isto como callable e nunca
+    lê `stdin`. O texto vem pronto do serviço; o que a borda acrescenta é a
+    pergunta de sim/não e a caixa, para que o aviso não se perca numa linha
+    solta no meio da saída.
+    """
+    def _perguntar() -> bool:
+        rprint()
+        rprint(
+            Align.center(
+                Panel(
+                    Text(mensagem, style="white"),
+                    title="[bold yellow]Confirmação[/bold yellow]",
+                    title_align="left",
+                    box=box.ROUNDED if _stdout_supports_rounded_box() else box.ASCII,
+                    border_style="yellow",
+                    padding=(0, 1),
+                    width=_largura_validate(),
+                )
+            )
+        )
+        return typer.confirm("Deseja prosseguir?", default=False)
+
+    if progresso is None:
+        return _perguntar()
+    with progresso.pausado():
+        return _perguntar()
+
+
+@sen_app.command("validate")
+def validate(
+    ctx: typer.Context,
+    repo: Optional[Path] = typer.Option(
+        None, "--repo", help="Repositório da API (default: diretório atual)."
+    ),
+    output: OutputFormat = typer.Option(
+        OutputFormat.TEXT, "--output", "-o", help="Output format (text, json, yaml)."
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbosity only."),
+):
+    """
+    Validate the API repository and publish to the Draft to get the governance verdict.
+    """
+    try:
+        service_factory = (ctx.obj or {}).get("validate_service_factory")
+        if not callable(service_factory):
+            rprint(
+                "[bold red]Erro:[/bold red] Serviço de validação indisponível "
+                "no contexto."
+            )
+            raise typer.Exit(code=1)
+
+        service = cast(Callable[[], Any], service_factory)()
+        progresso = _ProgressoValidate(narrar=output is OutputFormat.TEXT)
+        with progresso:
+            view = service.validate(
+                repo_path=repo or Path.cwd(),
+                confirmar=lambda m: _confirmar_publicacao(m, progresso),
+                progresso=progresso.etapa,
+            )
+
+        display_output(
+            view.to_document(),
+            output_format=output,
+            text_callback=lambda: _render_validate_text(view),
+        )
+
+    except typer.Exit:
+        raise
+    except ValidateError as e:
+        rprint(f"[bold red]Erro:[/bold red] {e.message}")
+        raise typer.Exit(code=e.exit_code)
+    except Exception as e:
+        rprint(f"[bold red]Erro ao validar:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+
+# ---------------------------------------------------------------------------
+# sen diag — subcomandos de diagnóstico, ocultos (D-19)
+#
+# Servem a teste e investigação, não ao uso diário: expõem as etapas da cascata
+# isoladamente. Ficam fora de `sen validate` porque ele é um comando com opções
+# próprias, e transformá-lo em grupo mudaria a invocação do comando principal.
+# ---------------------------------------------------------------------------
+
+diag_app = typer.Typer(
+    name="diag",
+    help="Diagnóstico das etapas do validate (uso interno).",
+    hidden=True,
+    no_args_is_help=True,
+)
+
+
+@diag_app.command("structure")
+def diag_structure(
+    repo: Optional[Path] = typer.Option(
+        None, "--repo", help="Repositório da API (default: diretório atual)."
+    ),
+    output: OutputFormat = typer.Option(
+        OutputFormat.TEXT, "--output", "-o", help="Output format (text, json, yaml)."
+    ),
+):
+    """Mostra a estrutura que a E1 descobre no repositório, sem tocar a rede."""
+    from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_importer_adapter import (
+        LocalFileImporterAdapter,
+    )
+    from apiops_orchestrator.application.services.repo_importer_service import (
+        RepoCanonicalReader,
+    )
+
+    alvo = repo or Path.cwd()
+    lido = RepoCanonicalReader(LocalFileImporterAdapter()).carregar(str(alvo))
+
+    documento = {
+        "repo": str(alvo),
+        "completo": lido.completo,
+        "faltando": lido.faltando,
+        "ignorados": lido.ignorados,
+        "ilegiveis": lido.ilegiveis,
+        "recursos": [
+            {
+                "slug": r.slug,
+                "nome": r.nome,
+                "operacoes": [
+                    {"metodo": o.metodo, "path": o.path, "arquivo": o.arquivo}
+                    for o in r.operacoes
+                ],
+            }
+            for r in lido.recursos
+        ],
+    }
+
+    def _texto() -> None:
+        marca = "[green]completo[/green]" if lido.completo else "[red]incompleto[/red]"
+        rprint(f"[bold]{alvo}[/bold]  {marca}")
+        rprint(
+            f"[grey53]{len(lido.recursos)} recurso(s) · "
+            f"{lido.total_operacoes} operação(ões)[/grey53]\n"
+        )
+        for r in lido.recursos:
+            rprint(f"  [bold]{r.slug}[/bold]  [grey53]{r.nome or '-'}[/grey53]")
+            for o in r.operacoes:
+                rprint(f"     {o.metodo:<7} {o.path or '-'}  [grey53]{o.arquivo}[/grey53]")
+        for rotulo, itens, cor in (
+            ("faltando", lido.faltando, "red"),
+            ("ilegíveis", lido.ilegiveis, "red"),
+            ("ignorados", lido.ignorados, "yellow"),
+        ):
+            if itens:
+                rprint(f"\n[{cor}]{rotulo}:[/{cor}]")
+                for i in itens:
+                    rprint(f"  [{cor}]•[/{cor}] {i}")
+
+    display_output(documento, output_format=output, text_callback=_texto)
+
+
+sen_app.add_typer(diag_app)
+
+
+@diag_app.command("template")
+def diag_template(
+    ctx: typer.Context,
+    repo: Optional[Path] = typer.Option(
+        None, "--repo", help="Repositório da API (default: diretório atual)."
+    ),
+    output: OutputFormat = typer.Option(
+        OutputFormat.TEXT, "--output", "-o", help="Output format (text, json, yaml)."
+    ),
+):
+    """Mostra a régua resolvida, o fluxo que ela exige e o snapshot."""
+    from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_importer_adapter import (
+        LocalFileImporterAdapter,
+    )
+    from apiops_orchestrator.application.services.repo_importer_service import (
+        RepoCanonicalReader,
+    )
+
+    try:
+        fabrica = (ctx.obj or {}).get("regua_service_factory")
+        if not callable(fabrica):
+            rprint(
+                "[bold red]Erro:[/bold red] Serviço de API-template "
+                "indisponível no contexto."
+            )
+            raise typer.Exit(code=1)
+
+        alvo = repo or Path.cwd()
+        lido = RepoCanonicalReader(LocalFileImporterAdapter()).carregar(str(alvo))
+        regua = cast(Callable[[], Any], fabrica)().carregar(lido.basic_info)
+
+        documento = {
+            "ruler": {
+                "templateId": regua.template_id,
+                "revisionNumber": regua.revision_number,
+                "flowHash": regua.flow_hash,
+                "interceptorsCount": regua.total,
+            },
+            "warnings": regua.avisos,
+            "flow": [
+                {
+                    "executionPoint": i.get("executionPoint"),
+                    "type": i.get("type"),
+                    "customInterceptorId": i.get("customInterceptorId"),
+                }
+                for i in regua.interceptors
+            ],
+        }
+
+        def _texto() -> None:
+            rprint(
+                f"[bold]API-template {regua.template_id}[/bold]  "
+                f"[grey53]revisão #{regua.revision_number} · "
+                f"{regua.total} interceptor(es) · {regua.flow_hash}[/grey53]\n"
+            )
+            for i in regua.interceptors:
+                cid = i.get("customInterceptorId")
+                rotulo = f"{i.get('type')}{'#' + str(cid) if cid else ''}"
+                rprint(f"  [grey53]{i.get('executionPoint'):<7}[/grey53] {rotulo}")
+            for aviso in regua.avisos:
+                rprint(f"\n[yellow]WARNING[/yellow] {aviso}")
+
+        display_output(documento, output_format=output, text_callback=_texto)
+
+    except typer.Exit:
+        raise
+    except ValidateError as e:
+        rprint(f"[bold red]Erro:[/bold red] {e.message}")
+        raise typer.Exit(code=e.exit_code)
+
+
+@diag_app.command("draft")
+def diag_draft(
+    ctx: typer.Context,
+    repo: Optional[Path] = typer.Option(
+        None, "--repo", help="Repositório da API (default: diretório atual)."
+    ),
+    output: OutputFormat = typer.Option(
+        OutputFormat.TEXT, "--output", "-o", help="Output format (text, json, yaml)."
+    ),
+):
+    """Mostra o estado da revisão alvo — somente leitura, nada é publicado."""
+    from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_importer_adapter import (
+        LocalFileImporterAdapter,
+    )
+    from apiops_orchestrator.application.services.repo_importer_service import (
+        RepoCanonicalReader,
+    )
+    from apiops_orchestrator.domain.services.interceptor_flow import particionar
+
+    try:
+        fabrica = (ctx.obj or {}).get("manager_api_factory")
+        if not callable(fabrica):
+            rprint("[bold red]Erro:[/bold red] Acesso ao Manager indisponível no contexto.")
+            raise typer.Exit(code=1)
+
+        alvo = repo or Path.cwd()
+        lido = RepoCanonicalReader(LocalFileImporterAdapter()).carregar(str(alvo))
+        spec = (lido.basic_info or {}).get("spec") or {}
+
+        manager, settings = cast(Callable[[], Any], fabrica)()
+        api = manager.get_api_by_id(spec.get("id")) or {}
+        numero = settings.TARGET_REVISION_NUMBER
+        revisao = next(
+            (r for r in (api.get("revisions") or []) if r.get("revisionNumber") == numero),
+            None,
+        )
+        if revisao is None:
+            rprint(
+                f"[bold red]Erro:[/bold red] a API {spec.get('id')} não tem revisão "
+                f"de número {numero}."
+            )
+            raise typer.Exit(code=1)
+
+        draft = manager.get_revision(revisao["id"]) or {}
+        governados, preservados = particionar(draft.get("interceptors"))
+
+        documento = {
+            "api": {"managerId": api.get("id"), "name": api.get("name")},
+            "revision": {
+                "managerId": draft.get("id"),
+                "revisionNumber": draft.get("revisionNumber"),
+                "workflowId": draft.get("workflowId"),
+                "workflowStageId": draft.get("workflowStageId"),
+            },
+            "root": {"governed": len(governados), "preserved": len(preservados)},
+            "resources": [
+                {
+                    "name": r.get("name"),
+                    "interceptors": len(particionar(r.get("interceptors"))[0]),
+                    "operations": [
+                        {"method": o.get("method"), "path": o.get("path")}
+                        for o in (r.get("operations") or [])
+                    ],
+                }
+                for r in (draft.get("resources") or [])
+            ],
+        }
+
+        def _texto() -> None:
+            rev = documento["revision"]
+            rprint(
+                f"[bold]{api.get('name')}[/bold]  [grey53]API {api.get('id')}[/grey53]\n"
+                f"revisão {rev['managerId']} (#{rev['revisionNumber']})  "
+                f"[grey53]workflow {rev['workflowId']} · stage {rev['workflowStageId']} "
+                "— lidos da revisão, reenviados intactos[/grey53]\n"
+            )
+            rprint(
+                f"  raiz: {len(governados)} governado(s), "
+                f"{len(preservados)} preservado(s)"
+            )
+            for r in documento["resources"]:
+                rprint(
+                    f"  [bold]{r['name']}[/bold]  [grey53]{r['interceptors']} "
+                    f"interceptor(es)[/grey53]"
+                )
+                for o in r["operations"]:
+                    rprint(f"     {str(o['method']):<7} {o['path']}")
+
+        display_output(documento, output_format=output, text_callback=_texto)
+
+    except typer.Exit:
+        raise
+    except ValidateError as e:
+        rprint(f"[bold red]Erro:[/bold red] {e.message}")
+        raise typer.Exit(code=e.exit_code)

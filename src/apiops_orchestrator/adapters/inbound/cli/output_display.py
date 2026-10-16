@@ -1,4 +1,6 @@
 import json
+import sys
+
 import yaml
 from typing import Any
 from rich import print as rprint
@@ -22,14 +24,27 @@ def display_output(
     :param text_callback: A function to call if output_format is TEXT.
                           It should handle the rich printing.
     """
-    if output_format == OutputFormat.JSON:
-        json_str = json.dumps(data, indent=4)
-        syntax = Syntax(json_str, "json", theme="monokai", background_color="default")
-        console.print(syntax)
-    elif output_format == OutputFormat.YAML:
-        yaml_str = yaml.dump(data, sort_keys=False)
-        syntax = Syntax(yaml_str, "yaml", theme="monokai", background_color="default")
-        console.print(syntax)
+    if output_format in (OutputFormat.JSON, OutputFormat.YAML):
+        if output_format == OutputFormat.JSON:
+            texto = json.dumps(data, indent=4, ensure_ascii=False)
+            linguagem = "json"
+        else:
+            texto = yaml.dump(data, sort_keys=False, allow_unicode=True)
+            linguagem = "yaml"
+
+        # Saída legível por máquina NÃO pode passar por renderizador que quebra
+        # linha: o `rich.Syntax` ajusta à largura do console e corta valores
+        # longos no meio, produzindo JSON inválido. Quem consome isso é a
+        # esteira, então o texto sai cru quando stdout não é terminal, e com
+        # realce apenas para leitura humana — aí com `soft_wrap`, que preserva
+        # as linhas intactas.
+        if console.is_terminal:
+            console.print(
+                Syntax(texto, linguagem, theme="monokai", background_color="default"),
+                soft_wrap=True,
+            )
+        else:
+            sys.stdout.write(texto if texto.endswith("\n") else texto + "\n")
     else:
         if text_callback:
             text_callback()

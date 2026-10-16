@@ -1,7 +1,25 @@
-name: "Token"
-description: "Recurso de token"
+name: Token
+description: Recurso de token
 destination:
   url: ''            # vazio = herda do escopo acima
 
-inherit: true
-# heranca preservada ; nenhum interceptor proprio neste recurso
+inherit: false
+# este ponto executa o fluxo herdado, menos: OAuth
+# a lista abaixo é completa de propósito: o Manager não tem como
+# dizer "herde tudo, exceto um" — lista vazia sempre significa herdar
+
+interceptors_request:
+  - type: Log
+    content:
+      acceptedTerms: true
+      ignoreBodyValidationMultiPartFormData: false
+  - type: Log
+    content:
+      acceptedTerms: true
+      ignoreBodyValidationMultiPartFormData: false
+
+interceptors_response:
+  - type: Log
+    content:
+      acceptedTerms: true
+      ignoreBodyValidationMultiPartFormData: false

@@ -101,9 +101,42 @@ variáveis de ambiente (`docs-legacy.sensedia.com/pt/api-management-guide/Latest
 
 ## 6. O que fica aberto
 
-1. **Representação do vazio no publish** (V-03). A regra adotada: YAML vazio vira `null` em
-   resource/operation e **chave omitida** na raiz da revision. A equivalência entre `""` e `null`
-   na escrita só se confirma com um write.
+1. ~~**Representação do vazio no publish** (V-03)~~ — **RESPONDIDO por escrita em 2026-10-15.**
+   A regra de leitura permanece: YAML vazio vira `null` em resource/operation e **chave omitida** na
+   raiz. O que faltava era a equivalência na escrita, e a resposta é **não são equivalentes**:
+
+   ```
+   enviei null  ->  a plataforma guardou None  (NoneType)
+   enviei ''    ->  a plataforma guardou ''    (str)
+   ```
+
+   A plataforma guarda **literalmente o que recebe**. Medido na operação `GET /tarefas` da Draft
+   9161, com backup e restauração; o `destination` original voltou intacto.
+
+   **Consequência para o round-trip:** o materializador emite `url: ''` tanto para `None` quanto
+   para `''`, e o publisher traduz `''` de volta para `None` (porque `'' or None` é `None`). Com
+   `None` o ciclo fecha por acidente; com `''` **o estado muda em silêncio**, de `''` para `null`.
+   Nenhum escopo da 417 guarda `''` hoje, então o caso é latente, não ativo.
+
+   **O que a plataforma guarda, medido caractere a caractere:** uma **string vazia de verdade** —
+   `len=0`, lista de códigos vazia, `""` no JSON cru. Ela não guarda aspas literais; o `''` do
+   relato é apenas o `repr` do Python. Os dois valores que ela distingue, `null` e string vazia,
+   são ambos legítimos.
+
+   **DECISÃO (2026-10-15) — padroniza-se em `null`.** Os dois são distintos no armazenamento mas
+   idênticos em significado (§5: nesses campos vazio *"significa herdar (≡ `null` no wire)"*), então
+   manter ambos disponíveis cria uma classe de deriva sem ganhar expressividade. Três fatos
+   sustentam a escolha: os três escopos vazios da 417 guardam `null` e nenhum guarda `""`; a regra
+   de leitura desta mesma seção já adotava `null`; e o publisher já traduz `'' → None`, de modo que
+   **nenhuma mudança de código é necessária**.
+
+   Na prática: o YAML mantém `url: ''` como a única grafia de vazio, e isso sempre publica `null`.
+   A string vazia nunca chega ao wire, e a deriva deixa de ser possível — não porque a conferência a
+   pegue, mas porque ela não pode mais acontecer. Resíduo aceito: um escopo que **já** guarde `""`
+   é normalizado para `null` na primeira publicação, entre valores de mesmo significado.
+
+   Desdobramento feito: `destination` e `timeout` entraram na **conferência pós-publicação**, que
+   antes não os olhava.
 2. **Herança de `destination` em runtime.** Documentada explicitamente só para `timeout`; para o
    destino a documentação afirma o escopo, não a herança. Só um deploy + chamada real fecha.
 3. **Código de erro no estouro:** FAQ atual diz **504**, guia de Flows diz **502** — divergência da

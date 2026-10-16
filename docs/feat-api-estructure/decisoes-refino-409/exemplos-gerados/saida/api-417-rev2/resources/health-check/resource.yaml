@@ -1,7 +1,7 @@
-name: "/health-check"
-description: "Verificação de saúde da aplicação"
+name: /health-check
+description: Verificação de saúde da aplicação
 destination:
   url: ''            # vazio = herda do escopo acima
 
 inherit: true
-# heranca preservada ; nenhum interceptor proprio neste recurso
+# apenas herda o fluxo do nível acima: nenhum interceptor próprio

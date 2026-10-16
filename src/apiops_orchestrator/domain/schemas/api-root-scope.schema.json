@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api-root-scope.schema.json",
+  "title": "Escopo raiz da revision (all.yaml)",
+  "description": "Arquivo `all.yaml` na raiz do repositorio. Fechado pela V-18 (2026-10-15). Arquivo plano, sem involucro apiVersion/kind.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "destination": {
+      "$ref": "#/$defs/destination"
+    },
+    "interceptors_request": {
+      "$ref": "#/$defs/fluxo",
+      "description": "Mapeia para o execution point FIRST. A ordem da lista e a fonte declarativa."
+    },
+    "interceptors_response": {
+      "$ref": "#/$defs/fluxo",
+      "description": "Mapeia para o execution point SECOND. A ordem da lista e a fonte declarativa."
+    },
+    "inherit": {
+      "type": "boolean",
+      "description": "INERTE NA RAIZ (V-18 2.2): a raiz da revision nao herda de nenhum escopo acima. Aceito no schema para que o comando possa emitir INFO em vez de falhar na gramatica."
+    }
+  },
+  "$defs": {
+    "destination": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "url"
+      ],
+      "properties": {
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "String vazia significa herdar do escopo acima (V-03). Aceita variavel de ambiente ($var)."
+        },
+        "timeout": {
+          "type": [
+            "string",
+            "integer",
+            "null"
+          ],
+          "description": "Em segundos, teto de 60s do gateway. O wire devolve como STRING: preservar as aspas (reparo de serializacao)."
+        }
+      }
+    },
+    "fluxo": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/interceptor"
+      }
+    },
+    "interceptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "id": {
+          "type": "integer",
+          "description": "Somente para type: Custom. Id numerico do catalogo do tenant, estavel dentro de um ambiente (D-13)."
+        },
+        "content": {
+          "description": "Somente para tipos nativos: e a configuracao do interceptor, e e por ele que a conformidade compara (V-11 4).",
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "Custom"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "id"
+            ],
+            "not": {
+              "required": [
+                "content"
+              ]
+            }
+          },
+          "else": {
+            "not": {
+              "required": [
+                "id"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

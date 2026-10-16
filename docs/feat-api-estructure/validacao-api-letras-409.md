@@ -41,14 +41,14 @@
 | V-15 | D-f (versionar só o sufixo) revertida em 3 de 4 arquivos | Decisão contrariada | promoção entre ambientes | **FECHADO** → [decisão §5](decisoes-refino-409/V-01-destination-timeout-escopos.md) · D-f revogada na reconstrução; promoção via `$variável` |
 | V-16 | Regra de slug da pasta de recurso (path, espaço, `{id}`, colisão) | Lacuna de regra | descoberta | **FECHADO** → [V-16/V-17](decisoes-refino-409/V-16-V-17-nomes-de-pasta-e-arquivo.md) |
 | V-17 | Nomenclatura do arquivo de operação (`{metodo}_{parametros}` × slug do recurso) | Lacuna de regra | validador | **FECHADO** → [V-16/V-17](decisoes-refino-409/V-16-V-17-nomes-de-pasta-e-arquivo.md) · `<método>_<path completo>.yaml` |
-| V-18 | `all-all.yaml`: papel, nome e gramática do escopo revision sem casa | Lacuna de regra | layout | ABERTO |
+| V-18 | `all-all.yaml`: papel, nome e gramática do escopo revision sem casa | Lacuna de regra | layout | **FECHADO** → [V-18](decisoes-refino-409/V-18-arquivo-do-escopo-raiz.md) · o arquivo é `all.yaml`, obrigatório pelo nome exato |
 | V-19 | Cobertura parcial: 3 de 7 operações, 2 de 6 recursos | Completude | fixtures douradas | ABERTO |
 | V-20 | `Additional Info`: tipo sem schema e `content.attributes[].id` versionável? | Contrato | schema de interceptor | ABERTO |
 | V-21 | `null` dentro de `content` × régua "`null` proibido" da D-003 §3 | Contrato | schema de interceptor | ABERTO |
 | V-22 | Estado não governado: interceptor fora de FIRST/SECOND preservado por GET (achado na validação do V-11) | Contrato | import, publish, schema de interceptor | **FECHADO** → [V-22](decisoes-refino-409/V-22-estado-nao-governado.md) |
 | V-23 | Bloqueio do Adaptive Governance (HTTP 412) no publish: como o orquestrador reporta | Observabilidade | publish, esteira CI | **FECHADO** → [V-23](decisoes-refino-409/V-23-bloqueio-do-adaptive-governance.md) |
 | V-24 | Revisão alvo do publish: número (não id) por variável de ambiente; local só na Draft | Publish | publisher, esteira | **FECHADO** → [V-24](decisoes-refino-409/V-24-revisao-alvo-do-publish.md) |
-| V-25 | Como escrever um **tombstone** (remoção seletiva de item herdado) no YAML — D-003 §4 só tem override total | Contrato | schema de interceptor, import | ABERTO |
+| V-25 | Como escrever um **tombstone** (remoção seletiva de item herdado) no YAML — D-003 §4 só tem override total | Contrato | schema de interceptor, import | **FECHADO** → [V-25](decisoes-refino-409/V-25-tombstone.md) · lista completa explícita, única forma expressável (T06) |
 | V-26 | `inherit` substitui `override`: herança declarada sempre; ausente ≡ `true` | Contrato | schema, import, publish | **FECHADO** → [V-26](decisoes-refino-409/V-26-inherit.md) |
 
 ---
@@ -268,7 +268,10 @@ O nome `all-all` sugere uma convenção de layout (`{recurso}-{metodo}`?) que n�
 
 **Pergunta a fechar** — (a) o fluxo base fica na régua 414 (V-11) e sai daqui? (b) onde moram `destination`/`timeout` de revision? (c) se o arquivo permanecer, qual é o nome e a gramática canônicos?
 
-**Decisão:** _(a preencher)_
+**Decisão:** **FECHADA em 2026-10-15** → [V-18 · `all.yaml` — o arquivo do escopo raiz](decisoes-refino-409/V-18-arquivo-do-escopo-raiz.md).
+(a) O arquivo **permanece** e não se confunde com a régua: ele declara o fluxo **desta** API na raiz da revision, enquanto a régua é uma API template externa, lida por GET só para comparar.
+(b) `destination` e `timeout` da revision moram nele, como a V-01 §5 já atribuía ao escopo `all`.
+(c) O nome é **`all.yaml`** — o `-all` duplicado era literal fixado no gerador, sem significado. A gramática aceita `destination`, `timeout`, `interceptors_request` e `interceptors_response`; `inherit` é inerte na raiz e vira `INFO`. O arquivo é **obrigatório pelo nome exato**, e sua ausência aborta na E1 — publicar sem o escopo raiz apagaria o fluxo da revision. Isso também fecha **I-7**: o typo vira ausência, e ausência aborta.
 
 ### V-19 · Cobertura parcial · Status: ABERTO
 

@@ -49,3 +49,6 @@ escrita na plataforma.
 | V-12 (b) · V-13 | Árvore por recurso, espelhando o Manager; pasta não precisa casar com `name` | [V-12-arvore-por-recurso.md](V-12-arvore-por-recurso.md) | 2026-10-14 | D-003 §2 e §5, D-a, importer, validador |
 | V-16 · V-17 | Nome da pasta do recurso e do arquivo de operação, validados materializando 6 APIs | [V-16-V-17-nomes-de-pasta-e-arquivo.md](V-16-V-17-nomes-de-pasta-e-arquivo.md) | 2026-10-14 | D-003 §2/§7, importer, validador |
 | V-26 | `inherit` substitui `override` — herança declarada sempre | [V-26-inherit.md](V-26-inherit.md) | 2026-10-14 | **D-003 §4**, schema de interceptors, import/publish |
+| V-18 | Arquivo do escopo raiz: `all.yaml`, gramática e ausência aborta | [V-18-arquivo-do-escopo-raiz.md](V-18-arquivo-do-escopo-raiz.md) | 2026-10-15 | D-003 §4, importer, `sen validate` |
+| V-25 | Tombstone: a lista completa explícita é a única forma expressável (T06) | [V-25-tombstone.md](V-25-tombstone.md) | 2026-10-15 | D-2/P-4, importer, conformidade |
+| V-27 | **O fluxo efetivo é resolvido no repositório, não na plataforma** | [V-27-fluxo-resolvido-no-repositorio.md](V-27-fluxo-resolvido-no-repositorio.md) | 2026-10-15 | **V-26** (publicação), V-25 (generalizada), publisher |

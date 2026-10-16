@@ -77,6 +77,36 @@ class ManagerApiPort(ABC):
         """Contract to publish new API revisions"""
         pass
 
+    @abstractmethod
+    def get_revision(self, revision_id: int) -> Dict[str, Any]:
+        """Estado completo de uma revisão: interceptors, resources e o `api` aninhado.
+
+        É daqui que saem `workflowId` e `workflowStageId`, que o publish reenvia
+        intactos (D-020), e o fluxo **resolvido** de cada escopo (W-4).
+        """
+
+    @abstractmethod
+    def update_revision(self, revision_id: int, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """`PUT` denso na revisão. **Atualiza**, não cria.
+
+        Criar revisão é ato humano (D-005 §9): o orquestrador nunca usa `POST`.
+        É neste `PUT` que o Adaptive Governance atua (W-7) — escrever também em
+        `PUT /apis/{id}` furaria o gate e deixaria estado meio-aplicado.
+        """
+
+    @abstractmethod
+    def get_workflow(self, workflow_id: int) -> Dict[str, Any]:
+        """Workflow do Adaptive Governance, com `stages[].attributesRequisites`."""
+
+    @abstractmethod
+    def list_attributes(self) -> List[Dict[str, Any]]:
+        """Catálogo `id ↔ name` dos atributos do AG.
+
+        Lido a cada execução: os requisitos são configuração mutável do tenant —
+        entre 2026-10-14 e 2026-10-15 o stage 1402 trocou um dos atributos que
+        exige (D-020 §3.4).
+        """
+
     def get_custom_interceptor_by_id(
         self, custom_interceptor_id: int
     ) -> Dict[str, str] | None:

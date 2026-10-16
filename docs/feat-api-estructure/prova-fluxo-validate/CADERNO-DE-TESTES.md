@@ -116,11 +116,28 @@ fluxo do recurso dentro de cada operação no momento da escrita.
 
 O que não está no repositório não é enviado, e o que não é enviado é removido.
 
-### T11 · Append com `inherit: true` ✅
+### T11 · Append com `inherit: true` ⚠️ ORÁCULO ERRADO (revisto em 2026-10-15)
 
 **Alteração:** `Payload size` acrescentado a `post_tarefas_{id}_letras.yaml`,
 mantendo `inherit: true`.
 **GET depois:** a rota foi de **0 para 1** item próprio.
+
+> **O ✅ original estava errado, e a medição não.** O oráculo perguntou "a rota
+> ganhou o item?". A pergunta certa era "a rota continua executando o que
+> herdava?". Pela **W-5** (T06) 0 próprios significa herdar os ~9 da raiz; pela
+> **W-4** uma lista própria de 1 item **é** o fluxo inteiro da rota. O append
+> publicou 1 e apagou os 9, sob HTTP 200 — a mesma classe das perdas do W-8,
+> desta vez produzida pelo próprio instrumento.
+>
+> A consequência em runtime é **derivada** das duas regras, não medida: a §5
+> registra que herança em runtime não foi exercitada. O estado pós-T11 está
+> medido; o que ele significa na execução vem do contrato do wire.
+>
+> Fechado pela [V-27](../decisoes-refino-409/V-27-fluxo-resolvido-no-repositorio.md):
+> o fluxo efetivo passou a ser resolvido no repositório e publicado completo. O
+> cenário equivalente na bateria automatizada
+> (`tests/integration/test_bateria_417.py`) teve o oráculo corrigido e ganhou um
+> **T12** para o caso de restaurar a herança e acrescentar na mesma declaração.
 
 ---
 

@@ -53,6 +53,40 @@ Régua (revision 9131), 8 itens governados:
 
 As duas APIs produzem exatamente os mesmos quatro achados. Nenhum deles impede a publicação.
 
+> ⚠️ **Releitura em 2026-10-15 — o estado medido mudou, a regra não.**
+>
+> A régua (414, revisão 9131) continua idêntica: os mesmos 8 itens. O que mudou foi a **417**: o
+> `Custom#125` da raiz foi trocado por `#32`, como o [caderno §5](../prova-fluxo-validate/CADERNO-DE-TESTES.md)
+> registra (*"os ids 125/178 foram trocados por 32/33 antes desta bateria"*). A régua segue pedindo
+> `#125`, então a divergência é **real** e se propaga a todo escopo que herda da raiz.
+>
+> Rodando o comparador implementado contra o estado de 2026-10-15: **28 achados** (18 `WARNING`,
+> 10 `INFO`). Os quatro originais continuam lá — tombstone do XSS em `GET /tarefas`, append de
+> `Additional Info` no recurso de atribuição, `Log` com `encryptContent` divergente no
+> `POST /…/atribuicao-responsavel` — e o excedente é a deriva do `Custom`, mais os escopos cujo fluxo
+> encurtou.
+>
+> A linha "raiz da revision — **conforme** 8 de 8" da tabela acima vale para 2026-10-14. Hoje a raiz
+> produz 2 achados, um par `WARNING`/`INFO` na posição do `Custom`.
+>
+> **É o caso que o snapshot da régua (D-4/P-3) existe para resolver:** sem gravar `id`,
+> `revisionNumber` e hash do fluxo junto com o achado, uma tabela como esta envelhece sem aviso. O
+> conjunto de 2026-10-15 está congelado em `tests/fixtures/manager/` e travado por teste.
+>
+> ⚠️ **Segunda deriva, no mesmo dia — agora na própria régua.** Horas depois da releitura acima, a
+> **414 passou a pedir `Custom#32`/`#33`** no lugar de `#125`/`#178`, com ids de interceptor novos
+> (`19768`, `19769`). As referências mortas foram corrigidas no template, como foram na 417. Com
+> isso o conjunto de achados contra a revisão 9175 subiu de 28 para **38** (23 `WARNING`,
+> 15 `INFO`) — a 9175 ainda executa `#125`/`#178`.
+>
+> Duas derivas da régua em um único dia é o argumento prático mais forte a favor do snapshot
+> (D-4/P-3): **um achado sem `id`, `revisionNumber` e hash não é reproduzível nem por algumas horas.**
+>
+> **Formato do rótulo (§5) corrigido na implementação:** os achados passaram a trazer
+> `Custom #33 — CyberArk and OAuth Autentication` em vez de `Custom#33`. Sem o nome, as duas pontas
+> da deriva (`#178` ausente da régua, `#33` exigido) parecem interceptors diferentes; com ele, vê-se
+> que é o mesmo sob ids distintos.
+
 ## 4. Requisitos do comparador (lições do cálculo real)
 
 1. **Comparar sequência, não conjunto.** Um append de um tipo que já existe na régua (outro `Log`)
@@ -60,6 +94,17 @@ As duas APIs produzem exatamente os mesmos quatro achados. Nenhum deles impede a
 2. **Comparar `content`.** O caso da `POST /…/atribuicao-responsavel` é um `Log` que a régua também
    tem — a diferença está só no `content` (`encryptContent: true` × `false`), e ela muda o
    comportamento. Comparar apenas `(executionPoint, type, customInterceptorId)` deixaria passar.
+
+   **Granularidade fechada em 2026-10-15:** o `content` é comparado **nos tipos nativos**, onde ele
+   *é* a configuração. Para interceptors **`Custom` o casamento é por `customInterceptorId`, e o
+   `content` NÃO é comparado**: o mesmo id designa o mesmo objeto no tenant, então a comparação seria
+   redundante e produziria diff textual de script. Requisito derivado: **normalizar escalar numérico
+   antes de comparar** — o wire devolve `"quota": "1000"` como string e o lado do repositório vem do
+   YAML, de modo que a igualdade estrutural crua acusaria achado falso num campo idêntico.
+
+   A mesma comparação cobre o **preenchimento** do interceptor, já que os `*-default-interceptors`
+   são aposentados (D-5). Limite aceito: a template diz o que *ela usa*, não o que *é válido* — o
+   comparador afirma "difere da régua", não "é tipo inválido".
 3. **Classificar o modo.** O wire não traz flag de override: o que distingue é a forma da lista —
    poucos itens (append), reprodução do fluxo herdado com omissões (override), item `status: REMOVED`
    (tombstone). Essa classificação é inferência sobre o payload e deve ser testada contra casos novos.

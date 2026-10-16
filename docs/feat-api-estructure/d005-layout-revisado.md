@@ -32,7 +32,7 @@
 | D-003 §5 | `resource.yaml` como mapa leve (`name` + `description`) | **revisado** — ganha `destination`/`timeout` e `inherit`; `name` deixa de precisar casar com a pasta |
 | D-003 §6 | ciclo import/publish | **revisado** — publish é `PUT` denso em revisão fixa, com preservação do estado não governado (§8, §9) |
 | D-004 §2.1 | `spec.template` obrigatório | **mantido e detalhado** — chave sempre declarada, vazio permitido; na esteira o valor vem de variável de ambiente (§7) |
-| D-004 §2.2 | congelamento do ciclo de fluxos | **parcialmente descongelado** — a conformidade com a régua é implementável hoje; o que continua congelado é a remoção seletiva (V-25) |
+| D-004 §2.2 | congelamento do ciclo de fluxos | **descongelado por inteiro em 2026-10-15** — a conformidade com a régua é implementável, e a remoção seletiva fechou na [V-25](decisoes-refino-409/V-25-tombstone.md) |
 | D-f (409) | versionar só o sufixo do destino | **revogada na reconstrução** — não existe base derivável (§3) |
 | D-m (409) | 3 pendências do `timeout` | **fechadas** — unidade em segundos, precedência do mais específico, regime de omissão (§3) |
 | D-e (409) | campos do Resource fora do mapa leve | **resolvida** — parte entra no YAML, parte vira estado não governado (§8) |
@@ -65,7 +65,7 @@ Tradução YAML ↔ wire (no Manager os dois são campos irmãos):
 ```text
 repositorio-da-api/
 ├── api-basic-info.yaml
-├── all-all.yaml                      ← escopo `all` (raiz da revision)
+├── all.yaml                          ← escopo `all` (raiz da revision) — V-18
 └── resources/
     └── <slug-do-recurso>/
         ├── resource.yaml
@@ -186,8 +186,8 @@ Soma-se à fila da D-003 §9 e de [`fila-templates-schemas.md`](fila-templates-s
 
 | Item | Pergunta |
 |---|---|
-| **V-25** | gramática do **tombstone** (remoção seletiva) no YAML — `inherit: false` sinaliza, mas não expressa o item removido |
-| **V-18** | nome e gramática do arquivo do escopo `all` (o conteúdo está decidido) |
+| ~~**V-25**~~ | ~~gramática do **tombstone**~~ — **FECHADA em 2026-10-15**: [lista completa explícita](decisoes-refino-409/V-25-tombstone.md), única forma expressável (T06) |
+| ~~**V-18**~~ | ~~nome e gramática do arquivo do escopo `all`~~ — **FECHADA em 2026-10-15**: o arquivo é [`all.yaml`](decisoes-refino-409/V-18-arquivo-do-escopo-raiz.md), obrigatório pelo nome exato |
 | **V-19** | regerar `api-letras-409/` como fixture — 4 valores vieram da 417 (V-07…V-10) |
 | **V-20** | `Additional Info`: tipo sem schema; `content.attributes[].id` é versionável? |
 | **V-21** | `null` dentro de `content` × a régua "`null` proibido" da D-003 §3 |

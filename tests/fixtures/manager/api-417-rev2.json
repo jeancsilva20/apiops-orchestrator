@@ -1,0 +1,434 @@
+{
+  "api": {
+    "apiResponsible": {
+      "groupName": "",
+      "id": 1153,
+      "username": "paulo.silva"
+    },
+    "apiTags": [
+      {
+        "attributeName": "teste giroto",
+        "tags": [
+          "teste giroto"
+        ]
+      },
+      {
+        "attributeName": "My new",
+        "tags": [
+          "Tag1"
+        ]
+      }
+    ],
+    "basePath": "/letras/v2",
+    "description": "API REST para gerenciamento de tarefas e letras de obras musicais do catálogo ECAD. Permite criar tarefas de busca de letra, atribuir responsável a tarefas pendentes, cadastrar letras vinculadas a tarefas e remover letras.",
+    "id": 417,
+    "name": "Serviço de Letras 2.0.0",
+    "version": "1.0.0"
+  },
+  "revision": {
+    "destination": "https://teste.com",
+    "id": 9175,
+    "interceptors": [
+      {
+        "content": "{\"id\": 32, \"name\": \"Release Notes\"}",
+        "customInterceptorId": 32,
+        "executionPoint": "FIRST",
+        "id": 19504,
+        "parent": null,
+        "parentType": "REVISION",
+        "position": 0,
+        "status": "REFERENCE",
+        "type": "Custom"
+      },
+      {
+        "content": "{\"acceptedTerms\": true, \"encryptContent\": false, \"encryptPathAndParameters\": false}",
+        "customInterceptorId": null,
+        "executionPoint": "FIRST",
+        "id": 19426,
+        "parent": null,
+        "parentType": "REVISION",
+        "position": 2,
+        "status": "REFERENCE",
+        "type": "Log"
+      },
+      {
+        "content": "{\"id\": 178, \"name\": \"CyberArk and OAuth Autentication\"}",
+        "customInterceptorId": 178,
+        "executionPoint": "FIRST",
+        "id": 19429,
+        "parent": null,
+        "parentType": "REVISION",
+        "position": 3,
+        "status": "REFERENCE",
+        "type": "Custom"
+      },
+      {
+        "content": "{\"quota\": \"1000\", \"interval\": \"SECOND\", \"limitBy\": \"IP\", \"soft\": false, \"softvalue\": \"\", \"ignoreBodyValidationMultiPartFormData\": false, \"noHeaderBehavior\": null, \"headerKey\": null, \"rateLimitHeader\": true}",
+        "customInterceptorId": null,
+        "executionPoint": "FIRST",
+        "id": 19435,
+        "parent": null,
+        "parentType": "REVISION",
+        "position": 4,
+        "status": "REFERENCE",
+        "type": "Rate limit"
+      },
+      {
+        "content": "{\"maxSize\": \"2048\"}",
+        "customInterceptorId": null,
+        "executionPoint": "FIRST",
+        "id": 19436,
+        "parent": null,
+        "parentType": "REVISION",
+        "position": 5,
+        "status": "REFERENCE",
+        "type": "Payload size"
+      },
+      {
+        "content": "{\"regexList\": [{\"URI_PATH\": \"((\\\\%3C)|<)[^\\\\n]+((\\\\%3E)|>)\"}, {\"QUERY_PARAM\": \"((\\\\%3C)|<)[^\\\\n]+((\\\\%3E)|>)\"}, {\"HEADER\": \"((\\\\%3C)|<)[^\\\\n]+((\\\\%3E)|>)\"}, {\"BODY\": \"((\\\\%3C)|<)[^\\\\n]+((\\\\%3E)|>)\"}]}",
+        "customInterceptorId": null,
+        "executionPoint": "FIRST",
+        "id": 19422,
+        "parent": null,
+        "parentType": "REVISION",
+        "position": 6,
+        "status": "REFERENCE",
+        "type": "XSS threat protection"
+      },
+      {
+        "content": "{\"acceptedTerms\": true, \"encryptContent\": false, \"encryptPathAndParameters\": false}",
+        "customInterceptorId": null,
+        "executionPoint": "FIRST",
+        "id": 19434,
+        "parent": null,
+        "parentType": "REVISION",
+        "position": 7,
+        "status": "REFERENCE",
+        "type": "Log"
+      },
+      {
+        "content": "{\"acceptedTerms\": true, \"encryptContent\": false, \"encryptPathAndParameters\": false}",
+        "customInterceptorId": null,
+        "executionPoint": "SECOND",
+        "id": 19420,
+        "parent": null,
+        "parentType": "REVISION",
+        "position": 8,
+        "status": "REFERENCE",
+        "type": "Log"
+      },
+      {
+        "content": "{\"id\": null, \"name\": \"Raise Exception Script\"}",
+        "customInterceptorId": null,
+        "executionPoint": "THIRD",
+        "id": 19446,
+        "parent": null,
+        "parentType": "REVISION",
+        "position": 8,
+        "status": "REFERENCE",
+        "type": "Custom"
+      }
+    ],
+    "resources": [
+      {
+        "description": "Verificação de saúde da aplicação",
+        "destination": null,
+        "interceptors": [],
+        "name": "/health-check",
+        "operations": [
+          {
+            "description": "Retorna o status de saúde da aplicação. Endpoint público utilizado para readiness probes em ambientes Kubernetes e monitoramento do API Gateway.",
+            "destination": "https://dev-backend.ecad.org.br/app-demo/servico-letras/v1/health-check",
+            "interceptors": [
+              {
+                "content": "{\"id\": 125, \"name\": \"Release notes\"}",
+                "customInterceptorId": 125,
+                "executionPoint": "FIRST",
+                "id": 19438,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 9,
+                "status": "REFERENCE",
+                "type": "Custom"
+              },
+              {
+                "content": "{\"acceptedTerms\": true, \"encryptContent\": false, \"encryptPathAndParameters\": false}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19444,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 10,
+                "status": "REFERENCE",
+                "type": "Log"
+              },
+              {
+                "content": "{\"quota\": \"1000\", \"interval\": \"SECOND\", \"limitBy\": \"IP\", \"soft\": false, \"softvalue\": \"\", \"ignoreBodyValidationMultiPartFormData\": false, \"noHeaderBehavior\": null, \"headerKey\": null, \"rateLimitHeader\": true}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19427,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 11,
+                "status": "REFERENCE",
+                "type": "Rate limit"
+              },
+              {
+                "content": "{\"maxSize\": \"2048\"}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19445,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 12,
+                "status": "REFERENCE",
+                "type": "Payload size"
+              },
+              {
+                "content": "{\"regexList\": [{\"URI_PATH\": \"((\\\\%3C)|<)[^\\\\n]+((\\\\%3E)|>)\"}, {\"QUERY_PARAM\": \"((\\\\%3C)|<)[^\\\\n]+((\\\\%3E)|>)\"}, {\"HEADER\": \"((\\\\%3C)|<)[^\\\\n]+((\\\\%3E)|>)\"}, {\"BODY\": \"((\\\\%3C)|<)[^\\\\n]+((\\\\%3E)|>)\"}]}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19421,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 13,
+                "status": "REFERENCE",
+                "type": "XSS threat protection"
+              },
+              {
+                "content": "{\"acceptedTerms\": true, \"encryptContent\": false, \"encryptPathAndParameters\": false}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19439,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 14,
+                "status": "REFERENCE",
+                "type": "Log"
+              },
+              {
+                "content": "{\"acceptedTerms\": true, \"encryptContent\": false, \"encryptPathAndParameters\": false}",
+                "customInterceptorId": null,
+                "executionPoint": "SECOND",
+                "id": 19443,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 15,
+                "status": "REFERENCE",
+                "type": "Log"
+              }
+            ],
+            "method": "GET",
+            "path": "/health-check",
+            "timeout": null
+          }
+        ],
+        "timeout": null
+      },
+      {
+        "description": "Gerenciamento de tarefas de busca de letra de obras musicais",
+        "destination": "https://google.com",
+        "interceptors": [],
+        "name": "Tarefas",
+        "operations": [
+          {
+            "description": "Retorna uma lista paginada de tarefas de busca de letra, permitindo filtrar pelo status atual da tarefa (PENDENTE, EM_ANDAMENTO, CONCLUIDA). Os resultados são ordenados por data de criação decrescente.",
+            "destination": "https://dev-backend.ecad.org.br/app-demo/servico-letras/v1/tarefas",
+            "interceptors": [
+              {
+                "content": "{\"regexList\": [{\"URI_PATH\": \"((\\\\%3C)|<)[^\\\\n]+((\\\\%3E)|>)\"}, {\"QUERY_PARAM\": \"((\\\\%3C)|<)[^\\\\n]+((\\\\%3E)|>)\"}, {\"HEADER\": \"((\\\\%3C)|<)[^\\\\n]+((\\\\%3E)|>)\"}, {\"BODY\": \"((\\\\%3C)|<)[^\\\\n]+((\\\\%3E)|>)\"}]}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19430,
+                "parent": {
+                  "id": 19422,
+                  "idTemp": 19422
+                },
+                "parentType": "REVISION",
+                "position": 6,
+                "status": "REMOVED",
+                "type": "XSS threat protection"
+              }
+            ],
+            "method": "GET",
+            "path": "/tarefas",
+            "timeout": null
+          },
+          {
+            "description": "Retorna os dados completos de uma tarefa de busca de letra específica, incluindo o status atual, o responsável e a obra musical associada.",
+            "destination": "https://dev-backend.ecad.org.br/app-demo/servico-letras/v1/tarefas/{id}",
+            "interceptors": [],
+            "method": "GET",
+            "path": "/tarefas/{id}",
+            "timeout": null
+          }
+        ],
+        "timeout": "30"
+      },
+      {
+        "description": "Cadastro e exclusão de letras de obras musicais do catálogo ECAD",
+        "destination": null,
+        "interceptors": [],
+        "name": "Letras",
+        "operations": [
+          {
+            "description": "Cadastra uma nova letra de obra musical vinculada a uma tarefa existente. A tarefa deve estar no status EM_ANDAMENTO e atribuída ao usuário. Após o cadastro, a tarefa é automaticamente concluída. Requer perfil EDITOR ou ADMIN.",
+            "destination": "https://dev-backend.ecad.org.br/app-demo/servico-letras/v1/tarefas/{id}/letras",
+            "interceptors": [],
+            "method": "POST",
+            "path": "/tarefas/{id}/letras",
+            "timeout": "55"
+          },
+          {
+            "description": "Remove uma letra de obra musical do catálogo. A remoção da letra também atualiza o status da obra associada. Requer perfil ADMIN.",
+            "destination": "https://dev-backend.ecad.org.br/app-demo/servico-letras/v1/letras/{id}",
+            "interceptors": [],
+            "method": "DELETE",
+            "path": "/letras/{id}",
+            "timeout": null
+          }
+        ],
+        "timeout": null
+      },
+      {
+        "description": "Gerenciamento de tarefas de busca de letra de obras musicais",
+        "destination": "https://teste.com",
+        "interceptors": [
+          {
+            "content": "{\"id\": 125, \"name\": \"Release notes\"}",
+            "customInterceptorId": 125,
+            "executionPoint": "FIRST",
+            "id": 19424,
+            "parent": null,
+            "parentType": "REVISION",
+            "position": 2,
+            "status": "REFERENCE",
+            "type": "Custom"
+          },
+          {
+            "content": "{\"acceptedTerms\": true, \"encryptContent\": false, \"encryptPathAndParameters\": false}",
+            "customInterceptorId": null,
+            "executionPoint": "FIRST",
+            "id": 19428,
+            "parent": null,
+            "parentType": "REVISION",
+            "position": 3,
+            "status": "REFERENCE",
+            "type": "Log"
+          },
+          {
+            "content": "{\"id\": 178, \"name\": \"CyberArk and OAuth Autentication\"}",
+            "customInterceptorId": 178,
+            "executionPoint": "FIRST",
+            "id": 19433,
+            "parent": null,
+            "parentType": "REVISION",
+            "position": 4,
+            "status": "REFERENCE",
+            "type": "Custom"
+          },
+          {
+            "content": "{\"quota\": \"1000\", \"interval\": \"SECOND\", \"limitBy\": \"IP\", \"soft\": false, \"softvalue\": \"\", \"ignoreBodyValidationMultiPartFormData\": false, \"noHeaderBehavior\": null, \"headerKey\": null, \"rateLimitHeader\": true}",
+            "customInterceptorId": null,
+            "executionPoint": "FIRST",
+            "id": 19425,
+            "parent": null,
+            "parentType": "REVISION",
+            "position": 5,
+            "status": "REFERENCE",
+            "type": "Rate limit"
+          },
+          {
+            "content": "{\"maxSize\": \"2048\"}",
+            "customInterceptorId": null,
+            "executionPoint": "FIRST",
+            "id": 19431,
+            "parent": null,
+            "parentType": "REVISION",
+            "position": 6,
+            "status": "REFERENCE",
+            "type": "Payload size"
+          },
+          {
+            "content": "{\"regexList\": [{\"URI_PATH\": \"((\\\\%3C)|<)[^\\\\n]+((\\\\%3E)|>)\"}, {\"QUERY_PARAM\": \"((\\\\%3C)|<)[^\\\\n]+((\\\\%3E)|>)\"}, {\"HEADER\": \"((\\\\%3C)|<)[^\\\\n]+((\\\\%3E)|>)\"}, {\"BODY\": \"((\\\\%3C)|<)[^\\\\n]+((\\\\%3E)|>)\"}]}",
+            "customInterceptorId": null,
+            "executionPoint": "FIRST",
+            "id": 19432,
+            "parent": null,
+            "parentType": "REVISION",
+            "position": 7,
+            "status": "REFERENCE",
+            "type": "XSS threat protection"
+          },
+          {
+            "content": "{\"acceptedTerms\": true, \"encryptContent\": false, \"encryptPathAndParameters\": false}",
+            "customInterceptorId": null,
+            "executionPoint": "FIRST",
+            "id": 19442,
+            "parent": null,
+            "parentType": "REVISION",
+            "position": 8,
+            "status": "REFERENCE",
+            "type": "Log"
+          },
+          {
+            "content": "{\"attributes\":[{\"expression\":\"$header.key\",\"name\":\"Teste\",\"type\":\"STRING\",\"id\":1}],\"ignoreBodyValidationMultiPartFormData\":false}",
+            "customInterceptorId": null,
+            "executionPoint": "SECOND",
+            "id": 19440,
+            "parent": null,
+            "parentType": "REVISION",
+            "position": 0,
+            "status": "REFERENCE",
+            "type": "Additional Info"
+          },
+          {
+            "content": "{\"acceptedTerms\": true, \"encryptContent\": false, \"encryptPathAndParameters\": false}",
+            "customInterceptorId": null,
+            "executionPoint": "SECOND",
+            "id": 19423,
+            "parent": null,
+            "parentType": "REVISION",
+            "position": 1,
+            "status": "REFERENCE",
+            "type": "Log"
+          }
+        ],
+        "name": "Atribuicao Responsavel",
+        "operations": [
+          {
+            "description": "Atribui o usuário autenticado como responsável de uma tarefa pendente. O responsável é obtido automaticamente do token JWT (claim sub). A tarefa deve estar no status PENDENTE. Requer perfil EDITOR ou ADMIN.",
+            "destination": "https://dev-backend.ecad.org.br/app-demo/servico-letras/v1/tarefas/{id}/atribuicao-responsavel",
+            "interceptors": [
+              {
+                "content": "{\"encryptContent\":true,\"encryptPathAndParameters\":true,\"acceptedTerms\":true,\"ignoreBodyValidationMultiPartFormData\":false}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19437,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 7,
+                "status": "REFERENCE",
+                "type": "Log"
+              }
+            ],
+            "method": "POST",
+            "path": "/tarefas/{id}/atribuicao-responsavel",
+            "timeout": null
+          },
+          {
+            "description": "",
+            "destination": null,
+            "interceptors": [],
+            "method": "GET",
+            "path": "/tarefas/{id}/atribuicao-responsavel",
+            "timeout": null
+          }
+        ],
+        "timeout": "23"
+      }
+    ],
+    "revisionNumber": 2,
+    "timeout": "30"
+  }
+}

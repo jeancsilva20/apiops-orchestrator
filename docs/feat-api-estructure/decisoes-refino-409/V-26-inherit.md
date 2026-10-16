@@ -1,5 +1,10 @@
 # V-26 · `inherit` substitui `override` — a herança passa a ser declarada
 
+> ⚠️ **Revisada na publicação pela [V-27](V-27-fluxo-resolvido-no-repositorio.md) em 2026-10-15.**
+> A gramática do YAML segue valendo por inteiro. O que mudou foi o que `inherit: true` **produz no
+> wire**: o fluxo efetivo passou a ser computado a partir do repositório (`all.yaml` → `resource.yaml`
+> → arquivo de operação) em vez de resolvido pela plataforma a partir de listas vazias.
+
 | Meta | Valor |
 |---|---|
 | Status | **FECHADO** — 2026-10-14 |
@@ -68,9 +73,16 @@ inherit: false
 # representacao do item removido ainda nao decidida (item V-25 do refino)
 ```
 
-## 4. O que fica aberto
+## 4. O que ficava aberto — fechado depois
 
-O **tombstone** ([V-25](../validacao-api-letras-409.md)) continua sem forma no YAML. Hoje ele produz
-`inherit: false` mais um comentário, porque a alternativa — reproduzir os outros 7 itens para remover
-1 — é o custo que a D-g já mediu. `inherit` resolve a **sinalização**; falta a **gramática** da remoção
-seletiva.
+O texto original desta seção dizia que o **tombstone** continuava sem forma no YAML, produzindo
+`inherit: false` mais um comentário. Os dois pontos fecharam em 2026-10-15:
+
+| O que faltava | Onde fechou |
+|---|---|
+| a **gramática** da remoção seletiva | [V-25](V-25-tombstone.md) — a **lista completa explícita** é a única forma expressável: o T06 provou que lista vazia **herda**, então qualquer gramática de remoção teria de ser expandida para a lista completa na publicação de qualquer forma |
+| quem **resolve** a herança | [V-27](V-27-fluxo-resolvido-no-repositorio.md) — o repositório. A lista completa explícita deixou de ser o recurso excepcional do tombstone e passou a ser como **todo** escopo com fluxo próprio é publicado |
+
+O custo que a D-g mediu — reproduzir os outros 7 itens para remover 1 — continua existindo; o que
+mudou é que ele deixou de ser pago à mão. Quem reproduz a lista agora é o orquestrador, a partir da
+hierarquia declarada no repositório.

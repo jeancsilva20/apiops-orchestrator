@@ -1,0 +1,209 @@
+"""Erros de negócio do `sen validate`.
+
+Contrato de borda, igual ao de `completeness_exceptions`: cada erro carrega
+`message` (PT-BR, acionável) e `exit_code`. A CLI apenas **traduz** — não decide
+severidade nem reescreve texto.
+
+Os códigos de saída separam dois canais que a esteira precisa distinguir sem ler
+texto humano:
+
+    0  sucesso — inclui achados INFO/WARNING de régua e completeness abaixo do gate
+    1  falha técnica ou de gramática
+    3  bloqueio do Adaptive Governance
+
+O `2` NÃO é usado: é o código que o Typer/Click reserva para erro de uso da
+linha de comando, e o `sen completeness` já o ocupa com outra semântica.
+"""
+
+from typing import Any, Dict, List, Optional
+
+
+class ValidateError(Exception):
+    """Base dos erros de negócio do `sen validate`."""
+
+    exit_code = 1
+
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(self.message)
+
+
+class IdentidadeDivergenteError(ValidateError):
+    """`version` ou `basePath` do repositório divergem do Manager (D-11).
+
+    Os dois definem a identidade funcional da API: divergência significa que o
+    repositório pode estar apontado para outra API, e a operação aborta **antes**
+    de qualquer escrita.
+    """
+
+    def __init__(self, campo: str, no_repo: str, no_manager: str, api_id: int):
+        super().__init__(
+            "Este repositório parece apontar para outra API. O "
+            f"`{campo}` declarado aqui é {no_repo!r}, mas a API {api_id} no Manager "
+            f"tem {no_manager!r} — e esse campo não muda depois que a API é criada.\n\n"
+            "Confira o `id` em `api-basic-info.yaml`. Se o id estiver certo, só um "
+            "administrador do Manager pode acertar o valor divergente.\n\n"
+            "Nada foi publicado."
+        )
+        self.campo = campo
+        self.no_repo = no_repo
+        self.no_manager = no_manager
+        self.api_id = api_id
+
+
+class TemplateAusenteError(ValidateError):
+    """`spec.template` vazio (D-12).
+
+    A D-12 revogou o "vazio permitido" da V-11 §1: sem template não há régua, e
+    sem régua não há validação.
+    """
+
+    def __init__(self):
+        super().__init__(
+            "Esta API ainda não tem uma API-template vinculada, e é a template que "
+            "define o padrão contra o qual o `validate` compara.\n\n"
+            "Preencha `spec.template` em `api-basic-info.yaml` com o id da template. "
+            "Se não souber qual é, peça ao administrador do Manager."
+        )
+
+
+class LayoutInvalidoError(ValidateError):
+    """Arquivo base ausente ou estrutura não reconhecida (V-18 §2.3).
+
+    `all.yaml` e `resource.yaml` são obrigatórios **pelo nome exato**. A ausência
+    aborta na E1, antes de rede: a raiz não herda de nenhum escopo, então publicar
+    sem ela não preserva nada — apaga o fluxo da revision inteira.
+    """
+
+    def __init__(self, caminho_esperado: str, detalhe: Optional[str] = None):
+        complemento = f" {detalhe}" if detalhe else ""
+        super().__init__(
+            f"Não encontrei o arquivo `{caminho_esperado}`, que é "
+            f"obrigatório.{complemento}\n\n"
+            "O nome precisa ser exatamente esse, inclusive maiúsculas e minúsculas. "
+            "O comando parou antes de acessar o Manager."
+        )
+        self.caminho_esperado = caminho_esperado
+
+
+class CustomInexistenteError(ValidateError):
+    """O repositório referencia um `Custom` que não existe no tenant (W-2).
+
+    O catálogo é autoridade sobre existência: `404` significa ausente. O conteúdo
+    **não** é reposto a partir de revisões antigas — isso ressuscitaria uma
+    referência que um administrador apagou de propósito.
+    """
+
+    def __init__(self, custom_id: int, escopo: str):
+        super().__init__(
+            f"O interceptor Custom de id {custom_id}, declarado em {escopo}, não "
+            "existe neste ambiente.\n\n"
+            "Ids de Custom valem só dentro de um ambiente — se este repositório veio "
+            "de outro, o id precisa ser atualizado. Confira o id na lista de "
+            "interceptors customizados do Manager.\n\n"
+            "Nada foi publicado."
+        )
+        self.custom_id = custom_id
+        self.escopo = escopo
+
+
+class ReguaInalcancavelError(ValidateError):
+    """O `GET` da API-régua falhou (P-2).
+
+    Aborta nos dois modos de execução: é falha técnica, não divergência de padrão.
+    Como a plataforma devolve **403** tanto para sessão expirada quanto para id de
+    outro tenant — e **não** devolve 401 —, a mensagem nomeia as duas causas em vez
+    de escolher uma.
+    """
+
+    def __init__(self, template_id: Any, status_code: Optional[int] = None):
+        if status_code == 404:
+            causa = (
+                "Essa API não existe neste Manager. Confira o id em "
+                "`spec.template`, no `api-basic-info.yaml`."
+            )
+        elif status_code == 403:
+            # Sessão expirada vem primeiro de propósito: é de longe a causa mais
+            # comum e a única que o dev resolve sozinho. A plataforma devolve 403
+            # para os dois casos, então a ordem é a única ajuda que podemos dar.
+            causa = (
+                "O acesso foi negado. Normalmente é sessão expirada: rode "
+                "`sen login` e tente de novo. Se continuar negado, a template pode "
+                "pertencer a outro ambiente."
+            )
+        else:
+            causa = (
+                "O Manager não respondeu. Tente de novo em alguns instantes; "
+                "se persistir, acione o time de acesso."
+            )
+        super().__init__(
+            f"Não consegui ler a API-template {template_id}, e sem ela não há "
+            f"padrão para comparar. {causa}\n\n"
+            "Nada foi publicado."
+        )
+        self.template_id = template_id
+        self.status_code = status_code
+
+
+class PublicacaoDivergenteError(ValidateError):
+    """A plataforma aceitou (200) mas o estado publicado não corresponde ao enviado (W-8).
+
+    HTTP 200 não é prova de sucesso: foram observadas três perdas silenciosas
+    distintas sob 200. A conferência pós-publicação é obrigatória, e divergência
+    é falha.
+    """
+
+    def __init__(self, divergencias: List[str]):
+        # Lista em linhas, não `; `: com três ou mais divergências a frase única
+        # vira um parágrafo corrido em que nada se distingue.
+        listadas = (
+            "\n".join(f"  - {d}" for d in divergencias)
+            if divergencias
+            else "  - diferença não detalhada"
+        )
+        super().__init__(
+            "O Manager aceitou a publicação, mas o que ficou gravado não é o que "
+            f"foi enviado:\n\n{listadas}\n\n"
+            "Parte da alteração se perdeu no caminho. Confira o estado atual da "
+            "revisão no Manager antes de publicar de novo."
+        )
+        self.divergencias = list(divergencias)
+
+
+class GovernanceBlockedError(ValidateError):
+    """Bloqueio do Adaptive Governance (V-23).
+
+    Canal e código de saída próprios, para a esteira ramificar sem ler texto. O
+    atributo faltante é **calculado** — `exigidos(mustHave) − presentes` —, nunca
+    extraído de `messages[]`, que é texto livre.
+    """
+
+    exit_code = 3
+
+    def __init__(
+        self,
+        workflow_id: int,
+        stage_id: int,
+        missing: List[Dict[str, Any]],
+        raw: Optional[Dict[str, Any]] = None,
+    ):
+        nomes = [str(m.get("name") or m.get("attributeId")) for m in missing]
+        # Cada atributo na sua linha: numa lista separada por vírgula, o nome
+        # quebra no meio quando o terminal é estreito ("My \nnew") e fica
+        # ilegível — justamente o dado que o dev precisa copiar.
+        faltantes = (
+            "\n".join(f"  - {nome}" for nome in nomes)
+            if nomes
+            else "  - atributo não identificado"
+        )
+        super().__init__(
+            "A governança do Manager não liberou a publicação. A API precisa ter "
+            f"estes atributos antes de subir:\n\n{faltantes}\n\n"
+            "Adicione em `apiTags`, no `api-basic-info.yaml`, e rode o comando de "
+            "novo.\n\n"
+            f"Nada foi publicado. (workflow {workflow_id}, stage {stage_id})"
+        )
+        self.workflow_id = workflow_id
+        self.stage_id = stage_id
+        self.missing = list(missing)
+        self.raw = raw or {}

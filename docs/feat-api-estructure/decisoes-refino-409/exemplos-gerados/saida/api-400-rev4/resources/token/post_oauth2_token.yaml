@@ -1,10 +1,10 @@
 path: /oauth2/token
 destination:
-  url: https://api-consulting.sensedia.com/oauth/v1/access-token
-description: ""
+  url: "https://api-consulting.sensedia.com/oauth/v1/access-token"
 
 inherit: false
-# heranca quebrada: o fluxo abaixo substitui o herdado (ausentes: OAuth#None)
+# o fluxo abaixo substitui o herdado, e é o que este ponto executa
+# não executa, do herdado: nada
 
 interceptors_request:
   - type: Log obfuscation
@@ -12,13 +12,13 @@ interceptors_request:
       location: HEADER
       regexToReplace: \w.*
       attr: client_secret
-      replaceChar: *****
+      replaceChar: "*****"
       ignoreBodyValidationMultiPartFormData: false
   - type: Log obfuscation
     content:
       location: HEADER
       regexToReplace: \w.*
-      replaceChar: *****
+      replaceChar: "*****"
       attr: client_id
       ignoreBodyValidationMultiPartFormData: false
   - type: Log obfuscation
@@ -26,7 +26,7 @@ interceptors_request:
       location: HEADER
       regexToReplace: \w.*
       attr: authorization
-      replaceChar: *****
+      replaceChar: "*****"
       ignoreBodyValidationMultiPartFormData: false
   - type: Log
     content:
@@ -69,7 +69,7 @@ interceptors_response:
       location: BODY
       regexToReplace: "(?<=(\"access_token\"|\"admin_access_token\"|\"user_name\"|\"user_email\")\\s?:\\s?\"[0-9A-Za-z]{3})[a-zA-Z0-9!@#$%^&*()_+\\-=\\[\\];':\"\\|.<>\\/?\\sÀ-ü]*"
       attr: null
-      replaceChar: *****
+      replaceChar: "*****"
       ignoreBodyValidationMultiPartFormData: false
   - type: Log
     content:
