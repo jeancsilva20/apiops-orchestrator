@@ -9,6 +9,7 @@ from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter 
 )
 from apiops_orchestrator.domain.models.workflow_stage_model import WorkflowStage
 from apiops_orchestrator.domain.ports.manager_api_port import (
+    ManagerApiGovernanceBlockedError,
     ManagerApiResponseTooLargeError,
     ManagerApiTransportRejectedError,
     ManagerApiTransportUnavailableError,
@@ -409,3 +410,74 @@ def test_rejection_diagnostics_are_logged_at_info_without_token(mock_settings, c
     assert "status_code=400" in message and "code=INVALID_QUERY" in message
     assert "request_id=req-42" in message
     assert "token123" not in caplog.text
+
+
+# --- Envelope de erro da plataforma (V-23 §1) --------------------------------
+
+# Corpo real do 412 (caderno de testes, T03): o motivo vem num JSON dentro de string.
+GOVERNANCE_412_BODY = {
+    "result": "failure",
+    "errors": [{
+        "type": "INVALID",
+        "message": '{"timestamp":1792068778625,"status":412,"error":"PRECONDITION_FAILED",'
+                   '"messages":["API must contain attribute My new"],'
+                   '"path":"/api-governance/api/v3/workflows/500/validate"}',
+    }],
+    "status": 412,
+}
+
+
+def test_governance_412_becomes_governance_signal_with_workflow_and_raw(mock_settings):
+    adapter = _make_adapter(mock_settings)
+
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.side_effect = HttpClient4xxError(
+            status_code=412, title="failure", detail="x", body=GOVERNANCE_412_BODY
+        )
+        with pytest.raises(ManagerApiGovernanceBlockedError) as excinfo:
+            adapter.update_revision(9161, {"api": {}})
+
+    signal = excinfo.value
+    assert isinstance(signal, ManagerApiTransportRejectedError)
+    assert signal.workflow_id == 500
+    assert signal.messages == ["API must contain attribute My new"]
+    assert signal.raw == GOVERNANCE_412_BODY
+
+
+def test_412_without_governance_path_stays_a_plain_rejection(mock_settings):
+    adapter = _make_adapter(mock_settings)
+    body = {"errors": [{"message": "revision is locked"}]}
+
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.side_effect = HttpClient4xxError(
+            status_code=412, title="x", detail="x", body=body
+        )
+        with pytest.raises(ManagerApiTransportRejectedError) as excinfo:
+            adapter.update_revision(9161, {})
+
+    assert not isinstance(excinfo.value, ManagerApiGovernanceBlockedError)
+    assert excinfo.value.messages == ["revision is locked"]
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ({"code": "BACKEND_RESPONSE_TOO_LARGE", "message": "too large"}, ["too large"]),
+        ({"errors": [{"message": "Invalid basePath"}]}, ["Invalid basePath"]),
+        ({"errors": [{"message": "{broken json"}]}, ["{broken json"]),
+        ({"messages": ["a", "a", " b "]}, ["a", "b"]),
+        (None, []),
+        ("plain text body", []),
+    ],
+)
+def test_platform_messages_unwraps_envelope_defensively(mock_settings, body, expected):
+    adapter = _make_adapter(mock_settings)
+
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.side_effect = HttpClient4xxError(
+            status_code=400, title="x", detail="x", body=body
+        )
+        with pytest.raises(ManagerApiTransportRejectedError) as excinfo:
+            adapter.update_revision(9161, {})
+
+    assert excinfo.value.messages == expected

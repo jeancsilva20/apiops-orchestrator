@@ -185,34 +185,99 @@ class GovernanceBlockedError(ValidateError):
     Canal e código de saída próprios, para a esteira ramificar sem ler texto. O
     atributo faltante é **calculado** — `exigidos(mustHave) − presentes` —, nunca
     extraído de `messages[]`, que é texto livre.
+
+    Quando o bloqueio só aparece no `PUT` (o workflow que valida não é o gravado
+    na revisão — V-23 §3), o faltante não é calculável e a saída degrada para o
+    repasse dos `motivos` da plataforma, literais: evidência, nunca fonte
+    (V-23 §5, item 3 — "nunca engole o erro").
     """
 
     exit_code = 3
 
     def __init__(
         self,
-        workflow_id: int,
-        stage_id: int,
+        workflow_id: Optional[int],
+        stage_id: Optional[int],
         missing: List[Dict[str, Any]],
         raw: Optional[Dict[str, Any]] = None,
+        motivos: Optional[List[str]] = None,
     ):
         nomes = [str(m.get("name") or m.get("attributeId")) for m in missing]
-        # Cada atributo na sua linha: numa lista separada por vírgula, o nome
+        motivos = [m for m in (motivos or []) if m]
+        # Cada item na sua linha: numa lista separada por vírgula, o nome
         # quebra no meio quando o terminal é estreito ("My \nnew") e fica
         # ilegível — justamente o dado que o dev precisa copiar.
-        faltantes = (
-            "\n".join(f"  - {nome}" for nome in nomes)
-            if nomes
-            else "  - atributo não identificado"
+        if nomes or not motivos:
+            faltantes = (
+                "\n".join(f"  - {nome}" for nome in nomes)
+                if nomes
+                else "  - atributo não identificado"
+            )
+            corpo = (
+                "A governança do Manager não liberou a publicação. A API precisa ter "
+                f"estes atributos antes de subir:\n\n{faltantes}\n\n"
+                "Adicione em `apiTags`, no `api-basic-info.yaml`, e rode o comando de "
+                "novo."
+            )
+        else:
+            listados = "\n".join(f"  - {motivo}" for motivo in motivos)
+            corpo = (
+                "A governança do Manager não liberou a publicação. Motivo informado "
+                f"pela plataforma:\n\n{listados}\n\n"
+                "Ajuste `apiTags`, no `api-basic-info.yaml`, conforme o motivo acima "
+                "e rode o comando de novo."
+            )
+        onde = f"workflow {workflow_id}" + (
+            f", stage {stage_id}" if stage_id is not None else ""
         )
-        super().__init__(
-            "A governança do Manager não liberou a publicação. A API precisa ter "
-            f"estes atributos antes de subir:\n\n{faltantes}\n\n"
-            "Adicione em `apiTags`, no `api-basic-info.yaml`, e rode o comando de "
-            "novo.\n\n"
-            f"Nada foi publicado. (workflow {workflow_id}, stage {stage_id})"
-        )
+        super().__init__(f"{corpo}\n\nNada foi publicado. ({onde})")
         self.workflow_id = workflow_id
         self.stage_id = stage_id
         self.missing = list(missing)
         self.raw = raw or {}
+        self.motivos = motivos
+
+
+class TagInvalidaError(ValidateError):
+    """Tag declarada em `apiTags` que não existe na lista do atributo (pré-check).
+
+    Aborta **antes** da escrita: o Manager aceita a gravação com 200 e apaga
+    todas as `apiTags` da API, sem erro e sem a governança barrar. É erro de
+    conteúdo do repositório, não bloqueio de governança — por isso `exit 1`.
+    """
+
+    def __init__(self, invalidas: List[Any]):
+        listadas = "\n".join(
+            f"  - `{i.tag}` em `{i.attribute_name}` "
+            f"(tags possíveis: {', '.join(i.validas)})"
+            for i in invalidas
+        )
+        super().__init__(
+            "Estas tags não existem no atributo em que foram declaradas, em "
+            f"`apiTags`:\n\n{listadas}\n\n"
+            "Corrija o `api-basic-info.yaml` e rode o comando de novo.\n\n"
+            "Nada foi publicado."
+        )
+        self.invalidas = list(invalidas)
+
+
+class PublicacaoRecusadaError(ValidateError):
+    """O Manager recusou a gravação do rascunho (`PUT` da revisão), fora da governança.
+
+    É erro de subida: o motivo que a plataforma deu é o que o dev precisa para
+    corrigir o repositório, então é exibido quando existe. Sem motivo, vale a
+    mensagem padrão da família da falha (sessão, acesso, erro interno).
+    """
+
+    def __init__(self, mensagem_padrao: str, motivos: Optional[List[str]] = None):
+        motivos = [m for m in (motivos or []) if m]
+        if motivos:
+            listados = "\n".join(f"  - {motivo}" for motivo in motivos)
+            corpo = (
+                f"O Manager recusou a gravação do rascunho:\n\n{listados}\n\n"
+                "Corrija o repositório conforme o motivo acima e rode o comando de novo."
+            )
+        else:
+            corpo = mensagem_padrao
+        super().__init__(f"{corpo}\n\nNada foi publicado.")
+        self.motivos = motivos

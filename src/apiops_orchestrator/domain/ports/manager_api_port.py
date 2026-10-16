@@ -18,7 +18,9 @@ class ManagerApiTransportRejectedError(ManagerApiError):
 
     Carrega `status_code` para diagnóstico; mensagem é neutra de tecnologia.
     `code` (código de erro do corpo) e `request_id` (id da requisição no
-    gateway) servem só ao log — nunca à saída do usuário.
+    gateway) servem só ao log — nunca à saída do usuário. `messages` são os
+    motivos em texto humano que a plataforma devolveu, já desembrulhados do
+    envelope; quem decide exibi-los é o caso de uso (ex.: recusa de escrita).
     """
 
     def __init__(
@@ -27,11 +29,13 @@ class ManagerApiTransportRejectedError(ManagerApiError):
         title: str,
         code: Optional[str] = None,
         request_id: Optional[str] = None,
+        messages: Optional[List[str]] = None,
     ) -> None:
         self.status_code = status_code
         self.title = title
         self.code = code
         self.request_id = request_id
+        self.messages = list(messages or [])
         super().__init__(f"Manager API rejected the request (HTTP {status_code}: {title})")
 
 
@@ -41,6 +45,28 @@ class ManagerApiResponseTooLargeError(ManagerApiTransportRejectedError):
     Subclasse de propósito: quem pagina captura só este sinal para pedir menos
     registros; quem já trata `ManagerApiTransportRejectedError` segue igual.
     """
+
+
+class ManagerApiGovernanceBlockedError(ManagerApiTransportRejectedError):
+    """O Adaptive Governance recusou a escrita (HTTP 412 de `/api-governance/.../validate`).
+
+    Bloqueio de governança não é falha de transporte (V-23 §4): o sinal carrega
+    o `workflow_id` lido do `path` do erro — que pode diferir do gravado na
+    revisão (V-23 §3) — e o envelope original em `raw`, intacto. `messages`
+    é evidência em texto livre: nunca fonte do atributo faltante.
+    """
+
+    def __init__(
+        self,
+        status_code: int,
+        title: str,
+        workflow_id: Optional[int] = None,
+        raw: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(status_code, title, **kwargs)
+        self.workflow_id = workflow_id
+        self.raw = raw or {}
 
 
 class ManagerApiTransportUnavailableError(ManagerApiError):

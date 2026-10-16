@@ -36,7 +36,9 @@ class HttpErrorMapper:
         Problem Details for HTTP APIs.
 
         `code` and `request_id` are RFC 7807 extension members kept for
-        diagnostics (logs only — never meant for end-user output).
+        diagnostics (logs only — never meant for end-user output). `body` is
+        the parsed response body, kept for the adapters that must read the
+        platform's own envelope (e.g. the Adaptive Governance 412).
         """
         status = response.status_code
         url = response.url
@@ -49,6 +51,7 @@ class HttpErrorMapper:
             "instance": url,
             "code": None,
             "request_id": _platform_request_id(response),
+            "body": None,
         }
 
         try:
@@ -57,6 +60,7 @@ class HttpErrorMapper:
             error_rfc["detail"] = response.text or "No content returned"
             return error_rfc
 
+        error_rfc["body"] = body
         error_rfc["code"] = _body_error_code(body)
         if not isinstance(body, dict):
             error_rfc["detail"] = str(body)

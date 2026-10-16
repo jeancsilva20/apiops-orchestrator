@@ -30,9 +30,9 @@ from apiops_orchestrator.domain.ports.manager_api_port import (
 
 logger = logging.getLogger(__name__)
 
-# Medido em 16/10/2026: páginas de 25 entre 8 KB e 2,7 MB foram aceitas; a
-# resposta única de 127 APIs (~7,9 MB) foi recusada com 413. O peso por API
-# varia muito (revisões inline), por isso a redução adaptativa em `_scan_catalog`.
+# Páginas de 25 entre 8 KB e 2,7 MB são aceitas; a resposta única de 127 APIs
+# (~7,9 MB) é recusada com 413. O peso por API varia muito (revisões inline),
+# por isso a redução adaptativa em `_scan_catalog`.
 _CATALOG_PAGE_SIZE = 25
 
 

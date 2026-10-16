@@ -18,8 +18,17 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
     IdentidadeDivergenteError,
     LayoutInvalidoError,
     PublicacaoDivergenteError,
+    PublicacaoRecusadaError,
+    TagInvalidaError,
+)
+from apiops_orchestrator.application.exceptions.manager_failure_messages import (
+    INTERNAL_ERROR_MESSAGE,
 )
 from apiops_orchestrator.application.services.validate_service import ValidateService
+from apiops_orchestrator.domain.ports.manager_api_port import (
+    ManagerApiGovernanceBlockedError,
+    ManagerApiTransportRejectedError,
+)
 
 API = {
     "id": 417,
@@ -455,3 +464,138 @@ def test_sem_progresso_a_cascata_roda_igual(tmp_path):
     """O narrador é opcional: a esteira não passa nenhum."""
     view = _servico(ManagerFake()).validate(_repo(tmp_path), confirmar=SIM)
     assert view.publicacao.attempted is True
+
+
+# --- Recusa do PUT do rascunho (V-23 §5 · spec sen-validate exit codes) ------
+
+
+class _ManagerQueRecusa(ManagerFake):
+    def __init__(self, erro, **kwargs):
+        super().__init__(**kwargs)
+        self._erro = erro
+
+    def update_revision(self, revision_id, payload):
+        self.chamadas.append("update_revision")
+        raise self._erro
+
+
+_ENVELOPE_412 = {
+    "result": "failure",
+    "errors": [{"type": "INVALID", "message": "{...}"}],
+    "status": 412,
+}
+
+
+def test_412_da_governanca_no_put_e_bloqueio_com_exit_3_e_motivo_literal(tmp_path):
+    erro = ManagerApiGovernanceBlockedError(
+        status_code=412, title="PRECONDITION_FAILED", workflow_id=500,
+        raw=_ENVELOPE_412, messages=["API must contain attribute My new"],
+    )
+    manager = _ManagerQueRecusa(erro)
+
+    with pytest.raises(GovernanceBlockedError) as capturado:
+        _servico(manager).validate(_repo(tmp_path), confirmar=SIM)
+
+    bloqueio = capturado.value
+    assert bloqueio.exit_code == 3
+    assert "API must contain attribute My new" in bloqueio.message
+    assert "workflow 500" in bloqueio.message
+    assert "Nada foi publicado." in bloqueio.message
+    assert bloqueio.raw == _ENVELOPE_412
+    assert bloqueio.missing == []  # nunca extraído do texto livre
+    # a releitura pós-publicação não acontece depois de uma recusa
+    assert manager.chamadas[-1] == "update_revision"
+
+
+@pytest.mark.parametrize("status", [400, 409, 422])
+def test_recusa_de_validacao_no_put_mostra_o_motivo_da_plataforma(tmp_path, status):
+    erro = ManagerApiTransportRejectedError(
+        status_code=status, title="Bad Request", messages=["basePath must start with /"]
+    )
+
+    with pytest.raises(PublicacaoRecusadaError) as capturado:
+        _servico(_ManagerQueRecusa(erro)).validate(_repo(tmp_path), confirmar=SIM)
+
+    mensagem = capturado.value.message
+    assert capturado.value.exit_code == 1
+    assert "basePath must start with /" in mensagem
+    assert "Nada foi publicado." in mensagem
+
+
+@pytest.mark.parametrize(
+    ("status", "trecho"),
+    [(401, "sen login"), (403, "sen login"), (413, "erro interno"), (429, "erro interno")],
+)
+def test_recusa_sem_motivo_util_usa_a_mensagem_da_familia(tmp_path, status, trecho):
+    erro = ManagerApiTransportRejectedError(
+        status_code=status, title="x", messages=["Backend response was too large"]
+    )
+
+    with pytest.raises(PublicacaoRecusadaError) as capturado:
+        _servico(_ManagerQueRecusa(erro)).validate(_repo(tmp_path), confirmar=SIM)
+
+    mensagem = capturado.value.message
+    assert trecho in mensagem
+    assert "Backend response was too large" not in mensagem
+    assert str(status) not in mensagem
+    assert capturado.value.exit_code == 1
+
+
+def test_recusa_de_validacao_sem_motivo_cai_no_erro_interno(tmp_path):
+    erro = ManagerApiTransportRejectedError(status_code=422, title="x", messages=[])
+
+    with pytest.raises(PublicacaoRecusadaError) as capturado:
+        _servico(_ManagerQueRecusa(erro)).validate(_repo(tmp_path), confirmar=SIM)
+
+    assert INTERNAL_ERROR_MESSAGE in capturado.value.message
+
+
+# --- apiTags: tag fora do atributo e perda silenciosa -------------------------
+
+BASIC_INFO_COM_TAGS = BASIC_INFO + """\
+  apiTags:
+    - attributeName: My new
+      tags:
+        - {tag}
+"""
+
+
+class _ManagerComCatalogoDeTags(ManagerFake):
+    def list_attributes(self):
+        self.chamadas.append("list_attributes")
+        return [{"id": 149, "name": "My new", "tags": ["Tag1", "Tag2"]}]
+
+
+def test_tag_fora_do_atributo_aborta_antes_de_escrever(tmp_path):
+    manager = _ManagerComCatalogoDeTags()
+    repo = _repo(tmp_path, basic_info=BASIC_INFO_COM_TAGS.format(tag="TagInexistente"))
+
+    with pytest.raises(TagInvalidaError) as capturado:
+        _servico(manager).validate(repo, confirmar=SIM)
+
+    mensagem = capturado.value.message
+    assert capturado.value.exit_code == 1
+    assert "`TagInexistente` em `My new`" in mensagem and "Tag1, Tag2" in mensagem
+    assert "Nada foi publicado." in mensagem
+    assert "update_revision" not in manager.chamadas
+
+
+def test_tag_valida_segue_para_a_publicacao(tmp_path):
+    manager = _ManagerComCatalogoDeTags()
+    repo = _repo(tmp_path, basic_info=BASIC_INFO_COM_TAGS.format(tag="Tag2"))
+
+    view = _servico(manager).validate(repo, confirmar=SIM)
+
+    assert view.publicacao.attempted and view.publicacao.verified
+
+
+def test_apitags_apagadas_pela_plataforma_viram_divergencia(tmp_path):
+    """O PUT voltou 200, mas o Manager zerou as apiTags: não é sucesso."""
+    publicado = dict(DRAFT, api=dict(DRAFT["api"], apiTags=[]))
+    manager = _ManagerComCatalogoDeTags(publicado=publicado)
+    repo = _repo(tmp_path, basic_info=BASIC_INFO_COM_TAGS.format(tag="Tag1"))
+
+    with pytest.raises(PublicacaoDivergenteError) as capturado:
+        _servico(manager).validate(repo, confirmar=SIM)
+
+    assert "`My new` foi enviado em `apiTags`" in capturado.value.message

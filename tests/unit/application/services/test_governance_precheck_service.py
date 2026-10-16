@@ -149,3 +149,99 @@ def test_nenhuma_mensagem_de_erro_e_parseada():
     r = servico.avaliar(REVISAO, _tags("teste giroto"))
     # o cálculo não depende de nenhum payload de erro ter sido visto
     assert r.faltantes and r.faltantes[0].name == "My new"
+
+
+# --- Regras de apiTags observadas na plataforma -----------------------------
+
+# Catálogo com as tags cadastradas, como devolvido pelo consulting.
+CATALOGO_COM_TAGS = [
+    {"id": 96, "name": "CLI", "tags": [], "inUse": False},
+    {"id": 149, "name": "My new", "tags": ["Tag1", "Tag2"], "inUse": True},
+    {"id": 231, "name": "teste giroto", "tags": ["teste giroto"], "inUse": True},
+]
+
+
+def _declarado(nome, *tags):
+    return {"attributeName": nome, "tags": list(tags)}
+
+
+def _servico_com_tags(workflow=None):
+    return GovernancePrecheckService(
+        ManagerFake(workflow=workflow, atributos=CATALOGO_COM_TAGS)
+    )
+
+
+def test_atributo_com_tag_valida_conta_como_presente():
+    r = _servico_com_tags().avaliar(
+        REVISAO, [_declarado("My new", "Tag1"), _declarado("teste giroto", "teste giroto")]
+    )
+    assert not r.bloqueado
+    assert r.tags_invalidas == []
+
+
+def test_atributo_sem_tag_conta_como_ausente():
+    """Cenário A: `My new` com `tags: []` — a plataforma respondeu 412."""
+    r = _servico_com_tags().avaliar(
+        REVISAO, [_declarado("My new"), _declarado("teste giroto", "teste giroto")]
+    )
+    assert r.bloqueado
+    assert [f.attribute_id for f in r.faltantes] == [149]
+
+
+def test_tag_fora_da_lista_do_atributo_e_invalida():
+    """Tag inexistente: a plataforma aceitou com 200 e apagou todas as apiTags."""
+    r = _servico_com_tags().avaliar(
+        REVISAO,
+        [_declarado("My new", "TagInexistente"), _declarado("teste giroto", "teste giroto")],
+    )
+    assert len(r.tags_invalidas) == 1
+    invalida = r.tags_invalidas[0]
+    assert (invalida.attribute_name, invalida.tag) == ("My new", "TagInexistente")
+    assert invalida.validas == ["Tag1", "Tag2"]
+
+
+def test_tag_invalida_e_conferida_mesmo_sem_requisito_no_stage():
+    workflow = {"stages": [{"workflowStageId": 1402, "attributesRequisites": []}]}
+    r = _servico_com_tags(workflow).avaliar(REVISAO, [_declarado("My new", "Errada")])
+    assert [i.tag for i in r.tags_invalidas] == ["Errada"]
+
+
+def test_tag_invalida_e_conferida_mesmo_sem_workflow_na_revisao():
+    r = _servico_com_tags().avaliar({"id": 1}, [_declarado("My new", "Errada")])
+    assert [i.tag for i in r.tags_invalidas] == ["Errada"]
+
+
+def test_atributo_sem_tags_cadastradas_basta_estar_presente():
+    """Sem lista no catálogo não há contra o que comparar (V-23 §2: `CLI`)."""
+    workflow = {
+        "stages": [{
+            "workflowStageId": 1402,
+            "attributesRequisites": [{"attributeId": 96, "tagId": None, "mustHave": True}],
+        }]
+    }
+    r = _servico_com_tags(workflow).avaliar(REVISAO, [_declarado("CLI", "qualquer")])
+    assert not r.bloqueado
+    assert r.tags_invalidas == []
+
+
+def test_atributo_fora_do_catalogo_nao_tem_tag_conferida():
+    r = _servico_com_tags().avaliar(
+        REVISAO,
+        [_declarado("inventado", "x"), _declarado("My new", "Tag1"),
+         _declarado("teste giroto", "teste giroto")],
+    )
+    assert r.tags_invalidas == []
+
+
+def test_api_tags_ausente_nao_confere_tags():
+    """Ausente preserva (schema do basic info): nada é enviado, nada a conferir."""
+    r = _servico_com_tags().avaliar(REVISAO, None)
+    assert r.tags_invalidas == []
+
+
+def test_catalogo_e_lido_uma_vez_por_execucao():
+    manager = ManagerFake(atributos=CATALOGO_COM_TAGS)
+    GovernancePrecheckService(manager).avaliar(
+        REVISAO, [_declarado("My new", "Tag1"), _declarado("teste giroto", "teste giroto")]
+    )
+    assert manager.chamadas.count(("list_attributes", None)) == 1

@@ -391,3 +391,27 @@ def test_confirmacao_explica_que_grava_um_rascunho_sem_deploy():
     assert "Nenhum ambiente recebe deploy" in resultado.output
     assert "Deseja prosseguir?" in resultado.output
     assert capturado["respondeu"] is False
+
+
+@pytest.mark.parametrize(
+    "entrada",
+    [
+        "",                # fim da entrada sem resposta (pipe vazio, Ctrl+D)
+        "﻿y\n",       # resposta inválida e depois fim da entrada (PowerShell 5.1)
+    ],
+)
+def test_cancelar_o_prompt_e_recusa_e_nao_erro_interno(entrada):
+    """Ctrl+C / fim da entrada no prompt levanta Abort: vale como "N"."""
+    capturado = {}
+
+    class _ServicoQuePergunta(_ServicoFake):
+        def validate(self, repo_path, *, confirmar, progresso=None):
+            capturado["respondeu"] = confirmar("Uma versão de rascunho será gravada.")
+            return self._resultado
+
+    servico = _ServicoQuePergunta(resultado=_view())
+    resultado = runner.invoke(app, ["sen", "validate"], obj=_ctx(servico), input=entrada)
+
+    assert capturado["respondeu"] is False
+    assert resultado.exit_code == 0
+    assert INTERNAL_ERROR_MESSAGE not in " ".join(resultado.output.split())

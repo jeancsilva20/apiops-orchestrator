@@ -322,3 +322,76 @@ def test_custom_herdado_da_raiz_tambem_resolve_o_content():
     publicados = montado.corpo["resources"][0]["operations"][0]["interceptors"]
     assert [i["type"] for i in publicados] == ["Custom", "Log"]
     assert json.loads(publicados[0]["content"])["name"] == "CyberArk"
+
+
+# --- Conferência do `api` aninhado (W-8) --------------------------------------
+
+_TAGS_ENVIADAS = [
+    {"attributeName": "teste giroto", "tags": ["teste giroto"]},
+    {"attributeName": "My new", "tags": ["Tag1"]},
+]
+
+
+def _com_api(**api):
+    return {"api": dict(api), "resources": [], "interceptors": []}
+
+
+def test_conferir_acusa_apitags_apagadas_pela_plataforma():
+    """A tag inexistente foi aceita com 200 e o Manager zerou as apiTags."""
+    enviado = _com_api(apiTags=_TAGS_ENVIADAS)
+    publicado = _com_api(apiTags=[])
+
+    divergencias = revision_payload.conferir(enviado, publicado)
+
+    assert any("`My new` foi enviado em `apiTags`" in d for d in divergencias)
+    assert any("`teste giroto` foi enviado em `apiTags`" in d for d in divergencias)
+
+
+def test_conferir_acusa_tags_diferentes_no_mesmo_atributo():
+    enviado = _com_api(apiTags=[{"attributeName": "My new", "tags": ["Tag1"]}])
+    publicado = _com_api(apiTags=[{"attributeName": "My new", "tags": ["Tag2"]}])
+
+    divergencias = revision_payload.conferir(enviado, publicado)
+
+    assert divergencias == [
+        "o atributo `My new` foi enviado com as tags ['Tag1'] e gravado com ['Tag2']"
+    ]
+
+
+def test_conferir_acusa_atributo_que_sobrou_no_manager():
+    enviado = _com_api(apiTags=[])
+    publicado = _com_api(apiTags=[{"attributeName": "Velho", "tags": ["x"]}])
+
+    assert revision_payload.conferir(enviado, publicado) == [
+        "o atributo `Velho` está nas `apiTags` do Manager mas não foi enviado"
+    ]
+
+
+def test_conferir_ignora_a_ordem_das_apitags_e_das_tags():
+    enviado = _com_api(apiTags=[
+        {"attributeName": "A", "tags": ["1", "2"]},
+        {"attributeName": "B", "tags": ["3"]},
+    ])
+    publicado = _com_api(apiTags=[
+        {"attributeName": "B", "tags": ["3"]},
+        {"attributeName": "A", "tags": ["2", "1"]},
+    ])
+
+    assert revision_payload.conferir(enviado, publicado) == []
+
+
+def test_conferir_sem_apitags_no_envio_nao_confere_tags():
+    """Ausente preserva: o que não foi enviado não é veredito."""
+    enviado = _com_api(name="X")
+    publicado = _com_api(name="X", apiTags=[{"attributeName": "A", "tags": ["1"]}])
+
+    assert revision_payload.conferir(enviado, publicado) == []
+
+
+def test_conferir_acusa_name_e_description_divergentes():
+    enviado = _com_api(name="Novo", description="depois")
+    publicado = _com_api(name="Antigo", description="depois")
+
+    assert revision_payload.conferir(enviado, publicado) == [
+        "o campo `name` foi enviado como 'Novo' e gravado como 'Antigo'"
+    ]

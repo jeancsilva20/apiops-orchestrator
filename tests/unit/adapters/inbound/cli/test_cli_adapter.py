@@ -618,3 +618,62 @@ def test_api_list_query_help_says_search_runs_on_the_manager():
     help_text = " ".join(result.output.split())
     assert "performed by the Manager" in help_text
     assert "--all" in help_text
+
+
+# --- Fallback reconhece sinais do Manager não traduzidos ----------------------
+
+def _service_raising(method_name, error):
+    mock_service = MagicMock()
+    getattr(mock_service, method_name).side_effect = error
+    return mock_service
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        ("unauthorized", "Faça `sen login` novamente"),
+        ("forbidden", "Acesso negado pelo Manager"),
+        ("unavailable", "Manager indisponível"),
+        ("too_large", "erro interno"),
+    ],
+)
+def test_untranslated_manager_signal_gets_family_message(error, expected):
+    from apiops_orchestrator.domain.ports.manager_api_port import (
+        ManagerApiResponseTooLargeError,
+        ManagerApiTransportRejectedError,
+        ManagerApiTransportUnavailableError,
+    )
+    errors = {
+        "unauthorized": ManagerApiTransportRejectedError(401, "Unauthorized"),
+        "forbidden": ManagerApiTransportRejectedError(403, "Forbidden"),
+        "unavailable": ManagerApiTransportUnavailableError("timeout"),
+        "too_large": ManagerApiResponseTooLargeError(413, "BACKEND_RESPONSE_TOO_LARGE"),
+    }
+    mock_service = _service_raising("list_apis", errors[error])
+
+    result = runner.invoke(
+        app, ["sen", "list", "api"], obj={"api_listing_service_factory": lambda: mock_service}
+    )
+
+    output = " ".join(result.output.split())
+    assert result.exit_code == 1
+    assert expected in output
+    assert "HTTP" not in output and "BACKEND_RESPONSE_TOO_LARGE" not in output
+
+
+def test_untranslated_manager_signal_keeps_command_exit_code():
+    from apiops_orchestrator.domain.ports.manager_api_port import (
+        ManagerApiTransportRejectedError,
+    )
+    mock_service = _service_raising(
+        "get_completeness", ManagerApiTransportRejectedError(401, "Unauthorized")
+    )
+
+    result = runner.invoke(
+        app,
+        ["sen", "completeness", "--id", "375", "--revision", "5513"],
+        obj={"completeness_service_factory": lambda: mock_service},
+    )
+
+    assert result.exit_code == 2
+    assert "sen login" in result.output

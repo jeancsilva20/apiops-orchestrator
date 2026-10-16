@@ -5,6 +5,8 @@ não imprime na tela e não decide UX — o HttpClient apenas sinaliza a falha
 de forma tipada; quem chama traduz/apresenta na sua borda.
 """
 
+from typing import Any
+
 
 class HttpClientError(Exception):
     """Base para falhas previsíveis reportadas pelo HttpClient compartilhado."""
@@ -20,7 +22,8 @@ class HttpClient4xxError(HttpClientError):
 
     `code` (código de erro do corpo) e `request_id` (id da requisição no
     gateway da plataforma) existem só para diagnóstico em log — nunca para
-    a saída do usuário.
+    a saída do usuário. `body` é o corpo já parseado, para o adapter que
+    precisa ler o envelope próprio da plataforma.
     """
 
     def __init__(
@@ -31,6 +34,7 @@ class HttpClient4xxError(HttpClientError):
         url: str | None = None,
         code: str | None = None,
         request_id: str | None = None,
+        body: Any = None,
     ) -> None:
         self.status_code = status_code
         self.title = title
@@ -38,6 +42,7 @@ class HttpClient4xxError(HttpClientError):
         self.url = url
         self.code = code
         self.request_id = request_id
+        self.body = body
         super().__init__(f"{title} ({status_code}): {detail}")
 
 

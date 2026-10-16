@@ -47,6 +47,11 @@ from apiops_orchestrator.application.exceptions.listing_exceptions import (
 from apiops_orchestrator.application.exceptions.manager_failure_messages import (
     INTERNAL_ERROR_MESSAGE,
 )
+from apiops_orchestrator.application.services.manager_failure_translator import (
+    classify_manager_failure,
+    manager_failure_message,
+)
+from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiError
 
 logger = logging.getLogger(__name__)
 
@@ -203,9 +208,12 @@ def _exit_on_unexpected(exc: Exception, command: str, exit_code: int = 1) -> NoR
     Two categorized errors can still arrive here because service factories
     run inside the command's `try`: incomplete configuration (`CliError`) and
     the admin-token resolution refusal (`LoginError`, which orients
-    `sen login`). Both keep their educational message. Anything else is an
-    internal error for the user; type and stacktrace go to the log only, at
-    INFO (with logging not wired, WARNING+ would leak to stderr).
+    `sen login`). Both keep their educational message. A Manager signal that
+    no use case translated (e.g. a 401 on a call the service does not wrap)
+    gets the shared family message, so an expired session still says
+    `sen login`. Anything else is an internal error for the user; type and
+    stacktrace go to the log only, at INFO (with logging not wired, WARNING+
+    would leak to stderr).
     """
     if isinstance(exc, CliError):
         rprint(f"[bold red]Erro:[/bold red] {exc.message}")
@@ -213,6 +221,13 @@ def _exit_on_unexpected(exc: Exception, command: str, exit_code: int = 1) -> NoR
     if isinstance(exc, LoginError):
         rprint(f"[bold red]Erro:[/bold red] {exc.message}")
         raise typer.Exit(code=1)
+    if isinstance(exc, ManagerApiError):
+        message = manager_failure_message(classify_manager_failure(exc))
+        logger.info(
+            "cli.manager_failure command=%s type=%s", command, type(exc).__name__
+        )
+        rprint(f"[bold red]Erro:[/bold red] {message or INTERNAL_ERROR_MESSAGE}")
+        raise typer.Exit(code=exit_code)
     logger.info(
         "cli.unexpected_error command=%s type=%s",
         command,
@@ -1166,7 +1181,12 @@ def _confirmar_publicacao(
                 )
             )
         )
-        return typer.confirm("Deseja prosseguir?", default=False)
+        try:
+            return typer.confirm("Deseja prosseguir?", default=False)
+        except typer.Abort:
+            # Ctrl+C ou fim da entrada no prompt: é recusa, não erro — mesmo
+            # desfecho de responder "N".
+            return False
 
     if progresso is None:
         return _perguntar()

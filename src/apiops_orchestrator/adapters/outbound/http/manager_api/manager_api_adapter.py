@@ -1,10 +1,13 @@
+import json
 import logging
+import re
 from typing import Dict, Any, List, Optional
 
 from requests.exceptions import RequestException
 
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ApiCatalogPage,
+    ManagerApiGovernanceBlockedError,
     ManagerApiPort,
     ManagerApiResponseTooLargeError,
     ManagerApiTransportRejectedError,
@@ -168,6 +171,62 @@ def _translate_row(raw: Any) -> Optional[ApiCatalogEntry]:
     )
 
 
+_GOVERNANCE_VALIDATE_PATH = re.compile(r"/api-governance/.*/workflows/(\d+)/validate")
+
+
+def _platform_error_items(body: Any) -> List[Any]:
+    """Unwraps the platform error envelope into its items (V-23 §1).
+
+    The Manager answers `{"errors": [{"message": "<JSON as a string>"}]}`; the
+    inner JSON carries `messages[]` and `path`. Each item is the parsed inner
+    dict when the string is JSON, or the raw string otherwise (defensive: a
+    failed second parse never loses the text).
+    """
+    if not isinstance(body, dict):
+        return []
+    items: List[Any] = [body]
+    for error in body.get("errors") or []:
+        if not isinstance(error, dict):
+            continue
+        message = error.get("message")
+        if not isinstance(message, str):
+            continue
+        try:
+            items.append(json.loads(message))
+        except ValueError:
+            items.append(message)
+    return items
+
+
+def _platform_messages(body: Any) -> List[str]:
+    """Human-readable reasons the platform gave, in order and without repeats."""
+    found: List[str] = []
+    for item in _platform_error_items(body):
+        if isinstance(item, str):
+            candidates: List[Any] = [item]
+        elif isinstance(item, dict):
+            candidates = list(item.get("messages") or [])
+            if item is not body or not candidates:
+                candidates.append(item.get("message"))
+        else:
+            continue
+        for candidate in candidates:
+            text = candidate.strip() if isinstance(candidate, str) else ""
+            if text and text not in found:
+                found.append(text)
+    return found
+
+
+def _governance_workflow_id(body: Any) -> Optional[int]:
+    """Workflow that blocked the write, from the error `path` — None if not governance."""
+    for item in _platform_error_items(body):
+        path = item.get("path") if isinstance(item, dict) else None
+        match = _GOVERNANCE_VALIDATE_PATH.search(path) if isinstance(path, str) else None
+        if match:
+            return int(match.group(1))
+    return None
+
+
 def _build_custom_search(query: str) -> str:
     sanitized = "".join(ch for ch in query if ch not in '"()')
     return f'(apiName:"{sanitized}" OR description:"{sanitized}")'
@@ -239,17 +298,26 @@ class ManagerApiAdapter(ManagerApiPort):
                 exc.code,
                 exc.request_id,
             )
-            signal = (
-                ManagerApiResponseTooLargeError
-                if exc.status_code == 413
-                else ManagerApiTransportRejectedError
-            )
-            raise signal(
+            common = dict(
                 status_code=exc.status_code,
                 title=exc.title,
                 code=exc.code,
                 request_id=exc.request_id,
-            ) from exc
+                messages=_platform_messages(exc.body),
+            )
+            workflow_id = (
+                _governance_workflow_id(exc.body) if exc.status_code == 412 else None
+            )
+            if workflow_id is not None:
+                logger.info("manager_api.governance.blocked workflow_id=%s", workflow_id)
+                raise ManagerApiGovernanceBlockedError(
+                    workflow_id=workflow_id,
+                    raw=exc.body if isinstance(exc.body, dict) else None,
+                    **common,
+                ) from exc
+            if exc.status_code == 413:
+                raise ManagerApiResponseTooLargeError(**common) from exc
+            raise ManagerApiTransportRejectedError(**common) from exc
         except HttpClientServerError as exc:
             logger.info("manager_api.transport.unavailable reason=server_error")
             raise ManagerApiTransportUnavailableError(str(exc)) from exc

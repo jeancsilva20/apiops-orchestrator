@@ -405,4 +405,54 @@ def conferir(enviado: Dict[str, Any], publicado: Dict[str, Any]) -> List[str]:
                 f"gravado como {publicado_par!r}"
             )
 
+    divergencias.extend(_divergencias_do_basic_info(enviado, publicado))
+    return divergencias
+
+
+def _assinatura_api_tags(api: Dict[str, Any]) -> Dict[str, frozenset]:
+    """`attributeName` → conjunto de tags; a ordem não é contrato da plataforma."""
+    return {
+        str(item.get("attributeName")): frozenset(str(t) for t in (item.get("tags") or []))
+        for item in (api.get("apiTags") or [])
+        if isinstance(item, dict)
+    }
+
+
+def _divergencias_do_basic_info(
+    enviado: Dict[str, Any], publicado: Dict[str, Any]
+) -> List[str]:
+    """Confere o `api` aninhado — onde o basic info viaja (W-7).
+
+    Uma tag inexistente no atributo é aceita com 200 e o Manager apaga
+    **todas** as `apiTags`. Sem esta conferência, o comando reportava sucesso.
+    """
+    api_enviada = enviado.get("api") if isinstance(enviado.get("api"), dict) else {}
+    api_publicada = publicado.get("api") if isinstance(publicado.get("api"), dict) else {}
+    divergencias: List[str] = []
+
+    for campo in ("name", "description"):
+        if campo in api_enviada and api_enviada.get(campo) != api_publicada.get(campo):
+            divergencias.append(
+                f"o campo `{campo}` foi enviado como {api_enviada.get(campo)!r} e "
+                f"gravado como {api_publicada.get(campo)!r}"
+            )
+
+    if "apiTags" not in api_enviada:
+        return divergencias
+    enviadas = _assinatura_api_tags(api_enviada)
+    publicadas = _assinatura_api_tags(api_publicada)
+    for nome in sorted(enviadas.keys() - publicadas.keys()):
+        divergencias.append(
+            f"o atributo `{nome}` foi enviado em `apiTags` mas não está no Manager"
+        )
+    for nome in sorted(publicadas.keys() - enviadas.keys()):
+        divergencias.append(
+            f"o atributo `{nome}` está nas `apiTags` do Manager mas não foi enviado"
+        )
+    for nome in sorted(enviadas.keys() & publicadas.keys()):
+        if enviadas[nome] != publicadas[nome]:
+            divergencias.append(
+                f"o atributo `{nome}` foi enviado com as tags {sorted(enviadas[nome])} "
+                f"e gravado com {sorted(publicadas[nome])}"
+            )
     return divergencias

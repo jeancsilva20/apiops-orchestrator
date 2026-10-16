@@ -22,10 +22,19 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
     IdentidadeDivergenteError,
     LayoutInvalidoError,
     PublicacaoDivergenteError,
+    PublicacaoRecusadaError,
+    TagInvalidaError,
     ValidateError,
 )
 from apiops_orchestrator.application.services.governance_precheck_service import (
     GovernancePrecheckService,
+)
+from apiops_orchestrator.application.exceptions.manager_failure_messages import (
+    INTERNAL_ERROR_MESSAGE,
+)
+from apiops_orchestrator.application.services.manager_failure_translator import (
+    classify_manager_failure,
+    manager_failure_message,
 )
 from apiops_orchestrator.application.services.regua_service import ReguaService
 from apiops_orchestrator.application.services.repo_importer_service import (
@@ -51,12 +60,20 @@ from apiops_orchestrator.domain.models.validate_view import (
 from apiops_orchestrator.domain.ports.local_file_importer_port import (
     LocalFileImporterPort,
 )
-from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
+from apiops_orchestrator.domain.ports.manager_api_port import (
+    ManagerApiGovernanceBlockedError,
+    ManagerApiPort,
+    ManagerApiTransportRejectedError,
+)
 from apiops_orchestrator.domain.services import revision_payload
 from apiops_orchestrator.domain.services.interceptor_flow import fluxo_efetivo
 from apiops_orchestrator.domain.services.template_conformance import comparar
 
 logger = logging.getLogger(__name__)
+
+# Recusas da gravação cujo motivo da plataforma orienta a correção do repositório.
+# As demais (sessão, acesso, tamanho, limite de taxa) usam a mensagem da família.
+_STATUS_COM_MOTIVO = frozenset({400, 409, 412, 422})
 
 GATE_COMPLETENESS = 70.0
 
@@ -152,6 +169,21 @@ class ValidateService:
 
         etapa("Verificando a governança")
         precheck = self._governanca.avaliar(draft, spec.get("apiTags"))
+        # Os avisos dizem quando o pré-check não pôde antecipar a governança
+        # (revisão sem workflow, stage ausente, tag específica): o dev precisa
+        # saber que o veredito virá da gravação.
+        achados.extend(
+            Achado(
+                severity=SEVERIDADE_WARNING,
+                scope=ESCOPO_REPOSITORIO,
+                message=f"Governança: {aviso}",
+            )
+            for aviso in precheck.avisos
+        )
+        # Antes do bloqueio de governança: com tag inválida o Manager aceitaria e
+        # apagaria todas as `apiTags` — é o erro mais destrutivo, e é do repositório.
+        if precheck.tags_invalidas:
+            raise TagInvalidaError(precheck.tags_invalidas)
         if precheck.bloqueado:
             raise GovernanceBlockedError(
                 workflow_id=precheck.workflow_id,
@@ -346,7 +378,26 @@ class ValidateService:
         # E3: UM ÚNICO PUT (W-7). `workflowId`/`workflowStageId` viajam na cópia
         # profunda do estado remoto — nada aqui os reescreve (D-020).
         etapa("Gravando o rascunho no Manager")
-        self._manager_api.update_revision(revisao["id"], montado.corpo)
+        try:
+            self._manager_api.update_revision(revisao["id"], montado.corpo)
+        except ManagerApiGovernanceBlockedError as exc:
+            # O pré-check liberou, mas a plataforma bloqueou: o workflow que
+            # valida não é o gravado na revisão (V-23 §3). O faltante não é
+            # calculável sem o stage efetivo — degrada para o motivo literal.
+            logger.info(
+                "validate.publicacao.governanca_recusou workflow_erro=%s workflow_revisao=%s",
+                exc.workflow_id,
+                revisao.get("workflowId"),
+            )
+            raise GovernanceBlockedError(
+                workflow_id=exc.workflow_id,
+                stage_id=None,
+                missing=[],
+                raw=exc.raw,
+                motivos=exc.messages,
+            ) from exc
+        except ManagerApiTransportRejectedError as exc:
+            raise self._recusa_da_gravacao(exc) from exc
 
         # E3.1: HTTP 200 não é prova de sucesso (W-8).
         etapa("Conferindo o que foi gravado")
@@ -356,6 +407,18 @@ class ValidateService:
             raise PublicacaoDivergenteError(divergencias)
 
         return PublicacaoResultado(attempted=True, accepted=True, verified=True)
+
+    @staticmethod
+    def _recusa_da_gravacao(exc: ManagerApiTransportRejectedError) -> PublicacaoRecusadaError:
+        """Recusa do `PUT` fora da governança: motivo da plataforma ou mensagem da família."""
+        motivos = exc.messages if exc.status_code in _STATUS_COM_MOTIVO else []
+        logger.info(
+            "validate.publicacao.recusada status_code=%s motivos=%d",
+            exc.status_code,
+            len(motivos),
+        )
+        padrao = manager_failure_message(classify_manager_failure(exc))
+        return PublicacaoRecusadaError(padrao or INTERNAL_ERROR_MESSAGE, motivos)
 
     # --- E4 ------------------------------------------------------------------
 

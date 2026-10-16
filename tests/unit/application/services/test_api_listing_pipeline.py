@@ -45,7 +45,7 @@ def mock_manager_api():
     def _server_like_list_catalog_apis(
         limit: int, offset: int = 0, query: str | None = None, **_
     ):
-        # api-finder honra `_offset`/`_limit` (sondado em 16/10/2026).
+        # api-finder honra `_offset`/`_limit`.
         universe = pool if not query else [e for e in pool if _matches(e, query)]
         rows = universe[offset : offset + limit]
         return ApiCatalogPage(rows=rows, total=len(universe))
