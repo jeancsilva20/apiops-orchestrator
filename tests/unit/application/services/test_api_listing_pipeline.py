@@ -42,9 +42,12 @@ def mock_manager_api():
     mock = MagicMock(spec=ManagerApiPort)
     pool = _entries()
 
-    def _server_like_list_catalog_apis(limit: int, query: str | None = None, **_):
+    def _server_like_list_catalog_apis(
+        limit: int, offset: int = 0, query: str | None = None, **_
+    ):
+        # api-finder honra `_offset`/`_limit` (sondado em 16/10/2026).
         universe = pool if not query else [e for e in pool if _matches(e, query)]
-        rows = universe[: max(limit, 1)]
+        rows = universe[offset : offset + limit]
         return ApiCatalogPage(rows=rows, total=len(universe))
 
     mock.list_catalog_apis.side_effect = _server_like_list_catalog_apis
@@ -65,23 +68,16 @@ class TestCatalogFlowUnfiltered:
         _service(mock_manager_api).list_apis(query="orchestrator")
 
         mock_manager_api.list_catalog_apis.assert_any_call(
-            limit=1, query="orchestrator"
+            limit=25, offset=0, query="orchestrator"
         )
 
-    def test_fetch_grows_when_server_signals_more_universe(self, mock_manager_api):
-        mock = MagicMock(spec=ManagerApiPort)
-        stub_pages = [
-            ApiCatalogPage(rows=_entries()[:1], total=5),
-            ApiCatalogPage(rows=_entries(), total=5),
-        ]
-        mock.list_catalog_apis.side_effect = [*stub_pages]
-        service = ApiListingService(manager_api=mock, session=None)
-
-        result = service.list_apis(offset=2, limit=2)
+    def test_full_visibility_sends_user_offset_straight_to_the_server(self, mock_manager_api):
+        result = _service(mock_manager_api).list_apis(offset=2, limit=2)
 
         assert [e.id for e in result] == [312, 512]
-        mock.list_catalog_apis.assert_any_call(limit=4, query=None)
-        mock.list_catalog_apis.assert_any_call(limit=5, query=None)
+        mock_manager_api.list_catalog_apis.assert_called_once_with(
+            limit=25, offset=2, query=None
+        )
 
 
 class TestQueryServerSideFiltering:

@@ -26,6 +26,10 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
     ReguaInalcancavelError,
     TemplateAusenteError,
 )
+from apiops_orchestrator.application.services.manager_failure_translator import (
+    classify_manager_failure,
+    manager_failure_message,
+)
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiPort,
@@ -171,10 +175,12 @@ class ReguaService:
     def _ler(self, template_id: int) -> Dict[str, Any]:
         try:
             return self._manager_api.get_api_by_id(template_id) or {}
-        except ManagerApiTransportRejectedError as exc:
-            raise ReguaInalcancavelError(template_id, exc.status_code) from exc
-        except ManagerApiTransportUnavailableError as exc:
-            raise ReguaInalcancavelError(template_id, None) from exc
+        except (ManagerApiTransportRejectedError, ManagerApiTransportUnavailableError) as exc:
+            raise ReguaInalcancavelError(
+                template_id,
+                getattr(exc, "status_code", None),
+                manager_failure_message(classify_manager_failure(exc)),
+            ) from exc
 
     # --- existência dos Custom referenciados (W-2) --------------------------
 

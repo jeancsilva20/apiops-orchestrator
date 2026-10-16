@@ -11,6 +11,10 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
     ReguaInalcancavelError,
     TemplateAusenteError,
 )
+from apiops_orchestrator.application.exceptions.manager_failure_messages import (
+    INTERNAL_ERROR_MESSAGE,
+    UNAVAILABLE_MESSAGE,
+)
 from apiops_orchestrator.application.services.regua_service import (
     ReguaService,
     calcular_flow_hash,
@@ -153,6 +157,30 @@ def test_mensagem_do_403_nomeia_as_duas_causas():
     mensagem = capturado.value.message
     assert "sen login" in mensagem and "outro ambiente" in mensagem
     assert mensagem.index("sen login") < mensagem.index("outro ambiente")
+
+
+@pytest.mark.parametrize("status", [400, 413, 429])
+def test_recusa_fora_de_403_404_vira_erro_interno_sem_detalhe_http(status):
+    servico = ReguaService(
+        ManagerFake(erro=ManagerApiTransportRejectedError(status, "BACKEND_RESPONSE_TOO_LARGE")),
+        _settings("local"),
+    )
+    with pytest.raises(ReguaInalcancavelError) as capturado:
+        servico.carregar(_basic_info(414))
+    mensagem = capturado.value.message
+    assert INTERNAL_ERROR_MESSAGE in mensagem
+    assert str(status) not in mensagem and "BACKEND_RESPONSE_TOO_LARGE" not in mensagem
+    assert "sen login" not in mensagem
+    assert capturado.value.exit_code == 1
+
+
+def test_manager_indisponivel_usa_a_mensagem_padrao_da_familia():
+    servico = ReguaService(
+        ManagerFake(erro=ManagerApiTransportUnavailableError("timeout")), _settings("local")
+    )
+    with pytest.raises(ReguaInalcancavelError) as capturado:
+        servico.carregar(_basic_info(414))
+    assert UNAVAILABLE_MESSAGE in capturado.value.message
 
 
 def test_regua_sem_item_governado_avisa_em_vez_de_falhar():

@@ -17,6 +17,10 @@ class HttpClient4xxError(HttpClientError):
     possui o próprio UX do erro consome os campos estruturados
     (`status_code`, `title`, `detail`, `url`); quem não possui pode
     apresentar `str(exc)` diretamente.
+
+    `code` (código de erro do corpo) e `request_id` (id da requisição no
+    gateway da plataforma) existem só para diagnóstico em log — nunca para
+    a saída do usuário.
     """
 
     def __init__(
@@ -25,11 +29,15 @@ class HttpClient4xxError(HttpClientError):
         title: str,
         detail: str,
         url: str | None = None,
+        code: str | None = None,
+        request_id: str | None = None,
     ) -> None:
         self.status_code = status_code
         self.title = title
         self.detail = detail
         self.url = url
+        self.code = code
+        self.request_id = request_id
         super().__init__(f"{title} ({status_code}): {detail}")
 
 

@@ -8,6 +8,13 @@ from apiops_orchestrator.application.exceptions.completeness_exceptions import (
     CompletenessPlatformError,
     CompletenessUnauthorized,
 )
+from apiops_orchestrator.application.enums.manager_failure_kind_enum import (
+    ManagerFailureKind,
+)
+from apiops_orchestrator.application.services.manager_failure_translator import (
+    classify_manager_failure,
+    manager_failure_message,
+)
 from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
 from apiops_orchestrator.domain.models.catalog_revision_model import (
     CatalogRevisionCompleteness,
@@ -68,24 +75,23 @@ class CompletenessService:
     def _fetch_reading(self, revision_id: int) -> CatalogRevisionCompleteness:
         try:
             return self.manager_api.get_revision_completeness(revision_id)
-        except ManagerApiTransportRejectedError as exc:
-            raise self._translate_rejection(revision_id, exc) from exc
-        except ManagerApiTransportUnavailableError as exc:
-            raise CompletenessPlatformError(
-                "Manager indisponível ou falha de conexão"
-            ) from exc
+        except (ManagerApiTransportRejectedError, ManagerApiTransportUnavailableError) as exc:
+            raise self._translate_failure(revision_id, exc) from exc
 
     @staticmethod
-    def _translate_rejection(
-        revision_id: int, exc: ManagerApiTransportRejectedError
+    def _translate_failure(
+        revision_id: int,
+        exc: ManagerApiTransportRejectedError | ManagerApiTransportUnavailableError,
     ) -> CompletenessError:
-        if exc.status_code == 404:
+        """Classificação compartilhada; 404/403 mantêm a leitura de revisão inexistente."""
+        kind = classify_manager_failure(exc)
+        if kind is ManagerFailureKind.NOT_FOUND:
             return CompletenessNotFound(revision_id)
-        if exc.status_code == 401:
-            return CompletenessUnauthorized()
-        if exc.status_code == 403:
+        if kind is ManagerFailureKind.FORBIDDEN:
             return CompletenessDenied(revision_id)
-        return CompletenessPlatformError(f"HTTP {exc.status_code}: {exc.title}")
+        if kind is ManagerFailureKind.UNAUTHORIZED:
+            return CompletenessUnauthorized()
+        return CompletenessPlatformError(manager_failure_message(kind))
 
     def _soft_lookup_identity(self, api_id: int) -> Optional[ApiCatalogEntry]:
         try:

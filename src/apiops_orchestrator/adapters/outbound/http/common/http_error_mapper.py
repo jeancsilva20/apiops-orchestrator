@@ -1,5 +1,32 @@
-from typing import Dict, Any
+from collections.abc import Mapping
+from typing import Dict, Any, Optional
 from requests import Response
+
+# Request id the platform gateway (AWS) stamps on every response; the only
+# handle support has to trace one specific failed call.
+PLATFORM_REQUEST_ID_HEADER = "x-amzn-requestid"
+
+
+def _platform_request_id(response: Response) -> Optional[str]:
+    headers = getattr(response, "headers", None)
+    if not isinstance(headers, Mapping):
+        return None
+    for key, value in headers.items():
+        if str(key).lower() == PLATFORM_REQUEST_ID_HEADER and value:
+            return str(value)
+    return None
+
+
+def _body_error_code(body: Any) -> Optional[str]:
+    """Machine-readable error code, if the body carries one.
+
+    The api-finder speaks `{"code", "message"}` while other platform routes
+    speak `{"error", "message"}`; both are accepted.
+    """
+    if not isinstance(body, dict):
+        return None
+    code = body.get("code") or body.get("error")
+    return str(code) if code else None
 
 
 class HttpErrorMapper:
@@ -7,6 +34,9 @@ class HttpErrorMapper:
     def map_to_rfc7807(response: Response) -> Dict[str, Any]:
         """
         Problem Details for HTTP APIs.
+
+        `code` and `request_id` are RFC 7807 extension members kept for
+        diagnostics (logs only — never meant for end-user output).
         """
         status = response.status_code
         url = response.url
@@ -16,13 +46,20 @@ class HttpErrorMapper:
             "title": "External API Error",
             "status": status,
             "detail": "An unexpected error occurred",
-            "instance": url
+            "instance": url,
+            "code": None,
+            "request_id": _platform_request_id(response),
         }
 
         try:
             body = response.json()
         except Exception:
             error_rfc["detail"] = response.text or "No content returned"
+            return error_rfc
+
+        error_rfc["code"] = _body_error_code(body)
+        if not isinstance(body, dict):
+            error_rfc["detail"] = str(body)
             return error_rfc
 
         if status == 404:
@@ -45,7 +82,7 @@ class HttpErrorMapper:
             error_rfc["detail"] = body.get("message", "Content-Type or Content-Encoding not supported")
 
         else:
-            error_rfc["title"] = body.get("error", "Invalid Request")
+            error_rfc["title"] = body.get("error") or body.get("code") or "Invalid Request"
             error_rfc["detail"] = body.get("message", str(body))
 
         return error_rfc

@@ -17,6 +17,10 @@ linha de comando, e o `sen completeness` já o ocupa com outra semântica.
 
 from typing import Any, Dict, List, Optional
 
+from apiops_orchestrator.application.exceptions.manager_failure_messages import (
+    UNAVAILABLE_MESSAGE,
+)
+
 
 class ValidateError(Exception):
     """Base dos erros de negócio do `sen validate`."""
@@ -116,7 +120,15 @@ class ReguaInalcancavelError(ValidateError):
     de escolher uma.
     """
 
-    def __init__(self, template_id: Any, status_code: Optional[int] = None):
+    def __init__(
+        self,
+        template_id: Any,
+        status_code: Optional[int] = None,
+        mensagem_padrao: Optional[str] = None,
+    ):
+        """`mensagem_padrao` é o texto da família da falha (classificação
+        compartilhada do Manager); sem ele, a causa assume Manager indisponível.
+        """
         if status_code == 404:
             causa = (
                 "Essa API não existe neste Manager. Confira o id em "
@@ -132,10 +144,7 @@ class ReguaInalcancavelError(ValidateError):
                 "pertencer a outro ambiente."
             )
         else:
-            causa = (
-                "O Manager não respondeu. Tente de novo em alguns instantes; "
-                "se persistir, acione o time de acesso."
-            )
+            causa = mensagem_padrao or UNAVAILABLE_MESSAGE
         super().__init__(
             f"Não consegui ler a API-template {template_id}, e sem ela não há "
             f"padrão para comparar. {causa}\n\n"

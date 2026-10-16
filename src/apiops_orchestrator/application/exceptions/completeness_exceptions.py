@@ -1,3 +1,8 @@
+from apiops_orchestrator.application.exceptions.manager_failure_messages import (
+    UNAUTHORIZED_MESSAGE,
+)
+
+
 class CompletenessError(Exception):
     """Base dos erros de negócio do `sen completeness` (a CLI mapeia para exit/msg)."""
 
@@ -21,7 +26,7 @@ class CompletenessNotFound(CompletenessError):
 
 class CompletenessUnauthorized(CompletenessError):
     def __init__(self):
-        super().__init__("Sessão inválida ou expirada. Faça `sen login` novamente.")
+        super().__init__(UNAUTHORIZED_MESSAGE)
 
 
 class CompletenessDenied(CompletenessError):
@@ -30,8 +35,7 @@ class CompletenessDenied(CompletenessError):
 
 
 class CompletenessPlatformError(CompletenessError):
-    def __init__(self, detail: str):
-        super().__init__(
-            f"A plataforma recusou a consulta ({detail}). "
-            "Tente novamente em instantes; se persistir, acione o time de acesso."
-        )
+    """Falha da plataforma sem leitura de negócio (erro interno ou indisponível).
+
+    Recebe a mensagem padrão da família, já pronta — nunca status/título HTTP.
+    """

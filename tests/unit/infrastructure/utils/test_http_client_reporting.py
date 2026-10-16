@@ -79,3 +79,60 @@ def test_5xx_after_retries_raises_typed_server_error(monkeypatch):
 
     assert "503" in str(excinfo.value)
     assert "after 2 retries" in str(excinfo.value)
+
+
+def _too_large_response(headers=None):
+    response = MagicMock(spec=requests.Response)
+    response.status_code = 413
+    response.url = "https://platform.example.com/api-finder/api/v3/apis?_limit=127"
+    body = {
+        "code": "BACKEND_RESPONSE_TOO_LARGE",
+        "message": "Backend response was too large to process safely",
+    }
+    response.json.return_value = body
+    response.text = str(body)
+    response.headers = requests.structures.CaseInsensitiveDict(headers or {})
+
+    def raise_for_status():
+        raise requests.HTTPError("413", response=response)
+
+    response.raise_for_status.side_effect = raise_for_status
+    return response
+
+
+def test_4xx_carries_body_code_and_platform_request_id(monkeypatch):
+    response = _too_large_response({"x-amzn-RequestId": "143ba864-1f30"})
+    monkeypatch.setattr(requests, "request", MagicMock(return_value=response))
+
+    with pytest.raises(HttpClient4xxError) as excinfo:
+        HttpClient.request(method="GET", url="https://platform.example.com/apis")
+
+    error = excinfo.value
+    assert error.status_code == 413
+    assert error.code == "BACKEND_RESPONSE_TOO_LARGE"
+    assert error.request_id == "143ba864-1f30"
+    assert error.title == "BACKEND_RESPONSE_TOO_LARGE"
+    assert "too large" in error.detail
+
+
+def test_4xx_without_request_id_header_degrades_to_none(monkeypatch):
+    monkeypatch.setattr(requests, "request", MagicMock(return_value=_too_large_response()))
+
+    with pytest.raises(HttpClient4xxError) as excinfo:
+        HttpClient.request(method="GET", url="https://platform.example.com/apis")
+
+    assert excinfo.value.request_id is None
+    assert excinfo.value.code == "BACKEND_RESPONSE_TOO_LARGE"
+
+
+def test_4xx_with_non_json_body_keeps_degrading_to_text(monkeypatch):
+    response = _too_large_response()
+    response.json.side_effect = ValueError("not json")
+    response.text = "<html>Request Entity Too Large</html>"
+    monkeypatch.setattr(requests, "request", MagicMock(return_value=response))
+
+    with pytest.raises(HttpClient4xxError) as excinfo:
+        HttpClient.request(method="GET", url="https://platform.example.com/apis")
+
+    assert excinfo.value.code is None
+    assert "Request Entity Too Large" in excinfo.value.detail

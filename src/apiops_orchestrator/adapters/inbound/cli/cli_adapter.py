@@ -1,4 +1,5 @@
 import importlib.metadata
+import logging
 import platform
 import sys
 import textwrap
@@ -7,7 +8,7 @@ import time
 from pathlib import Path
 
 import typer
-from typing import Any, Callable, Optional, cast
+from typing import Any, Callable, NoReturn, Optional, cast
 from rich import print as rprint
 from rich import box
 from rich import get_console
@@ -43,6 +44,11 @@ from apiops_orchestrator.domain.models.catalog_revision_model import CatalogRevi
 from apiops_orchestrator.application.exceptions.listing_exceptions import (
     ApiCollectionError,
 )
+from apiops_orchestrator.application.exceptions.manager_failure_messages import (
+    INTERNAL_ERROR_MESSAGE,
+)
+
+logger = logging.getLogger(__name__)
 
 main_app = typer.Typer(
     no_args_is_help=True,
@@ -189,6 +195,32 @@ class CliError(Exception):
         self.message = message
         self.exit_code = exit_code
         super().__init__(self.message)
+
+
+def _exit_on_unexpected(exc: Exception, command: str, exit_code: int = 1) -> NoReturn:
+    """Last-resort handler of a command: never shows raw exception text.
+
+    Two categorized errors can still arrive here because service factories
+    run inside the command's `try`: incomplete configuration (`CliError`) and
+    the admin-token resolution refusal (`LoginError`, which orients
+    `sen login`). Both keep their educational message. Anything else is an
+    internal error for the user; type and stacktrace go to the log only, at
+    INFO (with logging not wired, WARNING+ would leak to stderr).
+    """
+    if isinstance(exc, CliError):
+        rprint(f"[bold red]Erro:[/bold red] {exc.message}")
+        raise typer.Exit(code=exc.exit_code)
+    if isinstance(exc, LoginError):
+        rprint(f"[bold red]Erro:[/bold red] {exc.message}")
+        raise typer.Exit(code=1)
+    logger.info(
+        "cli.unexpected_error command=%s type=%s",
+        command,
+        type(exc).__name__,
+        exc_info=exc,
+    )
+    rprint(f"[bold red]Erro:[/bold red] {INTERNAL_ERROR_MESSAGE}")
+    raise typer.Exit(code=exit_code)
 
 
 def _authenticate_with_feedback(service_builder: Callable[[], Any]):
@@ -414,7 +446,12 @@ def _render_grade(
     rprint(table)
 
 
-def _window_footer(limit_value: Optional[int], offset_value: Optional[int]) -> None:
+def _window_footer(
+    limit_value: Optional[int], offset_value: Optional[int], all_visible: bool = False
+) -> None:
+    if all_visible:
+        rprint("[dim]janela: todas as APIs visíveis (--all)[/dim]")
+        return
     shown_limit = limit_value if limit_value is not None else DEFAULT_WINDOW_LIMIT
     shown_offset = offset_value if offset_value is not None else DEFAULT_WINDOW_OFFSET
     if limit_value is None and offset_value is None:
@@ -431,10 +468,13 @@ def list_apis(
     ctx: typer.Context,
     api_id: Optional[int] = typer.Option(None, "--id", help="Filter by API ID."),
     query: Optional[str] = typer.Option(
-        None, "--query", help="Client-side search on name/description."
+        None, "--query", help="Search on name/description, performed by the Manager."
     ),
     limit: Optional[int] = typer.Option(None, "--limit", help="Page size."),
     offset: Optional[int] = typer.Option(None, "--offset", help="Offset from start."),
+    all_apis: bool = typer.Option(
+        False, "--all", help="List every visible API (not combinable with --limit/--offset/--id)."
+    ),
     revisions: bool = typer.Option(
         False, "--revisions", "-r", help="Show revisions drill-down (incoming slice)."
     ),
@@ -462,6 +502,12 @@ def list_apis(
                 "juntos. Consulte: sen list api --help"
             )
             raise typer.Exit(code=1)
+        if all_apis and (limit is not None or offset is not None or api_id is not None):
+            rprint(
+                "[bold red]Erro:[/bold red] --all lista todas as APIs visíveis e não "
+                "combina com --limit, --offset ou --id. Consulte: sen list api --help"
+            )
+            raise typer.Exit(code=1)
         if limit is not None and limit <= 0:
             rprint(
                 "[bold red]Erro:[/bold red] --limit deve ser maior que zero. "
@@ -486,6 +532,9 @@ def list_apis(
                 _render_revisions_grade(service, api_id, output)
                 return
             apis = service.list_apis(api_id=api_id)
+        elif all_apis:
+            # Sem janela: o service lê o catálogo em páginas até o fim.
+            apis = service.list_apis(query=query, offset=0, limit=None)
         else:
             # Caso desnudo envia os defaults AO PIPELINE (A3-2): a janela
             # client-side so eh real se os valores alcancarem o window().
@@ -512,7 +561,7 @@ def list_apis(
                 ),
             )
             if api_id is None:
-                _window_footer(limit, offset)
+                _window_footer(limit, offset, all_visible=all_apis)
 
         display_output(
             [entry.to_listing_dict() for entry in apis],
@@ -526,8 +575,7 @@ def list_apis(
         rprint(f"[bold red]Erro:[/bold red] {e}")
         raise typer.Exit(code=1)
     except Exception as e:
-        rprint(f"[bold red]Erro ao listar APIs:[/bold red] {e}")
-        raise typer.Exit(code=1)
+        _exit_on_unexpected(e, command="list api")
 
 
 REVISIONS_HEADER = (
@@ -793,8 +841,7 @@ def completeness(
         rprint(f"[bold red]Erro:[/bold red] {e.message}")
         raise typer.Exit(code=e.exit_code)
     except Exception as e:
-        rprint(f"[bold red]Erro ao consultar completude:[/bold red] {e}")
-        raise typer.Exit(code=1)
+        _exit_on_unexpected(e, command="completeness", exit_code=CompletenessError.exit_code)
 
 
 # ---------------------------------------------------------------------------
@@ -1171,8 +1218,7 @@ def validate(
         rprint(f"[bold red]Erro:[/bold red] {e.message}")
         raise typer.Exit(code=e.exit_code)
     except Exception as e:
-        rprint(f"[bold red]Erro ao validar:[/bold red] {e}")
-        raise typer.Exit(code=1)
+        _exit_on_unexpected(e, command="validate")
 
 
 # ---------------------------------------------------------------------------
@@ -1326,6 +1372,8 @@ def diag_template(
     except ValidateError as e:
         rprint(f"[bold red]Erro:[/bold red] {e.message}")
         raise typer.Exit(code=e.exit_code)
+    except Exception as e:
+        _exit_on_unexpected(e, command="diag template")
 
 
 @diag_app.command("draft")
@@ -1423,3 +1471,5 @@ def diag_draft(
     except ValidateError as e:
         rprint(f"[bold red]Erro:[/bold red] {e.message}")
         raise typer.Exit(code=e.exit_code)
+    except Exception as e:
+        _exit_on_unexpected(e, command="diag draft")

@@ -17,12 +17,30 @@ class ManagerApiTransportRejectedError(ManagerApiError):
     """A plataforma Manager/Finder recusou o pedido (HTTP 4xx).
 
     Carrega `status_code` para diagnóstico; mensagem é neutra de tecnologia.
+    `code` (código de erro do corpo) e `request_id` (id da requisição no
+    gateway) servem só ao log — nunca à saída do usuário.
     """
 
-    def __init__(self, status_code: int, title: str) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        title: str,
+        code: Optional[str] = None,
+        request_id: Optional[str] = None,
+    ) -> None:
         self.status_code = status_code
         self.title = title
+        self.code = code
+        self.request_id = request_id
         super().__init__(f"Manager API rejected the request (HTTP {status_code}: {title})")
+
+
+class ManagerApiResponseTooLargeError(ManagerApiTransportRejectedError):
+    """A plataforma recusou entregar a resposta por tamanho (HTTP 413).
+
+    Subclasse de propósito: quem pagina captura só este sinal para pedir menos
+    registros; quem já trata `ManagerApiTransportRejectedError` segue igual.
+    """
 
 
 class ManagerApiTransportUnavailableError(ManagerApiError):
@@ -47,9 +65,14 @@ class ManagerApiPort(ABC):
     def list_catalog_apis(
         self,
         limit: int,
+        offset: int = 0,
         query: Optional[str] = None,
     ) -> ApiCatalogPage:
-        """Contract to search the APIs catalog with query filter."""
+        """Contract to read one page of the APIs catalog, with optional query filter.
+
+        Raises `ManagerApiResponseTooLargeError` when the platform refuses the
+        page size; the caller decides whether to retry with a smaller page.
+        """
         pass
 
     @abstractmethod

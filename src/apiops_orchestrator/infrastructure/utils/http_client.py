@@ -105,6 +105,8 @@ class HttpClient:
                                 title=str(problem.get("title", "Client Error")),
                                 detail=str(problem.get("detail", "")),
                                 url=str(problem.get("instance", e.response.url)),
+                                code=problem.get("code"),
+                                request_id=problem.get("request_id"),
                             ) from e
                         logger.error(f"HTTP Error: {e}")
                     else:

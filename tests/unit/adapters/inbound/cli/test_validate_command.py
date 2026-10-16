@@ -12,6 +12,9 @@ import pytest
 from typer.testing import CliRunner
 
 from apiops_orchestrator.adapters.inbound.cli.cli_adapter import app
+from apiops_orchestrator.application.exceptions.manager_failure_messages import (
+    INTERNAL_ERROR_MESSAGE,
+)
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
     GovernanceBlockedError,
     IdentidadeDivergenteError,
@@ -264,6 +267,9 @@ def test_erro_inesperado_nao_vaza_stack_e_encerra_com_1():
     resultado = runner.invoke(app, ["sen", "validate"], obj=_ctx(servico))
     assert resultado.exit_code == 1
     assert "Traceback" not in resultado.output
+    saida = " ".join(resultado.output.split())
+    assert INTERNAL_ERROR_MESSAGE in saida
+    assert "falha interna qualquer" not in saida
 
 
 def test_cli_apenas_traduz_o_exit_code_que_o_erro_carrega():

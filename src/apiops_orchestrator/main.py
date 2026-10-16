@@ -1,3 +1,4 @@
+import logging
 import sys
 from pathlib import Path
 from typing import cast
@@ -18,6 +19,9 @@ from apiops_orchestrator.adapters.outbound.http.orchestrator_auth_api.orchestrat
 )
 from apiops_orchestrator.adapters.outbound.http.user_management_api.sensedia_authentication_adapter import (
     SensediaAuthenticationAdapter,
+)
+from apiops_orchestrator.application.exceptions.manager_failure_messages import (
+    INTERNAL_ERROR_MESSAGE,
 )
 from apiops_orchestrator.application.services.admin_token_provider import (
     AdminTokenProvider,
@@ -42,6 +46,8 @@ from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.application.services.schema_validator import SchemaValidator
 from apiops_orchestrator.infrastructure.secure_storage.session_store import SessionStore
 
+
+logger = logging.getLogger(__name__)
 
 repo_path = Path(
     r"C:\Users\Sensedia\Downloads\Projetos\Nexus\apiops-orchestrator\apiops_newstruct"
@@ -302,7 +308,10 @@ def main():
         rprint("[bold red]Operação abortada.[/bold red]")
         sys.exit(1)
     except Exception as e:
-        rprint(f"[bold red]Erro inesperado:[/bold red] {e}")
+        # Same rule as the commands' fallback: raw exception text never reaches
+        # the user; INFO because WARNING+ would leak via logging.lastResort.
+        logger.info("cli.unexpected_error type=%s", type(e).__name__, exc_info=e)
+        rprint(f"[bold red]Erro:[/bold red] {INTERNAL_ERROR_MESSAGE}")
         sys.exit(1)
 
 

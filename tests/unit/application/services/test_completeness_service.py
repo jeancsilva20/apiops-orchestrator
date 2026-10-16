@@ -12,6 +12,10 @@ from apiops_orchestrator.application.exceptions.completeness_exceptions import (
     CompletenessPlatformError,
     CompletenessUnauthorized,
 )
+from apiops_orchestrator.application.exceptions.manager_failure_messages import (
+    INTERNAL_ERROR_MESSAGE,
+    UNAVAILABLE_MESSAGE,
+)
 from apiops_orchestrator.application.services.completeness_service import (
     GATE_PERCENT_V1,
     CompletenessService,
@@ -261,8 +265,24 @@ class TestRefusalMapping:
             ManagerApiTransportUnavailableError("timeout")
         )
 
-        with pytest.raises(CompletenessPlatformError):
+        with pytest.raises(CompletenessPlatformError) as excinfo:
             CompletenessService(port).get_completeness(375, 5513)
+        assert excinfo.value.message == UNAVAILABLE_MESSAGE
+
+    @pytest.mark.parametrize("status", [409, 413, 422, 429])
+    def test_other_4xx_show_internal_error_without_http_details(self, port, status):
+        port.get_revision_completeness.side_effect = ManagerApiTransportRejectedError(
+            status_code=status, title="BACKEND_RESPONSE_TOO_LARGE", code="X", request_id="r-1"
+        )
+
+        with pytest.raises(CompletenessPlatformError) as excinfo:
+            CompletenessService(port).get_completeness(375, 5513)
+
+        message = excinfo.value.message
+        assert message == INTERNAL_ERROR_MESSAGE
+        assert str(status) not in message and "BACKEND_RESPONSE_TOO_LARGE" not in message
+        assert "sen login" not in message
+        assert excinfo.value.exit_code == 2
 
 
 def test_all_errors_share_exit_code_two_bucket():

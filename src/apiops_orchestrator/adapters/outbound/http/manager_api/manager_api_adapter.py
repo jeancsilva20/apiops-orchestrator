@@ -6,6 +6,7 @@ from requests.exceptions import RequestException
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ApiCatalogPage,
     ManagerApiPort,
+    ManagerApiResponseTooLargeError,
     ManagerApiTransportRejectedError,
     ManagerApiTransportUnavailableError,
 )
@@ -230,9 +231,24 @@ class ManagerApiAdapter(ManagerApiPort):
                 **kwargs
             )
         except HttpClient4xxError as exc:
-            logger.info("manager_api.transport.rejected status_code=%s", exc.status_code)
-            raise ManagerApiTransportRejectedError(
-                status_code=exc.status_code, title=exc.title
+            # INFO on purpose: with logging not wired, WARNING+ falls into
+            # logging.lastResort and would leak diagnostics to the user's stderr.
+            logger.info(
+                "manager_api.transport.rejected status_code=%s code=%s request_id=%s",
+                exc.status_code,
+                exc.code,
+                exc.request_id,
+            )
+            signal = (
+                ManagerApiResponseTooLargeError
+                if exc.status_code == 413
+                else ManagerApiTransportRejectedError
+            )
+            raise signal(
+                status_code=exc.status_code,
+                title=exc.title,
+                code=exc.code,
+                request_id=exc.request_id,
             ) from exc
         except HttpClientServerError as exc:
             logger.info("manager_api.transport.unavailable reason=server_error")
@@ -269,10 +285,12 @@ class ManagerApiAdapter(ManagerApiPort):
     def list_catalog_apis(
         self,
         limit: int,
+        offset: int = 0,
         query: Optional[str] = None,
     ) -> ApiCatalogPage:
         params: Dict[str, str] = {
             "_limit": str(limit),
+            "_offset": str(offset),
             "orderBy": "apiId",
             "sort": "asc",
             "onlyMyContextApi": "false",

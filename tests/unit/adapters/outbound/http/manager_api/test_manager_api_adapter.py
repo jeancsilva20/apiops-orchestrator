@@ -9,6 +9,7 @@ from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter 
 )
 from apiops_orchestrator.domain.models.workflow_stage_model import WorkflowStage
 from apiops_orchestrator.domain.ports.manager_api_port import (
+    ManagerApiResponseTooLargeError,
     ManagerApiTransportRejectedError,
     ManagerApiTransportUnavailableError,
 )
@@ -143,6 +144,7 @@ def test_list_catalog_apis_hits_finder_with_params_and_reads_count(mock_settings
             return_headers=True,
             params={
                 "_limit": "95",
+                "_offset": "0",
                 "orderBy": "apiId",
                 "sort": "asc",
                 "onlyMyContextApi": "false",
@@ -352,3 +354,58 @@ def test_get_revision_completeness_exhausted_5xx_raises_transport_unavailable_si
 
         with pytest.raises(ManagerApiTransportUnavailableError):
             adapter.get_revision_completeness(5513)
+
+def test_list_catalog_apis_sends_offset_for_paging(mock_settings):
+    adapter = _make_adapter(mock_settings)
+
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.return_value = ([], {"count": "127"})
+
+        adapter.list_catalog_apis(limit=25, offset=50, query="pagamentos")
+
+        params = mock_request.call_args.kwargs["params"]
+        assert params["_limit"] == "25"
+        assert params["_offset"] == "50"
+        assert "pagamentos" in params["customSearch"]
+
+
+def test_413_raises_response_too_large_signal_still_a_rejection(mock_settings):
+    adapter = _make_adapter(mock_settings)
+
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.side_effect = HttpClient4xxError(
+            status_code=413,
+            title="BACKEND_RESPONSE_TOO_LARGE",
+            detail="Backend response was too large to process safely",
+            code="BACKEND_RESPONSE_TOO_LARGE",
+            request_id="143ba864-1f30",
+        )
+
+        with pytest.raises(ManagerApiResponseTooLargeError) as excinfo:
+            adapter.list_catalog_apis(limit=127)
+
+    assert isinstance(excinfo.value, ManagerApiTransportRejectedError)
+    assert excinfo.value.status_code == 413
+    assert excinfo.value.code == "BACKEND_RESPONSE_TOO_LARGE"
+    assert excinfo.value.request_id == "143ba864-1f30"
+
+
+def test_rejection_diagnostics_are_logged_at_info_without_token(mock_settings, caplog):
+    adapter = _make_adapter(mock_settings)
+
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.side_effect = HttpClient4xxError(
+            status_code=400, title="Bad Request", detail="x",
+            code="INVALID_QUERY", request_id="req-42",
+        )
+        with caplog.at_level("INFO"):
+            with pytest.raises(ManagerApiTransportRejectedError) as excinfo:
+                adapter.list_catalog_apis(limit=1)
+
+    assert not isinstance(excinfo.value, ManagerApiResponseTooLargeError)
+    records = [r for r in caplog.records if "manager_api.transport.rejected" in r.getMessage()]
+    assert records and all(r.levelname == "INFO" for r in records)
+    message = records[0].getMessage()
+    assert "status_code=400" in message and "code=INVALID_QUERY" in message
+    assert "request_id=req-42" in message
+    assert "token123" not in caplog.text
