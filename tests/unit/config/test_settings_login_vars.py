@@ -243,3 +243,21 @@ def test_unknown_keys_in_sen_file_are_ignored(tmp_path, monkeypatch):
 
     assert not hasattr(settings, "TOTALLY_UNKNOWN_KEY")
     assert settings.AUTH_HOST == "https://auth.example.com"
+
+
+def test_target_revision_number_vem_da_variavel_da_esteira(monkeypatch):
+    _seed_required(monkeypatch)
+    monkeypatch.setenv("EXECUTION_MODE", "pipeline")
+    monkeypatch.setenv("TARGET_REVISION_NUMBER", "3")
+
+    settings = Settings()
+
+    assert settings.modo_pipeline is True
+    assert settings.TARGET_REVISION_NUMBER == 3
+
+
+def test_target_revision_number_ausente_assume_a_draft(monkeypatch):
+    _seed_required(monkeypatch)
+    monkeypatch.delenv("TARGET_REVISION_NUMBER", raising=False)
+
+    assert Settings().TARGET_REVISION_NUMBER == 1

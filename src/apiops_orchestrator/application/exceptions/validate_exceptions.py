@@ -220,12 +220,13 @@ class GovernanceBlockedError(ValidateError):
                 "novo."
             )
         else:
+            # O motivo é texto livre e não é só atributo faltante (completude,
+            # por exemplo): não presumir o que o dev deve ajustar.
             listados = "\n".join(f"  - {motivo}" for motivo in motivos)
             corpo = (
                 "A governança do Manager não liberou a publicação. Motivo informado "
                 f"pela plataforma:\n\n{listados}\n\n"
-                "Ajuste `apiTags`, no `api-basic-info.yaml`, conforme o motivo acima "
-                "e rode o comando de novo."
+                "Corrija conforme o motivo acima e rode o comando novamente."
             )
         onde = f"workflow {workflow_id}" + (
             f", stage {stage_id}" if stage_id is not None else ""

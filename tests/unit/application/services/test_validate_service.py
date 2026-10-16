@@ -291,6 +291,55 @@ def test_local_so_publica_na_revisao_1(tmp_path):
     assert "update_revision" not in manager.chamadas
 
 
+_API_TRES_REVISOES = {
+    **API,
+    "revisions": [
+        {"id": 9161, "revisionNumber": 1},
+        {"id": 9162, "revisionNumber": 2},
+        {"id": 9163, "revisionNumber": 3},
+    ],
+}
+
+
+class _ManagerQueAnotaIds(ManagerFake):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.ids_lidos = []
+        self.id_gravado = None
+
+    def get_revision(self, revision_id):
+        self.ids_lidos.append(revision_id)
+        return super().get_revision(revision_id)
+
+    def update_revision(self, revision_id, payload):
+        self.id_gravado = revision_id
+        return super().update_revision(revision_id, payload)
+
+
+@pytest.mark.parametrize("numero,revision_id", [(1, 9161), (2, 9162), (3, 9163)])
+def test_pipeline_le_e_grava_na_revisao_de_target_revision_number(
+    tmp_path, numero, revision_id
+):
+    """V-24: na esteira o alvo vem da variável, resolvido pelo número."""
+    manager = _ManagerQueAnotaIds(api=_API_TRES_REVISOES)
+    view = _servico(manager, modo="pipeline", revisao=numero).validate(
+        _repo(tmp_path), confirmar=SIM
+    )
+
+    assert set(manager.ids_lidos) == {revision_id}
+    assert manager.id_gravado == revision_id
+    assert view.revision.revision_number == numero
+
+
+def test_pipeline_com_revisao_inexistente_aborta_antes_de_escrever(tmp_path):
+    manager = _ManagerQueAnotaIds(api=_API_TRES_REVISOES)
+    with pytest.raises(Exception, match="número 7"):
+        _servico(manager, modo="pipeline", revisao=7).validate(
+            _repo(tmp_path), confirmar=SIM
+        )
+    assert "update_revision" not in manager.chamadas
+
+
 def test_custom_inexistente_aborta_antes_de_escrever(tmp_path):
     extras = {
         "resources/x/resource.yaml": 'name: "X"\n',
@@ -505,6 +554,23 @@ def test_412_da_governanca_no_put_e_bloqueio_com_exit_3_e_motivo_literal(tmp_pat
     assert bloqueio.missing == []  # nunca extraído do texto livre
     # a releitura pós-publicação não acontece depois de uma recusa
     assert manager.chamadas[-1] == "update_revision"
+
+
+def test_412_por_completude_nao_manda_ajustar_api_tags(tmp_path):
+    """O motivo é texto livre: não presumir que todo bloqueio é atributo faltante."""
+    motivo = "Actual Completeness is 50.0 but expected greater than or equal to 70.0"
+    erro = ManagerApiGovernanceBlockedError(
+        status_code=412, title="PRECONDITION_FAILED", workflow_id=394,
+        raw=_ENVELOPE_412, messages=[motivo],
+    )
+
+    with pytest.raises(GovernanceBlockedError) as capturado:
+        _servico(_ManagerQueRecusa(erro)).validate(_repo(tmp_path), confirmar=SIM)
+
+    mensagem = capturado.value.message
+    assert motivo in mensagem
+    assert "apiTags" not in mensagem
+    assert "Corrija conforme o motivo acima" in mensagem
 
 
 @pytest.mark.parametrize("status", [400, 409, 422])
