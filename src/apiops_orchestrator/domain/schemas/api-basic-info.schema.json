@@ -1,13 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "ApiBasicInfo Schema",
+  "$id": "api-basic-info.schema.json",
+  "title": "ApiBasicInfo (api-basic-info.yaml)",
+  "description": "Unico arquivo do layout que mantem o involucro apiVersion/kind/spec. Contrato da D-002, revisado pela D-005 e pela D-11 (imutaveis) e D-12 (template).",
   "type": "object",
+  "additionalProperties": false,
   "required": [
     "apiVersion",
     "kind",
     "spec"
   ],
-  "additionalProperties": false,
   "properties": {
     "apiVersion": {
       "type": "string",
@@ -19,56 +21,84 @@
     },
     "spec": {
       "type": "object",
+      "additionalProperties": false,
       "required": [
         "id",
         "name",
         "version",
-        "basePath"
+        "basePath",
+        "description",
+        "template"
       ],
-      "additionalProperties": false,
       "properties": {
         "id": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Id fisico da API no Manager. readOnly; e o endereco do GET, nao a identidade funcional (D-11)."
         },
         "name": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "version": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1,
+          "description": "readOnly e IMUTAVEL. Junto com basePath define a identidade funcional: divergencia ABORTA a operacao na guarda 1 (D-11)."
         },
         "basePath": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1,
+          "description": "readOnly e IMUTAVEL. Divergencia ABORTA a operacao na guarda 1 (D-11)."
         },
         "description": {
-          "type": "string"
+          "type": "string",
+          "description": "Obrigatoria no arquivo versionado: pesa no completeness."
         },
-        "creationDate": {
-          "type": "string"
-        },
-        "lastUpdate": {
-          "type": "string"
+        "template": {
+          "type": [
+            "string",
+            "integer"
+          ],
+          "description": "Id da API-regua de interceptors (Golden Path), usado quando EXECUTION_MODE=local; na esteira o id vem de variavel de ambiente (V-11 binding). Declarado SEMPRE. Vazio = sem regua, e a D-12 determina ERRO: sem template nao ha validacao. Nao vem do wire - a plataforma nao tem esta chave."
         },
         "apiResponsible": {
-          "type": "object",
+          "type": [
+            "object",
+            "null"
+          ],
           "additionalProperties": false,
+          "description": "Read-only no MVP; declarado sempre, mesmo vazio.",
           "properties": {
             "username": {
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "groupName": {
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         },
-        "visibility": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "groupVisibility": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "name": {
+        "apiTags": {
+          "type": "array",
+          "description": "Lista declarativa COMPLETA de pares (attributeName, tags[]). Regime de omissao: AUSENTE PRESERVA, lista VAZIA REMOVE. E sobre estes valores que o Adaptive Governance calcula o faltante no PUT da revision (W-7, D-020).",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "attributeName"
+            ],
+            "properties": {
+              "attributeName": {
+                "type": "string",
+                "minLength": 1
+              },
+              "tags": {
+                "type": "array",
+                "items": {
                   "type": "string"
                 }
               }

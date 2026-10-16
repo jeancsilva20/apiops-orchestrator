@@ -4,7 +4,6 @@ import logging
 from apiops_orchestrator.infrastructure.observability.logging import (
     log_duration,
     set_span_id,
-    clear_operation_context,
     set_status,
 )
 

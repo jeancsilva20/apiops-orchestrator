@@ -1,0 +1,130 @@
+[
+  {
+    "id": 100,
+    "name": "Org Public API",
+    "version": "1.0.0",
+    "basePath": "/org-public/v1",
+    "description": "ORGANIZATION shape real (probe 21/09/2026)",
+    "visibility": {
+      "id": 371,
+      "visibilityType": "ORGANIZATION",
+      "owner": "eduardo.rodrigues",
+      "users": []
+    }
+  },
+  {
+    "id": 101,
+    "name": "Api Alheia ME",
+    "version": "1.0.0",
+    "basePath": "/me-alheia/v1",
+    "description": "ME de outro usuario",
+    "visibility": {
+      "id": 447,
+      "visibilityType": "ME",
+      "owner": "diogo.moutinho",
+      "users": []
+    }
+  },
+  {
+    "id": 102,
+    "name": "Api Minha ME",
+    "version": "1.0.0",
+    "basePath": "/me-minha/v1",
+    "description": "ME do proprio usuario da sessao",
+    "visibility": {
+      "id": 448,
+      "visibilityType": "ME",
+      "owner": "isaac.machado",
+      "users": []
+    }
+  },
+  {
+    "id": 102,
+    "name": "Api Minha ME Casefold",
+    "version": "1.0.0",
+    "basePath": "/me-case/v1",
+    "description": "ME com owner em caixa/espacos diferentes",
+    "visibility": {
+      "id": 449,
+      "visibilityType": "me",
+      "owner": "  Isaac.Machado ",
+      "users": []
+    }
+  },
+  {
+    "id": 103,
+    "name": "Grupo Casa API",
+    "version": "1.0.0",
+    "basePath": "/grp-casa/v1",
+    "description": "GROUP do meu grupo com users vazio (shape real API 400)",
+    "visibility": {
+      "id": 453,
+      "visibilityType": "GROUP",
+      "groupVisibility": {"name": "APIOps"},
+      "owner": "paulo.silva",
+      "users": []
+    }
+  },
+  {
+    "id": 104,
+    "name": "Grupo Casa Casefold API",
+    "version": "1.0.0",
+    "basePath": "/grp-casefold/v1",
+    "description": "GROUP nome em outra caixa/espaco",
+    "visibility": {
+      "id": 454,
+      "visibilityType": "GROUP",
+      "groupVisibility": {"name": " Apiops "},
+      "owner": "paulo.silva",
+      "users": []
+    }
+  },
+  {
+    "id": 105,
+    "name": "Grupo Alheio Meu Owner API",
+    "version": "1.0.0",
+    "basePath": "/grp-alheio-owner/v1",
+    "description": "GROUP de grupo que NAO tenho, mesmo sendo owner (regra: owner NAO influi em GROUP)",
+    "visibility": {
+      "id": 455,
+      "visibilityType": "GROUP",
+      "groupVisibility": {"name": "PulseTeam"},
+      "owner": "isaac.machado",
+      "users": []
+    }
+  },
+  {
+    "id": 106,
+    "name": "Grupo Alheio API",
+    "version": "1.0.0",
+    "basePath": "/grp-alheio/v1",
+    "description": "GROUP de grupo que nao participo",
+    "visibility": {
+      "id": 456,
+      "visibilityType": "GROUP",
+      "groupVisibility": {"name": "Lab-tech"},
+      "owner": "matheus.giroto",
+      "users": []
+    }
+  },
+  {
+    "id": 107,
+    "name": "Sem Visibilidade API",
+    "version": "1.0.0",
+    "basePath": "/sem-vis/v1",
+    "description": "Sem objeto visibility (denied by default)"
+  },
+  {
+    "id": 107,
+    "name": "Tipo Desconhecido API",
+    "version": "1.0.0",
+    "basePath": "/tipo-x/v1",
+    "description": "visibilityType inexistente no dominio",
+    "visibility": {
+      "id": 999,
+      "visibilityType": "EVERYONE",
+      "owner": "alguem.nao",
+      "users": []
+    }
+  }
+]

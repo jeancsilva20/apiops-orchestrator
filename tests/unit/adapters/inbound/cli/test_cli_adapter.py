@@ -1,8 +1,31 @@
 import platform
+import re
+from unittest.mock import MagicMock
+
+import pytest
+
 from typer.testing import CliRunner
 from apiops_orchestrator.adapters.inbound.cli.cli_adapter import app
+from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter import (
+    _translate_row,
+)
+from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
+from apiops_orchestrator.domain.models.catalog_revision_model import CatalogRevisionInfo
+from apiops_orchestrator.domain.models.completeness_view import (
+    CompletenessApi,
+    CompletenessContext,
+    CompletenessSuggestion,
+    CompletenessView,
+)
+
 
 runner = CliRunner()
+
+
+def _entry(raw) -> ApiCatalogEntry:
+    e = _translate_row(raw)
+    assert e is not None
+    return e
 
 def test_help():
     """Test the --help flag to ensure the CLI is registered correctly."""
@@ -26,73 +49,183 @@ def test_verbose_flag():
     assert result.exit_code == 0
     assert "APIOps CLI" in result.output
 
+def test_list_without_subcommand_orientates_instead_of_engine_speak():
+    """`sen list` pelado não mostra 'Missing command.': orienta para 'sen list api' (exit 2)."""
+    result = runner.invoke(app, ["sen", "list"])
+
+    assert result.exit_code == 2
+    assert "sen list api" in result.output.replace("\n", " ")
+    assert "--help" in result.output
+
+
 def test_api_list_success():
-    """Test 'list api' command with mocked service."""
+    """Test 'list api' naked: canonical grade + announced defaults footer (A3-2)."""
     from unittest.mock import MagicMock
     mock_service = MagicMock()
     mock_service.list_apis.return_value = [
-        {"id": 1, "name": "API 1", "basePath": "/api1"},
-        {"id": 2, "name": "API 2", "basePath": "/api2"}
+        _entry({"apiId": 1, "apiName": "API 1", "basePath": "/api1", "version": "1.0.0"}),
+        _entry({"apiId": 2, "apiName": "API 2", "basePath": "/api2", "version": "2.0.0"}),
     ]
-    
-    result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service": mock_service})
-    
-    assert result.exit_code == 0
-    assert "id, name, basePath" in result.output
-    assert "1, API 1, /api1" in result.output
-    assert "2, API 2, /api2" in result.output
-    mock_service.list_apis.assert_called_once_with(api_id=None)
 
-def test_api_list_with_id():
-    """Test 'list api --id' command."""
+    result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service_factory": lambda: mock_service})
+
+    assert result.exit_code == 0
+    assert "ID" in result.output and "BASE PATH" in result.output
+    assert "LAST REV" in result.output
+    assert "/api1" in result.output
+    assert "usando padrões: --limit 10 --offset 0" in result.output
+    assert "detalhes: sen list api --help" in result.output
+    # A3-2: o default anunciado PRECISA alcançar o pipeline (janela real)
+    mock_service.list_apis.assert_called_once_with(query=None, offset=0, limit=10)
+
+def test_api_list_explicit_window_footer():
+    """Explicit --limit/--offset shows effective window footer."""
     from unittest.mock import MagicMock
     mock_service = MagicMock()
     mock_service.list_apis.return_value = [
-        {"id": 123, "name": "API 123", "basePath": "/api123", "description": "Desc"}
+        _entry({"apiId": 1, "apiName": "API 1", "basePath": "/api1"})
     ]
-    
-    result = runner.invoke(app, ["sen", "list", "api", "--id", "123"], obj={"api_listing_service": mock_service})
-    
-    assert result.exit_code == 0
-    assert "id, name, basePath, description" in result.output
-    assert "123, API 123, /api123, Desc" in result.output
-    mock_service.list_apis.assert_called_once_with(api_id=123)
 
-def test_api_list_verbose():
-    """Test 'list api --verbose' command."""
+    result = runner.invoke(
+        app,
+        ["sen", "list", "api", "--offset", "90", "--limit", "5"],
+        obj={"api_listing_service_factory": lambda: mock_service},
+    )
+
+    assert result.exit_code == 0
+    assert "janela: --limit 5 --offset 90" in result.output
+
+def test_api_list_columns_values():
+    """Canonical columns render version/last rev with degradation (LIFE CYCLE removida)."""
     from unittest.mock import MagicMock
     mock_service = MagicMock()
     mock_service.list_apis.return_value = [
-        {"id": 1, "name": "API 1", "basePath": "/api1", "version": "v1", "description": "Desc"}
+        _entry({
+            "apiId": 400,
+            "apiName": "Orchestrator Auth API",
+            "basePath": "/orq-auth/v1",
+            "version": "1.0.1",
+            "lastRevision": 8882,
+            "revisions": [{"id": 8882, "revisionNumber": 3}],
+        }),
+        _entry({"apiId": 401, "apiName": "Sem Revision", "basePath": "/x/v1"}),
     ]
-    
-    result = runner.invoke(app, ["sen", "list", "api", "--verbose"], obj={"api_listing_service": mock_service})
-    
-    assert result.exit_code == 0
-    assert "id, name, basePath, version, description" in result.output
-    assert "1, API 1, /api1, v1, Desc" in result.output
 
-def test_api_list_no_apis():
+    result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service_factory": lambda: mock_service})
+
+    assert result.exit_code == 0
+    assert "8882" not in result.output  # grade mostra número da revisão, não o id
+    assert "LIFE CYCLE" not in result.output  # coluna aposentada
+    assert result.output.count("-") > 0  # degradação '-' nos campos ausentes
+
+def test_api_list_query_exclusive_with_id():
+    from unittest.mock import MagicMock
+    mock_service = MagicMock()
+
+    result = runner.invoke(
+        app,
+        ["sen", "list", "api", "--query", "auth", "--id", "400"],
+        obj={"api_listing_service_factory": lambda: mock_service},
+    )
+
+    assert result.exit_code == 1
+    assert "--query" in result.output and "--id" in result.output
+
+def test_api_list_invalid_limit_fails_pre_network():
+    from unittest.mock import MagicMock
+    mock_service = MagicMock()
+
+    result = runner.invoke(
+        app,
+        ["sen", "list", "api", "--limit", "0"],
+        obj={"api_listing_service_factory": lambda: mock_service},
+    )
+
+    assert result.exit_code == 1
+    mock_service.list_apis.assert_not_called()
+
+def test_api_list_negative_offset_fails_pre_network():
+    """Symmetric with --limit: negative --offset must fail BEFORE any network call."""
+    from unittest.mock import MagicMock
+    mock_service = MagicMock()
+
+    result = runner.invoke(
+        app,
+        ["sen", "list", "api", "--offset", "-1"],
+        obj={"api_listing_service_factory": lambda: mock_service},
+    )
+
+    assert result.exit_code == 1
+    assert "--offset" in result.output
+    mock_service.list_apis.assert_not_called()
+
+def test_api_list_query_passes_flags_to_service():
+    from unittest.mock import MagicMock
+    mock_service = MagicMock()
+    mock_service.list_apis.return_value = [
+        _entry({"apiId": 1, "apiName": "A", "basePath": "/b"})
+    ]
+
+    result = runner.invoke(
+        app,
+        ["sen", "list", "api", "--query", "auth", "--limit", "3", "--offset", "2"],
+        obj={"api_listing_service_factory": lambda: mock_service},
+    )
+
+    assert result.exit_code == 0
+    mock_service.list_apis.assert_called_once_with(
+        query="auth", offset=2, limit=3
+    )
+
+def test_api_list_drilldown_single_row():
+    """--id keeps one-line grade without window footer."""
+    from unittest.mock import MagicMock
+    mock_service = MagicMock()
+    mock_service.list_apis.return_value = [
+        _entry({"apiId": 400, "apiName": "Orchestrator Auth API", "basePath": "/orq-auth/v1", "version": "1.0.1"})
+    ]
+
+    result = runner.invoke(app, ["sen", "list", "api", "--id", "400"], obj={"api_listing_service_factory": lambda: mock_service})
+
+    assert result.exit_code == 0
+    assert "Orchestrator Auth API" in result.output
+    assert "usando padrões" not in result.output
+    mock_service.list_apis.assert_called_once_with(api_id=400)
+
+def test_api_list_insufficient_session_translates_error():
+    from unittest.mock import MagicMock
+    from apiops_orchestrator.application.exceptions.listing_exceptions import (
+        InsufficientSessionError,
+    )
+    mock_service = MagicMock()
+    mock_service.list_apis.side_effect = InsufficientSessionError()
+
+    result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service_factory": lambda: mock_service})
+
+    assert result.exit_code == 1
+    assert "grupos de acesso" in result.output
+
+def test_api_list_no_apis_when_none_returned():
     """Test 'list api' when no APIs are returned."""
     from unittest.mock import MagicMock
     mock_service = MagicMock()
     mock_service.list_apis.return_value = []
-    
-    result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service": mock_service})
-    
+
+    result = runner.invoke(app, ["sen", "list", "api"], obj={"api_listing_service_factory": lambda: mock_service})
+
     assert result.exit_code == 0
-    assert "No APIs found." in result.output
+    assert "Nenhuma API encontrada." in result.output
 
 def test_api_list_json():
     """Test 'list api --output json'."""
     from unittest.mock import MagicMock
-    import json
     mock_service = MagicMock()
-    data = [{"id": 1, "name": "API 1", "basePath": "/api1"}]
-    mock_service.list_apis.return_value = data
-    
-    result = runner.invoke(app, ["sen", "list", "api", "--output", "json"], obj={"api_listing_service": mock_service})
-    
+    mock_service.list_apis.return_value = [
+        _entry({"apiId": 1, "apiName": "API 1", "basePath": "/api1"})
+    ]
+
+    result = runner.invoke(app, ["sen", "list", "api", "--output", "json"], obj={"api_listing_service_factory": lambda: mock_service})
+
     assert result.exit_code == 0
     # The output contains rich syntax highlighting, so we check for key parts
     assert '"id": 1' in result.output
@@ -102,12 +235,445 @@ def test_api_list_yaml():
     """Test 'list api --output yaml'."""
     from unittest.mock import MagicMock
     mock_service = MagicMock()
-    data = [{"id": 1, "name": "API 1", "basePath": "/api1"}]
-    mock_service.list_apis.return_value = data
-    
-    result = runner.invoke(app, ["sen", "list", "api", "-o", "yaml"], obj={"api_listing_service": mock_service})
-    
+    mock_service.list_apis.return_value = [
+        _entry({"apiId": 1, "apiName": "API 1", "basePath": "/api1"})
+    ]
+
+    result = runner.invoke(app, ["sen", "list", "api", "-o", "yaml"], obj={"api_listing_service_factory": lambda: mock_service})
+
     assert result.exit_code == 0
     assert "id: 1" in result.output
     assert "name: API 1" in result.output
 
+
+# ---------------------------------------------------------------------------
+# Drill-down de revisões (task 6, opção A) — grade canônica do §3
+# ---------------------------------------------------------------------------
+
+def test_revisions_drill_down_renders_canonical_grade():
+    from unittest.mock import MagicMock
+    mock_service = MagicMock()
+    mock_service.api_revisions.return_value = [
+        CatalogRevisionInfo(
+            revision_id=8862, revision_number=1, stage_name="Stage One",
+            environments="Default", completeness_score=85.0,
+        ),
+        CatalogRevisionInfo(
+            revision_id=8948, revision_number=4, stage_name="Stage One",
+            environments="-", completeness_score=85.0,
+        ),
+    ]
+
+    result = runner.invoke(
+        app,
+        ["sen", "list", "api", "--id", "400", "--revisions"],
+        obj={"api_listing_service_factory": lambda: mock_service},
+    )
+
+    assert result.exit_code == 0
+    for col in ("REV ID", "REV #", "STAGE", "ENVS", "COMPLETE"):
+        assert col in result.output
+    assert "Stage One" in result.output
+    assert "85%" in result.output
+    mock_service.api_revisions.assert_called_once_with(400)
+    mock_service.list_apis.assert_not_called()
+
+
+def test_revisions_requires_id_pre_network():
+    from unittest.mock import MagicMock
+    mock_service = MagicMock()
+
+    result = runner.invoke(
+        app, ["sen", "list", "api", "--revisions"], obj={"api_listing_service_factory": lambda: mock_service}
+    )
+
+    assert result.exit_code == 1
+    assert "--id" in result.output
+    mock_service.api_revisions.assert_not_called()
+    mock_service.list_apis.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# sen completeness — comandos, contratos de saída e matriz de erros (G1)
+# ---------------------------------------------------------------------------
+
+SAMPLE_VIEW = CompletenessView(
+    schema="apiops.sen-completeness/v1",
+    generated_at="2026-09-28T12:00:00Z",
+    api=CompletenessApi(
+        manager_id=375,
+        name="Manager Training 1.0",
+        version="1.0",
+        context=CompletenessContext(type="organization", group_name=None, owner="trainer.sensedia"),
+    ),
+    revision_id=5513,
+    revision_number=3,
+    score=55.0,
+    gate_percent=70.0,
+    suggestions=[
+        CompletenessSuggestion(index=1, text="Primeira sugestão integral,_sem abreviação: " + "texto longo " * 12),
+        CompletenessSuggestion(index=2, text="Segunda sugestão curta."),
+    ],
+)
+
+
+def _invoke_completeness(args, mock_service):
+    from unittest.mock import MagicMock
+    factory = MagicMock(return_value=mock_service)
+    result = runner.invoke(
+        app,
+        ["sen", "completeness", *args],
+        obj={"completeness_service_factory": factory},
+    )
+    return result, factory
+
+
+def test_completeness_without_revision_fails_pre_network_guiding_revisions():
+    from unittest.mock import MagicMock
+    mock_service = MagicMock()
+    factory = MagicMock(return_value=mock_service)
+
+    result = runner.invoke(
+        app,
+        ["sen", "completeness", "--id", "375"],
+        obj={"completeness_service_factory": factory},
+    )
+
+    assert result.exit_code == 1
+    assert "sen list api --id X --revisions" in " ".join(result.output.split())
+    factory.assert_not_called()  # zero HTTP: nem fábrica sequer roda
+    mock_service.get_completeness.assert_not_called()
+
+
+def test_completeness_without_api_id_fails_pre_network():
+    from unittest.mock import MagicMock
+    result, factory = _invoke_completeness(["--revision", "5513"], MagicMock())
+
+    assert result.exit_code == 1
+    assert "--id" in result.output
+    factory.assert_not_called()
+
+
+def test_completeness_missing_service_factory_is_environment_error():
+    result = runner.invoke(
+        app,
+        ["sen", "completeness", "--id", "375", "--revision", "5513"],
+        obj={},
+    )
+
+    assert result.exit_code == 1
+    assert "Serviço de completude indisponível" in result.output
+
+
+def test_completeness_text_rendering_literally():
+    result, _ = _invoke_completeness(
+        ["--id", "375", "--revision", "5513"], MagicMock(get_completeness=lambda **kw: SAMPLE_VIEW)
+    )
+
+    assert result.exit_code == 0
+    flat = result.output.replace("\n", " ")
+    assert "Manager Training 1.0 (1.0) · #375" in flat
+    assert "5513 (#3)" in flat
+    assert "trainer.sensedia" in flat
+    assert "55.0%" in flat                      # percentual puro, sem Basic/Intermediate/Advanced
+    assert "(gate: ≥70%)" in flat or "(gate: >=70%)" in flat
+    assert "faltam 15.0 pts para o gate" in flat
+    assert "SUGESTÕES (2):" in flat
+    assert "  1." in flat and "  2." in flat
+    assert "texto longo" in flat
+    assert "Classification" not in flat and "severity" not in flat
+
+
+def test_completeness_score_only_suppresses_suggestions():
+    result, _ = _invoke_completeness(
+        ["--id", "375", "--revision", "5513", "--score-only"],
+        MagicMock(get_completeness=lambda **kw: SAMPLE_VIEW),
+    )
+
+    flat = result.output.replace("\n", " ")
+    assert result.exit_code == 0
+    assert "55.0%" in flat and "(gate: ≥70%)" in flat
+    assert "SUGESTÕES" not in flat
+    assert "texto longo" not in flat
+
+
+def test_completeness_json_matches_v1_tree():
+    result, _ = _invoke_completeness(
+        ["--id", "375", "--revision", "5513", "-o", "json"],
+        MagicMock(get_completeness=lambda **kw: SAMPLE_VIEW),
+    )
+
+    assert result.exit_code == 0
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    for key in ("schema", "generatedAt", "managerId", "maturity", "gate", "suggestions"):
+        assert key in plain
+    assert "apiops.sen-completeness/v1" in plain
+    assert "[1, 2]" not in plain  # apenas checagem anti-lixo: sem listas de posição mágicas
+    banned = ("violations", "severity", "classification", "ruleId", "satellite")
+    for key in banned:
+        assert key not in plain
+
+
+def test_completeness_404_maps_to_exit2_notfound_guidance():
+    from unittest.mock import MagicMock
+    from apiops_orchestrator.application.exceptions.completeness_exceptions import (
+        CompletenessNotFound,
+    )
+
+    mock_service = MagicMock()
+    mock_service.get_completeness.side_effect = CompletenessNotFound(5501)
+
+    result = runner.invoke(
+        app,
+        ["sen", "completeness", "--id", "375", "--revision", "5501"],
+        obj={"completeness_service_factory": lambda: mock_service},
+    )
+
+    assert result.exit_code == 2
+    assert "5501" in result.output
+    assert "sen list api --id X --revisions" in " ".join(result.output.split())
+
+
+def test_completeness_401_maps_to_exit2_guiding_sen_login():
+    from apiops_orchestrator.application.exceptions.completeness_exceptions import (
+        CompletenessUnauthorized,
+    )
+    mock_service = MagicMock()
+    mock_service.get_completeness.side_effect = CompletenessUnauthorized()
+
+    result = runner.invoke(
+        app,
+        ["sen", "completeness", "--id", "375", "--revision", "5513"],
+        obj={"completeness_service_factory": lambda: mock_service},
+    )
+
+    assert result.exit_code == 2
+    assert "sen login" in result.output
+
+
+def test_completeness_success_outputs_never_leak_credentials():
+    mock_service = MagicMock()
+    mock_service.get_completeness.return_value = SAMPLE_VIEW
+
+    result = runner.invoke(
+        app,
+        ["sen", "completeness", "--id", "375", "--revision", "5513", "-o", "yaml"],
+        obj={"completeness_service_factory": lambda: mock_service},
+    )
+
+    assert result.exit_code == 0
+    low = result.output.lower()
+    for token_hint in ("bearer", "authorization", "adminaccesstoken", "accesstoken"):
+        assert token_hint not in low
+
+
+def test_completeness_flags_accepted_together():
+    result, factory = _invoke_completeness(
+        [
+            "--id", "375", "--revision", "5513",
+            "--score-only", "-o", "json", "-v",
+        ],
+        MagicMock(get_completeness=lambda **kw: SAMPLE_VIEW),
+    )
+
+    assert result.exit_code == 0
+    factory.assert_called_once()
+
+
+
+# --- Fallback de erro inesperado padronizado (sen-list E1 / sen-completeness) --
+
+def _unexpected_list_service():
+    mock_service = MagicMock()
+    mock_service.list_apis.side_effect = RuntimeError("KeyError: 'contextType' at row 42")
+    return mock_service
+
+
+def test_api_list_unexpected_error_shows_internal_message_without_raw_text():
+    from apiops_orchestrator.application.exceptions.manager_failure_messages import (
+        INTERNAL_ERROR_MESSAGE,
+    )
+
+    result = runner.invoke(
+        app, ["sen", "list", "api"],
+        obj={"api_listing_service_factory": _unexpected_list_service},
+    )
+
+    assert result.exit_code == 1
+    output = " ".join(result.output.split())
+    assert INTERNAL_ERROR_MESSAGE in output
+    assert "KeyError" not in output and "row 42" not in output
+    assert "Traceback" not in result.output
+
+
+def test_completeness_unexpected_error_keeps_exit2_bucket():
+    from apiops_orchestrator.application.exceptions.manager_failure_messages import (
+        INTERNAL_ERROR_MESSAGE,
+    )
+    mock_service = MagicMock()
+    mock_service.get_completeness.side_effect = ValueError("could not convert 'abc'")
+
+    result = runner.invoke(
+        app,
+        ["sen", "completeness", "--id", "375", "--revision", "5513"],
+        obj={"completeness_service_factory": lambda: mock_service},
+    )
+
+    assert result.exit_code == 2
+    output = " ".join(result.output.split())
+    assert INTERNAL_ERROR_MESSAGE in output
+    assert "could not convert" not in output
+
+
+def test_api_list_incomplete_config_keeps_educational_message():
+    """CliError da factory (config ausente) não vira erro interno."""
+    from apiops_orchestrator.adapters.inbound.cli.cli_adapter import CliError
+
+    def failing_factory():
+        raise CliError("Configuração incompleta (ausente/inválida): HOST.", exit_code=1)
+
+    result = runner.invoke(
+        app, ["sen", "list", "api"], obj={"api_listing_service_factory": failing_factory}
+    )
+
+    assert result.exit_code == 1
+    assert "Configuração incompleta" in result.output
+
+
+def test_api_list_admin_token_refusal_keeps_login_guidance():
+    """Recusa da rota validate (LoginError) segue orientando `sen login`."""
+    from apiops_orchestrator.application.exceptions.login_exceptions import (
+        AuthenticationRejectedError,
+    )
+
+    def failing_factory():
+        raise AuthenticationRejectedError("Sessão inválida: faça `sen login` e tente novamente.")
+
+    result = runner.invoke(
+        app, ["sen", "list", "api"], obj={"api_listing_service_factory": failing_factory}
+    )
+
+    assert result.exit_code == 1
+    assert "sen login" in result.output
+
+
+# --- sen list api --all ------------------------------------------------------
+
+def _listing_service_returning(entries):
+    mock_service = MagicMock()
+    mock_service.list_apis.return_value = entries
+    return mock_service
+
+
+def test_api_list_all_reads_without_window_and_announces_it():
+    mock_service = _listing_service_returning([
+        _entry({"apiId": 1, "apiName": "A", "contextType": "ORGANIZATION"}),
+        _entry({"apiId": 2, "apiName": "B", "contextType": "ORGANIZATION"}),
+    ])
+
+    result = runner.invoke(
+        app, ["sen", "list", "api", "--all"],
+        obj={"api_listing_service_factory": lambda: mock_service},
+    )
+
+    assert result.exit_code == 0
+    mock_service.list_apis.assert_called_once_with(query=None, offset=0, limit=None)
+    assert "todas as APIs visíveis (--all)" in result.output
+
+
+def test_api_list_all_keeps_query():
+    mock_service = _listing_service_returning([])
+
+    runner.invoke(
+        app, ["sen", "list", "api", "--all", "--query", "pagamentos"],
+        obj={"api_listing_service_factory": lambda: mock_service},
+    )
+
+    mock_service.list_apis.assert_called_once_with(
+        query="pagamentos", offset=0, limit=None
+    )
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [["--limit", "5"], ["--offset", "3"], ["--id", "400"]],
+)
+def test_api_list_all_is_exclusive_with_window_and_drill_down(extra):
+    mock_service = _listing_service_returning([])
+
+    result = runner.invoke(
+        app, ["sen", "list", "api", "--all", *extra],
+        obj={"api_listing_service_factory": lambda: mock_service},
+    )
+
+    assert result.exit_code == 1
+    assert "--all" in result.output
+    mock_service.list_apis.assert_not_called()
+    mock_service.api_revisions.assert_not_called()
+
+
+def test_api_list_query_help_says_search_runs_on_the_manager():
+    result = runner.invoke(app, ["sen", "list", "api", "--help"])
+
+    help_text = " ".join(result.output.split())
+    assert "performed by the Manager" in help_text
+    assert "--all" in help_text
+
+
+# --- Fallback reconhece sinais do Manager não traduzidos ----------------------
+
+def _service_raising(method_name, error):
+    mock_service = MagicMock()
+    getattr(mock_service, method_name).side_effect = error
+    return mock_service
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        ("unauthorized", "Faça `sen login` novamente"),
+        ("forbidden", "Acesso negado pelo Manager"),
+        ("unavailable", "Manager indisponível"),
+        ("too_large", "erro interno"),
+    ],
+)
+def test_untranslated_manager_signal_gets_family_message(error, expected):
+    from apiops_orchestrator.domain.ports.manager_api_port import (
+        ManagerApiResponseTooLargeError,
+        ManagerApiTransportRejectedError,
+        ManagerApiTransportUnavailableError,
+    )
+    errors = {
+        "unauthorized": ManagerApiTransportRejectedError(401, "Unauthorized"),
+        "forbidden": ManagerApiTransportRejectedError(403, "Forbidden"),
+        "unavailable": ManagerApiTransportUnavailableError("timeout"),
+        "too_large": ManagerApiResponseTooLargeError(413, "BACKEND_RESPONSE_TOO_LARGE"),
+    }
+    mock_service = _service_raising("list_apis", errors[error])
+
+    result = runner.invoke(
+        app, ["sen", "list", "api"], obj={"api_listing_service_factory": lambda: mock_service}
+    )
+
+    output = " ".join(result.output.split())
+    assert result.exit_code == 1
+    assert expected in output
+    assert "HTTP" not in output and "BACKEND_RESPONSE_TOO_LARGE" not in output
+
+
+def test_untranslated_manager_signal_keeps_command_exit_code():
+    from apiops_orchestrator.domain.ports.manager_api_port import (
+        ManagerApiTransportRejectedError,
+    )
+    mock_service = _service_raising(
+        "get_completeness", ManagerApiTransportRejectedError(401, "Unauthorized")
+    )
+
+    result = runner.invoke(
+        app,
+        ["sen", "completeness", "--id", "375", "--revision", "5513"],
+        obj={"completeness_service_factory": lambda: mock_service},
+    )
+
+    assert result.exit_code == 2
+    assert "sen login" in result.output

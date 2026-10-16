@@ -150,7 +150,7 @@ class SimpleFormatter(logging.Formatter):
 
         trace_id = getattr(record, 'trace_id', None)
         message = record.getMessage()
-        duration = record.duration
+
         # Add exception data, if it exists
         if record.exc_info and log_level == "DEBUG":
              message += "\n" + self.formatException(record.exc_info)
