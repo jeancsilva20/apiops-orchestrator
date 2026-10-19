@@ -6,15 +6,11 @@ from apiops_orchestrator.config.settings import Settings
 
 REQUIRED_VARS = [
     "HOST",
-    "REQUEST_TIMEOUT",
-    "API_ID",
     "AUTH_HOST",
     "AUTH_LOGIN_PATH",
 ]
 
 OPTIONAL_VARS = [
-    "OAUTH_CLIENT_ID",
-    "OAUTH_CLIENT_SECRET",
     "SEN_CREDENTIALS",
     "AUTH_VALIDATE_PATH",
 ]
@@ -31,10 +27,6 @@ def _isolate_settings_sources(monkeypatch):
 
 def _seed_required(monkeypatch):
     monkeypatch.setenv("HOST", "https://plat.example.com")
-    monkeypatch.setenv("OAUTH_CLIENT_ID", "id")
-    monkeypatch.setenv("OAUTH_CLIENT_SECRET", "secret")
-    monkeypatch.setenv("REQUEST_TIMEOUT", "30")
-    monkeypatch.setenv("API_ID", "1")
     monkeypatch.setenv("AUTH_HOST", "https://auth.example.com")
     monkeypatch.setenv("AUTH_LOGIN_PATH", "/cli-2/orq-auth/v1/oauth2/token")
     monkeypatch.delenv("SEN_CREDENTIALS", raising=False)
@@ -73,11 +65,9 @@ def test_sen_credentials_is_optional_at_settings_level(monkeypatch):
     _seed_required(monkeypatch)
     settings = Settings()
     assert settings.SEN_CREDENTIALS is None
-    assert settings.OAUTH_CLIENT_ID == "id"
-    assert settings.OAUTH_CLIENT_SECRET == "secret"
 
 
-def test_oauth_pair_and_credentials_are_optional_now(monkeypatch):
+def test_optional_settings_default_to_none(monkeypatch):
     for optional_var in OPTIONAL_VARS:
         _seed_required(monkeypatch)
         monkeypatch.delenv(optional_var, raising=False)
@@ -119,10 +109,6 @@ def test_package_root_points_to_module_directory():
 def test_sen_file_alone_provides_auth_block(tmp_path, monkeypatch):
     _clean_auth_block(monkeypatch)
     monkeypatch.setenv("HOST", "https://plat.example.com")
-    monkeypatch.setenv("OAUTH_CLIENT_ID", "id")
-    monkeypatch.setenv("OAUTH_CLIENT_SECRET", "secret")
-    monkeypatch.setenv("REQUEST_TIMEOUT", "30")
-    monkeypatch.setenv("API_ID", "1")
     sen_file = _write_file(
         tmp_path / ".sen",
         {
@@ -143,10 +129,6 @@ def test_sen_file_alone_provides_auth_block(tmp_path, monkeypatch):
 def test_env_file_alone_still_supports_auth_block(tmp_path, monkeypatch):
     _clean_auth_block(monkeypatch)
     monkeypatch.setenv("HOST", "https://plat.example.com")
-    monkeypatch.setenv("OAUTH_CLIENT_ID", "id")
-    monkeypatch.setenv("OAUTH_CLIENT_SECRET", "secret")
-    monkeypatch.setenv("REQUEST_TIMEOUT", "30")
-    monkeypatch.setenv("API_ID", "1")
     env_file = _write_file(
         tmp_path / ".env",
         {
@@ -167,10 +149,6 @@ def test_env_file_alone_still_supports_auth_block(tmp_path, monkeypatch):
 def test_sen_file_takes_precedence_over_env_file(tmp_path, monkeypatch):
     _clean_auth_block(monkeypatch)
     monkeypatch.setenv("HOST", "https://plat.example.com")
-    monkeypatch.setenv("OAUTH_CLIENT_ID", "id")
-    monkeypatch.setenv("OAUTH_CLIENT_SECRET", "secret")
-    monkeypatch.setenv("REQUEST_TIMEOUT", "30")
-    monkeypatch.setenv("API_ID", "1")
     env_file = _write_file(
         tmp_path / ".env",
         {
@@ -199,10 +177,6 @@ def test_sen_file_takes_precedence_over_env_file(tmp_path, monkeypatch):
 def test_process_environment_beats_both_files(tmp_path, monkeypatch):
     _clean_auth_block(monkeypatch)
     monkeypatch.setenv("HOST", "https://plat.example.com")
-    monkeypatch.setenv("OAUTH_CLIENT_ID", "id")
-    monkeypatch.setenv("OAUTH_CLIENT_SECRET", "secret")
-    monkeypatch.setenv("REQUEST_TIMEOUT", "30")
-    monkeypatch.setenv("API_ID", "1")
     monkeypatch.setenv("AUTH_HOST", "https://process.example.com")
     env_file = _write_file(
         tmp_path / ".env",
@@ -231,10 +205,6 @@ def test_process_environment_beats_both_files(tmp_path, monkeypatch):
 def test_unknown_keys_in_sen_file_are_ignored(tmp_path, monkeypatch):
     _clean_auth_block(monkeypatch)
     monkeypatch.setenv("HOST", "https://plat.example.com")
-    monkeypatch.setenv("OAUTH_CLIENT_ID", "id")
-    monkeypatch.setenv("OAUTH_CLIENT_SECRET", "secret")
-    monkeypatch.setenv("REQUEST_TIMEOUT", "30")
-    monkeypatch.setenv("API_ID", "1")
     monkeypatch.setenv("AUTH_HOST", "https://auth.example.com")
     monkeypatch.setenv("AUTH_LOGIN_PATH", "/cli-2/orq-auth/v1/oauth2/token")
     sen_file = _write_file(tmp_path / ".sen", {"TOTALLY_UNKNOWN_KEY": "noise"})

@@ -252,6 +252,8 @@ class ManagerApiAdapter(ManagerApiPort):
     def __init__(self, token: str, base_path: str, max_retries: int, api_id: Optional[int] = None, settings: Optional[Settings] = None):
         self.host = settings.HOST if settings is not None else None
         self.token = token
+        # LEGADO: id fixo, fallback de `get_api_by_id` usado pelo `VersionerService`;
+        # os comandos sempre passam o id.
         self.api_id = api_id
         self.base_path = base_path
         self.max_retries = max_retries
@@ -455,6 +457,7 @@ class ManagerApiAdapter(ManagerApiPort):
         }
 
     def publish_api_changes(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """LEGADO: cria revisão (`POST /revisions`). Nenhum comando usa; mantido para o versionamento futuro."""
         endpoint = "revisions"
         return self._request("POST", endpoint=endpoint, json=data)
 

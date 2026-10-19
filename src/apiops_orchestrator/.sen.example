@@ -13,7 +13,7 @@
 # Bloco de credenciais de login (SEN_CREDENTIALS + AUTH_HOST + AUTH_LOGIN_PATH). As três são obrigatórias.
 
 # Credencial única do `sen login`: APENAS o blob Base64(client_id:secret), sem prefixo "Basic".
-# Geração: printf '%s:%s' "${OAUTH_CLIENT_ID}" "${OAUTH_CLIENT_SECRET}" | base64
+# Geração: printf '%s:%s' "<client_id>" "<client_secret>" | base64
 SEN_CREDENTIALS=""
 
 # Host dedicado da API de autenticação (sem fallback para HOST). Ex.: https://api-consulting.sensedia.com

@@ -1,3 +1,5 @@
+"""LEGADO: versionamento de revisões no layout antigo do repositório. Não ligado a nenhum comando; mantido como base para um comando futuro."""
+
 from datetime import datetime
 
 from apiops_orchestrator.config.settings import Settings

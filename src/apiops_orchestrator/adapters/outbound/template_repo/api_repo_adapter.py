@@ -1,3 +1,5 @@
+"""LEGADO: operações de arquivo do `VersionerService`. Não ligado a nenhum comando; mantido como base para um comando futuro."""
+
 import logging
 import shutil
 from pathlib import Path

@@ -14,11 +14,6 @@ from apiops_orchestrator.config.settings import Settings
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PYTHONPATH_SRC = str(REPO_ROOT / "src")
 
-BARE_MODE_SKIP = pytest.mark.skip(
-    reason="Modo bare mantido (decisão): invocação desnuda executa o fluxo legacy; "
-    "paridade/instalação do shim ficam nos smokes do add-sen-entrypoint"
-)
-
 
 class RecordingApp:
     def __init__(self):
@@ -61,7 +56,7 @@ def recording_app(monkeypatch):
     return fake_app
 
 
-def test_invoked_argv_builds_lazy_factories_and_never_runs_pipeline(recording_app, monkeypatch):
+def test_invoked_argv_builds_lazy_factories(recording_app, monkeypatch):
     fake_app = recording_app
     def login_marker():
         return "LOGIN_SERVICE"
@@ -79,15 +74,12 @@ def test_invoked_argv_builds_lazy_factories_and_never_runs_pipeline(recording_ap
         constructions.append("listing")
         return listing_marker
 
-    bare_spy = MagicMock(side_effect=AssertionError("legacy pipeline must not run"))
     monkeypatch.setattr(main_mod, "build_login_service_factory", login_factory)
     monkeypatch.setattr(main_mod, "build_listing_service_factory", listing_factory)
-    monkeypatch.setattr(main_mod, "run_bare_pipeline", bare_spy)
 
     monkeypatch.setattr(sys, "argv", ["main.py", "sen", "login"])
     main_mod.main()
 
-    bare_spy.assert_not_called()
     assert constructions == ["login", "listing"]
     obj = fake_app.calls[0]
     assert obj["login_service_factory"] is login_marker
@@ -104,7 +96,6 @@ def test_invoked_argv_other_commands_share_same_gate(recording_app, monkeypatch)
         main_mod, "build_login_service_factory", lambda: lambda: "LOGIN_SERVICE"
     )
     monkeypatch.setattr(main_mod, "build_listing_service_factory", lambda: listing_marker)
-    monkeypatch.setattr(main_mod, "run_bare_pipeline", MagicMock())
 
     monkeypatch.setattr(sys, "argv", ["main.py", "sen", "list", "api"])
     main_mod.main()
@@ -113,34 +104,17 @@ def test_invoked_argv_other_commands_share_same_gate(recording_app, monkeypatch)
     assert obj["api_listing_service_factory"] is listing_marker
 
 
-def test_bare_argv_keeps_legacy_pipeline(recording_app, monkeypatch):
-    fake_app = recording_app
-    sentinel = object()
-    load_spy = MagicMock(return_value=sentinel)
-    bare_spy = MagicMock(return_value={"api_listing_service": "DIRECT"})
+@pytest.mark.parametrize("argv0", ["main.py", r"C:\venv\Scripts\sen.exe"])
+def test_no_args_routes_to_sen_help(recording_app, monkeypatch, argv0):
+    load_spy = MagicMock(side_effect=AssertionError("Settings must not load"))
     monkeypatch.setattr(main_mod, "_load_settings", load_spy)
-    monkeypatch.setattr(main_mod, "run_bare_pipeline", bare_spy)
+    monkeypatch.setattr(sys, "argv", [argv0])
 
-    monkeypatch.setattr(sys, "argv", [])
     main_mod.main()
 
-    load_spy.assert_called_once()
-    bare_spy.assert_called_once_with(sentinel)
-    assert fake_app.calls == []
-
-
-def test_bare_cli_error_returns_given_exit_code(recording_app, monkeypatch):
-    monkeypatch.setattr(
-        main_mod,
-        "_load_settings",
-        MagicMock(side_effect=CliError("Configuração incompleta", exit_code=1)),
-    )
-    monkeypatch.setattr(sys, "argv", [])
-
-    with pytest.raises(SystemExit) as excinfo:
-        main_mod.main()
-
-    assert excinfo.value.code == 1
+    assert sys.argv == [argv0, "sen"]
+    assert len(recording_app.calls) == 1
+    load_spy.assert_not_called()
 
 
 def test_load_settings_translates_missing_config_into_educational_cli_error(monkeypatch):
@@ -176,17 +150,6 @@ def test_factories_do_not_touch_settings_at_construction(monkeypatch):
 
     main_mod.build_login_service_factory()
     main_mod.build_listing_service_factory()
-
-
-# ---------------------------------------------------------------------------
-# Contract that survived migration
-# ---------------------------------------------------------------------------
-
-
-def test_bare_flow_contract_still_present():
-    assert hasattr(main_mod, "run_bare_pipeline") and callable(
-        main_mod.run_bare_pipeline
-    )
 
 
 IMPORT_PURITY_SNIPPET = """
@@ -283,6 +246,19 @@ def test_sen_list_api_help_booms_if_settings_are_touched():
     assert "BOOM" not in proc.stderr and "BOOM" not in proc.stdout
 
 
-@BARE_MODE_SKIP
-def test_console_script_sen_naked_behaviour_parked():
-    pass
+def test_no_args_shows_sen_help_without_touching_settings():
+    """Sem argumentos mostra o help do `sen` (exit 2 do Click) com Settings venenada."""
+    snippet = HELP_WITHOUT_SETTINGS_SNIPPET.format(args=[])
+    proc = subprocess.run(
+        [sys.executable, "-c", snippet],
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+        env=_clean_env(),
+        timeout=60,
+    )
+
+    assert proc.returncode == 2, proc.stderr
+    assert "Usage" in proc.stdout or "usage" in proc.stdout
+    assert "login" in proc.stdout
+    assert "BOOM" not in proc.stderr and "BOOM" not in proc.stdout

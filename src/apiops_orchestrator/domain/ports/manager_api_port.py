@@ -123,7 +123,7 @@ class ManagerApiPort(ABC):
 
     @abstractmethod
     def publish_api_changes(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Contract to publish new API revisions"""
+        """LEGADO: cria revisão (`POST /revisions`). Nenhum comando usa; mantido para o versionamento futuro."""
         pass
 
     @abstractmethod

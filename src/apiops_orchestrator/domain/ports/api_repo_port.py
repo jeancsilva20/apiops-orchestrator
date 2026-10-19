@@ -1,3 +1,5 @@
+"""LEGADO: port do `ApiRepoAdapter`. Não ligado a nenhum comando; mantido como base para um comando futuro."""
+
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Dict, Any

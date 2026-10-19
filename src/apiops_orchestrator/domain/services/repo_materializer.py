@@ -3,10 +3,7 @@
 Lógica pura: recebe os dicts já lidos por GET e devolve `(caminho, texto)`. Não
 toca disco nem rede — quem escreve é a camada de aplicação.
 
-Opera sobre o **wire cru**, de propósito. Os modelos `ApiFull`/`Operation`/
-`Resource` ainda descrevem o layout antigo (`destination` como string, sem
-`inherit`, `set_interceptor_positions` renumerando `id` de item novo), e só são
-corrigidos na fase 3 — passar por eles aqui importaria defeitos conhecidos.
+Opera sobre o **wire cru**, sem modelos intermediários.
 
 Decisões que o código implementa:
 
