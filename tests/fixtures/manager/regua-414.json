@@ -1,0 +1,95 @@
+{
+  "interceptors": [
+    {
+      "content": "{\"id\": 32, \"name\": \"Release Notes\"}",
+      "customInterceptorId": 32,
+      "executionPoint": "FIRST",
+      "id": 19768,
+      "parent": null,
+      "parentType": "REVISION",
+      "position": 0,
+      "status": "REFERENCE",
+      "type": "Custom"
+    },
+    {
+      "content": "{\"acceptedTerms\": true, \"encryptContent\": false, \"encryptPathAndParameters\": false}",
+      "customInterceptorId": null,
+      "executionPoint": "FIRST",
+      "id": 19331,
+      "parent": null,
+      "parentType": "REVISION",
+      "position": 2,
+      "status": "REFERENCE",
+      "type": "Log"
+    },
+    {
+      "content": "{\"id\": 33, \"name\": \"CyberArk and OAuth Autentication\"}",
+      "customInterceptorId": 33,
+      "executionPoint": "FIRST",
+      "id": 19769,
+      "parent": null,
+      "parentType": "REVISION",
+      "position": 2,
+      "status": "REFERENCE",
+      "type": "Custom"
+    },
+    {
+      "content": "{\"quota\": \"1000\", \"interval\": \"SECOND\", \"limitBy\": \"IP\", \"soft\": false, \"softvalue\": \"\", \"ignoreBodyValidationMultiPartFormData\": false, \"noHeaderBehavior\": null, \"headerKey\": null, \"rateLimitHeader\": true}",
+      "customInterceptorId": null,
+      "executionPoint": "FIRST",
+      "id": 19327,
+      "parent": null,
+      "parentType": "REVISION",
+      "position": 4,
+      "status": "REFERENCE",
+      "type": "Rate limit"
+    },
+    {
+      "content": "{\"maxSize\": \"2048\"}",
+      "customInterceptorId": null,
+      "executionPoint": "FIRST",
+      "id": 19321,
+      "parent": null,
+      "parentType": "REVISION",
+      "position": 5,
+      "status": "REFERENCE",
+      "type": "Payload size"
+    },
+    {
+      "content": "{\"regexList\": [{\"URI_PATH\": \"((\\\\%3C)|<)[^\\\\n]+((\\\\%3E)|>)\"}, {\"QUERY_PARAM\": \"((\\\\%3C)|<)[^\\\\n]+((\\\\%3E)|>)\"}, {\"HEADER\": \"((\\\\%3C)|<)[^\\\\n]+((\\\\%3E)|>)\"}, {\"BODY\": \"((\\\\%3C)|<)[^\\\\n]+((\\\\%3E)|>)\"}]}",
+      "customInterceptorId": null,
+      "executionPoint": "FIRST",
+      "id": 19319,
+      "parent": null,
+      "parentType": "REVISION",
+      "position": 6,
+      "status": "REFERENCE",
+      "type": "XSS threat protection"
+    },
+    {
+      "content": "{\"acceptedTerms\": true, \"encryptContent\": false, \"encryptPathAndParameters\": false}",
+      "customInterceptorId": null,
+      "executionPoint": "FIRST",
+      "id": 19329,
+      "parent": null,
+      "parentType": "REVISION",
+      "position": 7,
+      "status": "REFERENCE",
+      "type": "Log"
+    },
+    {
+      "content": "{\"acceptedTerms\": true, \"encryptContent\": false, \"encryptPathAndParameters\": false}",
+      "customInterceptorId": null,
+      "executionPoint": "SECOND",
+      "id": 19317,
+      "parent": null,
+      "parentType": "REVISION",
+      "position": 8,
+      "status": "REFERENCE",
+      "type": "Log"
+    }
+  ],
+  "revisionId": 9131,
+  "revisionNumber": 1,
+  "templateId": 414
+}

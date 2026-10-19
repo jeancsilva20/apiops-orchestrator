@@ -1,136 +1,142 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "ApiOperations Schema",
+  "$id": "api-operations.schema.json",
+  "title": "Operacao (resources/<slug>/<metodo>_<path>.yaml)",
+  "description": "Um arquivo por operacao, plano, sem involucro apiVersion/kind. O METODO NAO aparece no conteudo: e derivado do nome do arquivo (D-005 4). Layout canonico da D-005; interceptors pela V-26 (inherit) e V-25 (tombstone).",
   "type": "object",
-  "required": [
-    "apiVersion",
-    "kind",
-    "spec",
-    "metadata"
-  ],
   "additionalProperties": false,
+  "required": [
+    "path"
+  ],
   "properties": {
-    "apiVersion": {
+    "path": {
       "type": "string",
-      "const": "api-management.sensedia.com/v1"
+      "minLength": 1,
+      "description": "Path completo da operacao. A chave de identidade e o par (metodo, path); o metodo vem do nome do arquivo, e o repo nao versiona id (V-12a)."
     },
-    "kind": {
-      "type": "string",
-      "const": "ApiOperations"
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ]
     },
-    "metadata": {
-      "type": "object",
-      "required": [
-        "fileName"
+    "destination": {
+      "$ref": "#/$defs/destination"
+    },
+    "inherit": {
+      "type": "boolean",
+      "description": "true = os itens declarados sao acrescentados ao fluxo herdado, que e preservado integralmente (W-4). false = vale exatamente o fluxo declarado, e a supressao de um item herdado exige reproduzir a LISTA COMPLETA que vale (V-25). Lista vazia HERDA (W-5)."
+    },
+    "interceptors_request": {
+      "$ref": "#/$defs/fluxo",
+      "description": "Mapeia para o execution point FIRST. A ordem da lista e a fonte declarativa."
+    },
+    "interceptors_response": {
+      "$ref": "#/$defs/fluxo",
+      "description": "Mapeia para o execution point SECOND. A ordem da lista e a fonte declarativa."
+    }
+  },
+  "$defs": {
+    "destination": {
+      "type": [
+        "object",
+        "null"
       ],
       "additionalProperties": false,
+      "required": [
+        "url"
+      ],
       "properties": {
-        "fileName": {
-          "type": "string"
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "String vazia significa herdar do escopo acima (V-03). Aceita variavel de ambiente ($var)."
+        },
+        "timeout": {
+          "type": [
+            "string",
+            "integer",
+            "null"
+          ],
+          "description": "Em segundos, teto de 60s do gateway. O wire devolve como STRING: preservar as aspas."
         }
       }
     },
-    "spec": {
+    "fluxo": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/interceptor"
+      }
+    },
+    "interceptor": {
       "type": "object",
-      "required": [
-        "operation"
-      ],
       "additionalProperties": false,
+      "required": [
+        "type"
+      ],
       "properties": {
-        "operation": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": [
-              "method",
-              "path",
-              "destination"
-            ],
-            "additionalProperties": false,
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "id": {
+          "type": "integer",
+          "description": "Somente para type: Custom."
+        },
+        "content": {
+          "description": "Somente para tipos nativos.",
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
             "properties": {
-              "method": {
-                "type": "string",
-                "enum": [
-                  "GET",
-                  "POST",
-                  "PUT",
-                  "PATCH",
-                  "DELETE",
-                  "OPTIONS",
-                  "HEAD"
-                ]
-              },
-              "path": {
-                "type": "string"
-              },
-              "description": {
-                "type": "string"
-              },
-              "destination": {
-                "type": "string"
-              },
-              "timeout": {
-                "type": [
-                  "string",
-                  "integer",
-                  "null"
-                ]
-              },
-              "interceptors": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "required": [
-                    "position",
-                    "type",
-                    "content",
-                    "executionPoint",
-                    "status"
-                  ],
-                  "additionalProperties": false,
-                  "properties": {
-                    "position": {
-                      "type": [
-                        "integer",
-                        "string"
-                      ]
-                    },
-                    "type": {
-                      "type": "string"
-                    },
-                    "content": {
-                      "anyOf": [
-                        {
-                          "type": "object"
-                        },
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "integer"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "executionPoint": {
-                      "type": "string",
-                      "enum": [
-                        "FIRST",
-                        "SECOND"
-                      ]
-                    },
-                    "status": {
-                      "type": "string"
-                    }
-                  }
-                }
+              "type": {
+                "const": "Custom"
               }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "id"
+            ],
+            "not": {
+              "required": [
+                "content"
+              ]
+            }
+          },
+          "else": {
+            "not": {
+              "required": [
+                "id"
+              ]
             }
           }
         }
-      }
+      ]
     }
   }
 }

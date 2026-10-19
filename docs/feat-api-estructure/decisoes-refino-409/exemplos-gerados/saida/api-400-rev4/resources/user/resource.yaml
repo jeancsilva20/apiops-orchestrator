@@ -1,0 +1,30 @@
+name: User
+destination:
+  url: ''            # vazio = herda do escopo acima
+
+inherit: false
+# este ponto executa o fluxo herdado, menos: Log, OAuth
+# a lista abaixo é completa de propósito: o Manager não tem como
+# dizer "herde tudo, exceto um" — lista vazia sempre significa herdar
+
+interceptors_request:
+  - type: Log
+    content:
+      acceptedTerms: true
+      ignoreBodyValidationMultiPartFormData: false
+  - type: Client ID validation
+    content:
+      location: HEADER
+      name: client_id
+      responseContentType: APPLICATION_JSON
+      ignoreBodyValidationMultiPartFormData: false
+  - type: Log
+    content:
+      acceptedTerms: true
+      ignoreBodyValidationMultiPartFormData: false
+
+interceptors_response:
+  - type: Log
+    content:
+      acceptedTerms: true
+      ignoreBodyValidationMultiPartFormData: false

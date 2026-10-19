@@ -1,0 +1,11 @@
+path: /tarefas/{id}/letras
+destination:
+  url: "https://dev-backend.ecad.org.br/app-demo/servico-letras/v1/tarefas/{id}/letras"
+  timeout: "55"
+description: >-
+  Cadastra uma nova letra de obra musical vinculada a uma tarefa existente. A tarefa deve
+  estar no status EM_ANDAMENTO e atribuída ao usuário. Após o cadastro, a tarefa é
+  automaticamente concluída. Requer perfil EDITOR ou ADMIN.
+
+inherit: true
+# apenas herda o fluxo do nível acima: nenhum interceptor próprio

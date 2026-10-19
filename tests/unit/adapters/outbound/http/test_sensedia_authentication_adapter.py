@@ -1,10 +1,12 @@
 from unittest.mock import Mock, patch
 import pytest
-import typer
 
 from apiops_orchestrator.adapters.outbound.http.user_management_api.sensedia_authentication_adapter import \
     SensediaAuthenticationAdapter
 from apiops_orchestrator.config.settings import Settings
+from apiops_orchestrator.infrastructure.exceptions.http_client_exceptions import (
+    HttpClient4xxError,
+)
 
 MOCK_PATH = "apiops_orchestrator.infrastructure.utils.http_client.HttpClient.request"
 
@@ -25,15 +27,16 @@ def test_authenticate_success(mock_request, adapter):
 
 
 @patch(MOCK_PATH)
-def test_authenticate_propagates_exception(mock_request, adapter):
-    import requests
+def test_authenticate_propagates_typed_4xx(mock_request, adapter):
     mock_response = Mock()
     mock_response.status_code = 401
     mock_response.url = "http://fake"
     mock_response.json.return_value = {"message": "unauthorized"}
-    mock_request.side_effect = typer.Exit(code=1)
+    mock_request.side_effect = HttpClient4xxError(
+        status_code=401, title="Unauthorized", detail="unauthorized", url="http://fake"
+    )
 
-    with pytest.raises(typer.Exit) as excinfo:
+    with pytest.raises(HttpClient4xxError) as excinfo:
         adapter.authenticate()
 
-    assert excinfo.value.exit_code == 1
+    assert excinfo.value.status_code == 401

@@ -1,0 +1,491 @@
+{
+  "api": {
+    "apiResponsible": {
+      "groupName": "",
+      "id": 1126,
+      "username": "paulo.silva"
+    },
+    "apiTags": [
+      {
+        "attributeName": "My new",
+        "tags": [
+          "Tag1"
+        ]
+      }
+    ],
+    "basePath": "/orq-auth/v1",
+    "description": "Auth API.",
+    "id": 400,
+    "name": "Orchestrator Auth API",
+    "version": "1.0.1"
+  },
+  "revision": {
+    "destination": null,
+    "id": 8948,
+    "interceptors": [
+      {
+        "content": "{\"acceptedTerms\":true,\"ignoreBodyValidationMultiPartFormData\":false}",
+        "customInterceptorId": null,
+        "executionPoint": "FIRST",
+        "id": 19195,
+        "parent": null,
+        "parentType": "REVISION",
+        "position": 0,
+        "status": "REFERENCE",
+        "type": "Log"
+      },
+      {
+        "content": "{\"grantTypes\":[\"CLIENT_CREDENTIALS\"],\"ignoreBodyValidationMultiPartFormData\":false}",
+        "customInterceptorId": null,
+        "executionPoint": "FIRST",
+        "id": 19191,
+        "parent": null,
+        "parentType": "REVISION",
+        "position": 3,
+        "status": "REFERENCE",
+        "type": "OAuth"
+      },
+      {
+        "content": "{\"acceptedTerms\":true,\"ignoreBodyValidationMultiPartFormData\":false}",
+        "customInterceptorId": null,
+        "executionPoint": "FIRST",
+        "id": 19200,
+        "parent": null,
+        "parentType": "REVISION",
+        "position": 4,
+        "status": "REFERENCE",
+        "type": "Log"
+      },
+      {
+        "content": "{\"acceptedTerms\":true,\"ignoreBodyValidationMultiPartFormData\":false}",
+        "customInterceptorId": null,
+        "executionPoint": "SECOND",
+        "id": 19190,
+        "parent": null,
+        "parentType": "REVISION",
+        "position": 0,
+        "status": "REFERENCE",
+        "type": "Log"
+      }
+    ],
+    "resources": [
+      {
+        "description": "Recurso de token",
+        "destination": null,
+        "interceptors": [
+          {
+            "content": "{\"grantTypes\":[\"CLIENT_CREDENTIALS\"],\"ignoreBodyValidationMultiPartFormData\":false}",
+            "customInterceptorId": null,
+            "executionPoint": "FIRST",
+            "id": 19192,
+            "parent": {
+              "id": 19191,
+              "idTemp": 19191
+            },
+            "parentType": "REVISION",
+            "position": 3,
+            "status": "REMOVED",
+            "type": "OAuth"
+          }
+        ],
+        "name": "Token",
+        "operations": [
+          {
+            "description": "Validação de token",
+            "destination": null,
+            "interceptors": [
+              {
+                "content": "{\"acceptedTerms\":true,\"ignoreBodyValidationMultiPartFormData\":false}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19194,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 0,
+                "status": "REFERENCE",
+                "type": "Log"
+              },
+              {
+                "content": "{\"location\":\"BODY\",\"regexToReplace\":\"(?<=(\\\"access_token\\\"|\\\"admin_access_token\\\"|\\\"user_name\\\"|\\\"user_email\\\")\\\\s?:\\\\s?\\\"[0-9A-Za-z]{3})[a-zA-Z0-9!@#$%^&*()_+\\\\-=\\\\[\\\\];':\\\"\\\\|.<>\\\\/?\\\\sÀ-ü]*\",\"attr\":null,\"replaceChar\":\"******\",\"ignoreBodyValidationMultiPartFormData\":false}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19293,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 0,
+                "status": "REFERENCE",
+                "type": "Log obfuscation"
+              },
+              {
+                "content": "{\"id\": 1, \"name\": \"Oauth - RFC\"}",
+                "customInterceptorId": 1,
+                "executionPoint": "FIRST",
+                "id": 19220,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 1,
+                "status": "REFERENCE",
+                "type": "Custom"
+              },
+              {
+                "content": "{\"location\":\"HEADER\",\"regexToReplace\":\"\\\\w.*\",\"attr\":\"client_secret\",\"replaceChar\":\"*****\",\"ignoreBodyValidationMultiPartFormData\":false}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19297,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 1,
+                "status": "REFERENCE",
+                "type": "Log obfuscation"
+              },
+              {
+                "content": "{\"acceptedTerms\":true,\"ignoreBodyValidationMultiPartFormData\":false}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19203,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 2,
+                "status": "REFERENCE",
+                "type": "Log"
+              },
+              {
+                "content": "{\"grantTypes\":[\"CLIENT_CREDENTIALS\",\"AUTHORIZATION_CODE\"],\"ignoreBodyValidationMultiPartFormData\":false}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19187,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 3,
+                "status": "REFERENCE",
+                "type": "OAuth"
+              },
+              {
+                "content": "{\"acceptedTerms\":true,\"ignoreBodyValidationMultiPartFormData\":false}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19221,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 4,
+                "status": "REFERENCE",
+                "type": "Log"
+              },
+              {
+                "content": "{\"id\": 31, \"name\": \"[API Ops] Getting Super Admin Token\"}",
+                "customInterceptorId": 31,
+                "executionPoint": "FIRST",
+                "id": 19291,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 6,
+                "status": "REFERENCE",
+                "type": "Custom"
+              },
+              {
+                "content": "{\"acceptedTerms\":true,\"ignoreBodyValidationMultiPartFormData\":false}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19219,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 7,
+                "status": "REFERENCE",
+                "type": "Log"
+              },
+              {
+                "content": "{\"acceptedTerms\":true,\"ignoreBodyValidationMultiPartFormData\":false}",
+                "customInterceptorId": null,
+                "executionPoint": "SECOND",
+                "id": 19198,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 4,
+                "status": "REFERENCE",
+                "type": "Log"
+              }
+            ],
+            "method": "POST",
+            "path": "/oauth2/token/validation",
+            "timeout": null
+          },
+          {
+            "description": null,
+            "destination": "https://api-consulting.sensedia.com/oauth/v1/access-token",
+            "interceptors": [
+              {
+                "content": "{\"location\":\"HEADER\",\"regexToReplace\":\"\\\\w.*\",\"attr\":\"client_secret\",\"replaceChar\":\"*****\",\"ignoreBodyValidationMultiPartFormData\":false}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19296,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 1,
+                "status": "REFERENCE",
+                "type": "Log obfuscation"
+              },
+              {
+                "content": "{\"location\":\"HEADER\",\"regexToReplace\":\"\\\\w.*\",\"replaceChar\":\"*****\",\"attr\":\"client_id\",\"ignoreBodyValidationMultiPartFormData\":false}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19294,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 2,
+                "status": "REFERENCE",
+                "type": "Log obfuscation"
+              },
+              {
+                "content": "{\"location\":\"HEADER\",\"regexToReplace\":\"\\\\w.*\",\"attr\":\"authorization\",\"replaceChar\":\"*****\",\"ignoreBodyValidationMultiPartFormData\":false}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19292,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 3,
+                "status": "REFERENCE",
+                "type": "Log obfuscation"
+              },
+              {
+                "content": "{\"acceptedTerms\":true,\"ignoreBodyValidationMultiPartFormData\":false}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19202,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 4,
+                "status": "REFERENCE",
+                "type": "Log"
+              },
+              {
+                "content": "{\"id\": 28, \"name\": \"[API Ops] Client Credentials Extraction from Basic\"}",
+                "customInterceptorId": 28,
+                "executionPoint": "FIRST",
+                "id": 19287,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 5,
+                "status": "REFERENCE",
+                "type": "Custom"
+              },
+              {
+                "content": "{\"acceptedTerms\":true,\"ignoreBodyValidationMultiPartFormData\":false}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19199,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 6,
+                "status": "REFERENCE",
+                "type": "Log"
+              },
+              {
+                "content": "{\"location\":\"ANY\",\"name\":\"client_id\",\"responseContentType\":\"APPLICATION_JSON\",\"ignoreBodyValidationMultiPartFormData\":false}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19204,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 7,
+                "status": "REFERENCE",
+                "type": "Client ID validation"
+              },
+              {
+                "content": "{\"id\": 29, \"name\": \"[API Ops] Profile Identification\"}",
+                "customInterceptorId": 29,
+                "executionPoint": "FIRST",
+                "id": 19286,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 8,
+                "status": "REFERENCE",
+                "type": "Custom"
+              },
+              {
+                "content": "{\"acceptedTerms\":true,\"ignoreBodyValidationMultiPartFormData\":false}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19189,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 9,
+                "status": "REFERENCE",
+                "type": "Log"
+              },
+              {
+                "content": "{\"id\": 26, \"name\": \"[API Ops] Dev Profile Enrichment\"}",
+                "customInterceptorId": 26,
+                "executionPoint": "FIRST",
+                "id": 19284,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 10,
+                "status": "REFERENCE",
+                "type": "Custom"
+              },
+              {
+                "content": "{\"acceptedTerms\":true,\"ignoreBodyValidationMultiPartFormData\":false}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19283,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 11,
+                "status": "REFERENCE",
+                "type": "Log"
+              },
+              {
+                "content": "{\"id\": 27, \"name\": \"[API Ops] Constructing Request Platform Oauth\"}",
+                "customInterceptorId": 27,
+                "executionPoint": "FIRST",
+                "id": 19288,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 12,
+                "status": "REFERENCE",
+                "type": "Custom"
+              },
+              {
+                "content": "{\"acceptedTerms\":true,\"ignoreBodyValidationMultiPartFormData\":false}",
+                "customInterceptorId": null,
+                "executionPoint": "FIRST",
+                "id": 19193,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 13,
+                "status": "REFERENCE",
+                "type": "Log"
+              },
+              {
+                "content": "{\"location\":\"BODY\",\"regexToReplace\":\"(?<=(\\\"access_token\\\"|\\\"admin_access_token\\\"|\\\"user_name\\\"|\\\"user_email\\\")\\\\s?:\\\\s?\\\"[0-9A-Za-z]{3})[a-zA-Z0-9!@#$%^&*()_+\\\\-=\\\\[\\\\];':\\\"\\\\|.<>\\\\/?\\\\sÀ-ü]*\",\"attr\":null,\"replaceChar\":\"*****\",\"ignoreBodyValidationMultiPartFormData\":false}",
+                "customInterceptorId": null,
+                "executionPoint": "SECOND",
+                "id": 19298,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 0,
+                "status": "REFERENCE",
+                "type": "Log obfuscation"
+              },
+              {
+                "content": "{\"acceptedTerms\":true,\"ignoreBodyValidationMultiPartFormData\":false}",
+                "customInterceptorId": null,
+                "executionPoint": "SECOND",
+                "id": 19290,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 1,
+                "status": "REFERENCE",
+                "type": "Log"
+              },
+              {
+                "content": "{\"id\": 30, \"name\": \"[API Ops] Construting Auth Response\"}",
+                "customInterceptorId": 30,
+                "executionPoint": "SECOND",
+                "id": 19289,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 2,
+                "status": "REFERENCE",
+                "type": "Custom"
+              },
+              {
+                "content": "{\"acceptedTerms\":true,\"ignoreBodyValidationMultiPartFormData\":false}",
+                "customInterceptorId": null,
+                "executionPoint": "SECOND",
+                "id": 19188,
+                "parent": null,
+                "parentType": "REVISION",
+                "position": 3,
+                "status": "REFERENCE",
+                "type": "Log"
+              }
+            ],
+            "method": "POST",
+            "path": "/oauth2/token",
+            "timeout": ""
+          }
+        ],
+        "timeout": null
+      },
+      {
+        "description": "",
+        "destination": null,
+        "interceptors": [
+          {
+            "content": "{\"location\":\"HEADER\",\"name\":\"client_id\",\"responseContentType\":\"APPLICATION_JSON\",\"ignoreBodyValidationMultiPartFormData\":false}",
+            "customInterceptorId": null,
+            "executionPoint": "FIRST",
+            "id": 19280,
+            "parent": null,
+            "parentType": "REVISION",
+            "position": 1,
+            "status": "REFERENCE",
+            "type": "Client ID validation"
+          },
+          {
+            "content": "{\"acceptedTerms\":true,\"ignoreBodyValidationMultiPartFormData\":false}",
+            "customInterceptorId": null,
+            "executionPoint": "FIRST",
+            "id": 19279,
+            "parent": null,
+            "parentType": "REVISION",
+            "position": 2,
+            "status": "REFERENCE",
+            "type": "Log"
+          },
+          {
+            "content": "{\"grantTypes\":[\"CLIENT_CREDENTIALS\"],\"ignoreBodyValidationMultiPartFormData\":false}",
+            "customInterceptorId": null,
+            "executionPoint": "FIRST",
+            "id": 19278,
+            "parent": {
+              "id": 19191,
+              "idTemp": 19191
+            },
+            "parentType": "REVISION",
+            "position": 3,
+            "status": "REMOVED",
+            "type": "OAuth"
+          },
+          {
+            "content": "{\"acceptedTerms\":true,\"ignoreBodyValidationMultiPartFormData\":false}",
+            "customInterceptorId": null,
+            "executionPoint": "FIRST",
+            "id": 19277,
+            "parent": {
+              "id": 19200,
+              "idTemp": 19200
+            },
+            "parentType": "REVISION",
+            "position": 4,
+            "status": "REMOVED",
+            "type": "Log"
+          }
+        ],
+        "name": "User",
+        "operations": [
+          {
+            "description": "",
+            "destination": "https://platform-production.sensedia.com/user-management/v1/users/{username}/groups",
+            "interceptors": [],
+            "method": "GET",
+            "path": "/users/{username}/groups",
+            "timeout": ""
+          },
+          {
+            "description": "",
+            "destination": "https://platform-production.sensedia.com/user-management/v1/users/{username}",
+            "interceptors": [],
+            "method": "GET",
+            "path": "/users/{username}",
+            "timeout": ""
+          }
+        ],
+        "timeout": null
+      }
+    ],
+    "revisionNumber": 4,
+    "timeout": null
+  }
+}

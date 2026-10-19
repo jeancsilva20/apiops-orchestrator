@@ -1,0 +1,56 @@
+path: /oauth2/token/validation
+destination:
+  url: ''            # vazio = herda do escopo acima
+description: Validação de token
+
+inherit: false
+# o fluxo abaixo substitui o herdado, e é o que este ponto executa
+# não executa, do herdado: nada
+
+interceptors_request:
+  - type: Log
+    content:
+      acceptedTerms: true
+      ignoreBodyValidationMultiPartFormData: false
+  - type: Log obfuscation
+    content:
+      location: BODY
+      regexToReplace: "(?<=(\"access_token\"|\"admin_access_token\"|\"user_name\"|\"user_email\")\\s?:\\s?\"[0-9A-Za-z]{3})[a-zA-Z0-9!@#$%^&*()_+\\-=\\[\\];':\"\\|.<>\\/?\\sÀ-ü]*"
+      attr: null
+      replaceChar: "******"
+      ignoreBodyValidationMultiPartFormData: false
+  - type: Custom
+    id: 1
+  - type: Log obfuscation
+    content:
+      location: HEADER
+      regexToReplace: \w.*
+      attr: client_secret
+      replaceChar: "*****"
+      ignoreBodyValidationMultiPartFormData: false
+  - type: Log
+    content:
+      acceptedTerms: true
+      ignoreBodyValidationMultiPartFormData: false
+  - type: OAuth
+    content:
+      grantTypes:
+        - CLIENT_CREDENTIALS
+        - AUTHORIZATION_CODE
+      ignoreBodyValidationMultiPartFormData: false
+  - type: Log
+    content:
+      acceptedTerms: true
+      ignoreBodyValidationMultiPartFormData: false
+  - type: Custom
+    id: 31
+  - type: Log
+    content:
+      acceptedTerms: true
+      ignoreBodyValidationMultiPartFormData: false
+
+interceptors_response:
+  - type: Log
+    content:
+      acceptedTerms: true
+      ignoreBodyValidationMultiPartFormData: false

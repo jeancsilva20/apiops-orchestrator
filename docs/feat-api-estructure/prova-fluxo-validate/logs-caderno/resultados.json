@@ -1,0 +1,92 @@
+[
+  {
+    "id": "T01",
+    "titulo": "Editar a description da API",
+    "esperado": "a nova description aparece no GET",
+    "http_ok": true,
+    "conferido": true,
+    "veredito": "PASSOU",
+    "detalhe": "description na plataforma = 'Descricao EDITADA pelo teste automatizado do APIOp'"
+  },
+  {
+    "id": "T02",
+    "titulo": "Editar o basePath",
+    "esperado": "a guarda recusa antes de qualquer escrita",
+    "abortou": "version ou basePath divergem do Manager. O repositorio pode estar apontado para outra API. Procure o administrador do sistema.",
+    "veredito": "PASSOU",
+    "detalhe": "abortou antes de escrever; basePath intacto (/letras/v2)"
+  },
+  {
+    "id": "T03",
+    "titulo": "Remover a tag 'My new'",
+    "esperado": "o AG bloqueia e a tag permanece",
+    "http_ok": false,
+    "conferido": true,
+    "erro_http": "{\"status\": 412, \"reason\": \"Precondition Failed\", \"resposta\": {\"result\": \"failure\", \"errors\": [{\"type\": \"INVALID\", \"message\": \"{\\\"timestamp\\\":1792068778625,\\\"status\\\":412,\\\"error\\\":\\\"PRECONDITION_FAILED\\\",\\\"messages\\\":[\\\"API must contain attribute My new\\\"],\\\"path\\\":\\\"/api-governance/api/v3/workflows/500/validate\\\"}\"}], \"status\": 412}}",
+    "veredito": "PASSOU",
+    "detalhe": "bloqueado (HTTP 412) e a tag continua na plataforma: ['My new', 'teste giroto']"
+  },
+  {
+    "id": "T04",
+    "titulo": "Editar o destination de GET /tarefas",
+    "esperado": "o novo destino aparece no GET",
+    "http_ok": true,
+    "conferido": true,
+    "veredito": "PASSOU",
+    "detalhe": "destination replicado: https://dev-backend.ecad.org.br/EDITADO-PELO-TESTE/tarefas"
+  },
+  {
+    "id": "T05",
+    "titulo": "Adicionar a rota GET /musicas",
+    "esperado": "a rota existe e herda o fluxo",
+    "http_ok": true,
+    "conferido": true,
+    "veredito": "PASSOU",
+    "detalhe": "recurso e rota criados; a rota tem 0 interceptor(es) proprio(s) e a raiz tem 8 - heranca por lista vazia"
+  },
+  {
+    "id": "T06",
+    "titulo": "inherit:false vazio em recurso e rota",
+    "esperado": "a rota sobe sem interceptors",
+    "http_ok": true,
+    "conferido": true,
+    "veredito": "ATENCAO",
+    "detalhe": "recurso e rota ficaram com lista VAZIA (0/0). No Manager lista vazia = HERDA: a rota continua executando o fluxo da revision. Nao existe 'rota sem interceptors'."
+  },
+  {
+    "id": "T07",
+    "titulo": "inherit:false + interceptors no RESOURCE",
+    "esperado": "as rotas do recurso herdam",
+    "http_ok": true,
+    "conferido": true,
+    "veredito": "PASSOU",
+    "detalhe": "resource com 2 item(ns) [('Custom', 32), ('Payload size', None)] | rotas: GET /tarefas -> 0 proprio(s); GET /tarefas/{id} -> 0 proprio(s) | as rotas herdam por lista vazia, nao por copia"
+  },
+  {
+    "id": "T08",
+    "titulo": "inherit:false + interceptors numa ROTA",
+    "esperado": "os interceptors sobem na rota",
+    "http_ok": true,
+    "conferido": true,
+    "veredito": "PASSOU",
+    "detalhe": "a rota subiu com os 2 interceptors declarados: [('Custom', 33), ('Log', None)]"
+  },
+  {
+    "id": "T10",
+    "titulo": "Remover a rota DELETE /letras/{id}",
+    "esperado": "a rota some da plataforma",
+    "http_ok": true,
+    "conferido": true,
+    "veredito": "PASSOU",
+    "detalhe": "a rota foi removida da plataforma; Letras ficou com 1 operacao(oes)"
+  },
+  {
+    "id": "T11",
+    "titulo": "Acrescentar interceptor com inherit:true",
+    "esperado": "append ao fim do fluxo",
+    "http_ok": true,
+    "conferido": true,
+    "veredito": "PASSOU",
+    "detalhe": "append: a rota foi de 0 para 1 item(ns) -> [('Payload size', None)]"
+  }
+]

@@ -1,0 +1,207 @@
+"""Use-case do `sen publish` — grava o repositório na revisão do ambiente.
+
+É a escrita do `validate` apontada para a revisão de `TARGET_REVISION_NUMBER`,
+sem o diagnóstico em volta: não compara com a API-template nem lê completeness
+(plano dos comandos §7). Roda só o que impede uma escrita errada.
+
+         revisão alvo pelo número               sem rede — P-1 / P-2
+    E1   carregar o repositório                 sem rede — P-8
+    E2   API + guarda de identidade             GET      — P-3 / P-4 / P-10
+         Custom referenciados existem           GET
+         pré-check de tags e governança         GET      — aborta ANTES de escrever
+         ── confirmação ──                      só em EXECUTION_MODE=local
+    E3   PUT ÚNICO na revisão alvo              ESCRITA
+    E3.1 conferência pós-publicação             GET      — 200 não é prova
+"""
+
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Callable, Optional
+
+from apiops_orchestrator.application.exceptions.validate_exceptions import (
+    GovernanceBlockedError,
+    TagInvalidaError,
+    ValidateError,
+)
+from apiops_orchestrator.application.services.governance_precheck_service import (
+    GovernancePrecheckService,
+)
+from apiops_orchestrator.application.services.regua_service import ReguaService
+from apiops_orchestrator.application.services.revision_writer import RevisionWriter
+from apiops_orchestrator.config.settings import Settings
+from apiops_orchestrator.domain.models.publish_view import (
+    SCHEMA_SEN_PUBLISH_V1,
+    PublishView,
+)
+from apiops_orchestrator.domain.models.validate_view import (
+    AtributoExigido,
+    GovernancaResultado,
+    PublicacaoResultado,
+    ValidateApi,
+    ValidateRevision,
+)
+from apiops_orchestrator.domain.ports.local_file_importer_port import (
+    LocalFileImporterPort,
+)
+from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
+from apiops_orchestrator.domain.services import revision_payload
+
+logger = logging.getLogger(__name__)
+
+REVISAO_DRAFT = 1
+
+
+def _agora() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+class PublishService:
+    def __init__(
+        self,
+        manager_api: ManagerApiPort,
+        importer: LocalFileImporterPort,
+        settings: Settings,
+    ):
+        self._manager_api = manager_api
+        self._settings = settings
+        self._escrita = RevisionWriter(manager_api, importer, comando="publish")
+        self._governanca = GovernancePrecheckService(manager_api)
+        # Só a verificação de `Custom`: a régua em si não é lida pelo publish.
+        self._customs = ReguaService(manager_api, settings)
+
+    def publish(
+        self,
+        repo_path: Path,
+        *,
+        confirmar: Callable[[str], bool],
+        progresso: Optional[Callable[[str], None]] = None,
+    ) -> PublishView:
+        """Grava o repositório na revisão alvo e confere o que ficou gravado."""
+        etapa = progresso or (lambda _: None)
+
+        # Configuração primeiro: uma esteira mal configurada não deve gastar
+        # autenticação nem rede para descobrir isso.
+        numero = self._numero_alvo()
+
+        etapa("Lendo o repositório")
+        lido = self._escrita.carregar(repo_path)
+        spec = lido.basic_info.get("spec") or {}
+
+        etapa("Consultando a API no Manager")
+        api = self._manager_api.get_api_by_id(spec.get("id")) or {}
+        self._escrita.guarda_identidade(spec, api)
+        revisao = self._escrita.revisao_por_numero(api, numero)
+        alvo = self._manager_api.get_revision(revisao["id"]) or {}
+
+        # Antes da montagem: o `content` de um `Custom` novo vem do catálogo, e
+        # um `Custom` ausente precisa abortar com o escopo que o declara.
+        etapa("Verificando os interceptors Custom")
+        self._customs.verificar_customs(self._escrita.customs_referenciados(lido))
+
+        montado = revision_payload.montar(
+            draft=alvo,
+            basic_info=lido.basic_info,
+            raiz=lido.raiz,
+            recursos=lido.recursos,
+            resolver_custom=self._escrita.resolver_custom,
+        )
+
+        etapa("Verificando a governança")
+        precheck = self._governanca.avaliar(alvo, spec.get("apiTags"))
+        # Em local, o que vai sair do Manager é mostrado na confirmação, antes
+        # da gravação, e não se repete no resultado. Na esteira não há pergunta.
+        avisos = list(montado.avisos) if self._settings.modo_pipeline else []
+        avisos += [f"Governança: {aviso}" for aviso in precheck.avisos]
+        # Antes do bloqueio: com tag inválida o Manager aceitaria e apagaria
+        # todas as `apiTags` — é o erro mais destrutivo, e é do repositório.
+        if precheck.tags_invalidas:
+            raise TagInvalidaError(precheck.tags_invalidas)
+        if precheck.bloqueado:
+            raise GovernanceBlockedError(
+                workflow_id=precheck.workflow_id,
+                stage_id=precheck.stage_id,
+                missing=[
+                    {"attributeId": f.attribute_id, "name": f.name}
+                    for f in precheck.faltantes
+                ],
+            )
+
+        publicacao = self._gravar(revisao, numero, montado, confirmar, etapa)
+
+        return PublishView(
+            schema=SCHEMA_SEN_PUBLISH_V1,
+            generated_at=_agora(),
+            execution_mode=self._settings.EXECUTION_MODE,
+            api=ValidateApi(
+                manager_id=spec.get("id"),
+                name=api.get("name"),
+                version=api.get("version"),
+                base_path=api.get("basePath"),
+            ),
+            revision=ValidateRevision(
+                manager_id=revisao["id"], revision_number=revisao.get("revisionNumber")
+            ),
+            governanca=GovernancaResultado(
+                workflow_id=precheck.workflow_id,
+                stage_id=precheck.stage_id,
+                required=[
+                    AtributoExigido(e.attribute_id, e.name, e.tag_id)
+                    for e in precheck.exigidos
+                ],
+                missing=[],
+                blocked=False,
+            ),
+            publicacao=publicacao,
+            avisos=avisos,
+        )
+
+    def _numero_alvo(self) -> int:
+        """Número da revisão alvo (V-24) — P-1 na esteira, P-2 na máquina local."""
+        numero = self._settings.TARGET_REVISION_NUMBER
+        if self._settings.modo_pipeline:
+            if numero is None:
+                raise ValidateError(
+                    "TARGET_REVISION_NUMBER não está definida. Na esteira ela é "
+                    "obrigatória: diz em qual revisão o repositório será gravado "
+                    "(2 = DEV, 3 = HML, 4 = PRD).\n\n"
+                    "Defina a variável na configuração da esteira e rode o comando "
+                    "novamente.\n\nNada foi publicado."
+                )
+            return numero
+        if numero is not None and numero != REVISAO_DRAFT:
+            raise ValidateError(
+                "Na máquina local só é possível publicar na revisão 1 (Draft), e "
+                f"TARGET_REVISION_NUMBER está em {numero}. A publicação nas "
+                "revisões de ambiente é feita pela esteira.\n\nNada foi publicado."
+            )
+        return REVISAO_DRAFT
+
+    def _gravar(
+        self,
+        revisao,
+        numero: int,
+        montado: "revision_payload.PayloadMontado",
+        confirmar: Callable[[str], bool],
+        etapa: Callable[[str], None],
+    ) -> PublicacaoResultado:
+        # Na máquina local a escrita é ato deliberado do dev (D-9); na esteira
+        # não há quem responda.
+        if not self._settings.modo_pipeline:
+            pergunta = self._escrita.texto_de_confirmacao(
+                "O conteúdo deste repositório será gravado no API Manager, na "
+                f"revisão {numero} (id {revisao['id']}), substituindo o que está "
+                "nela.\nNenhum ambiente recebe deploy.",
+                montado.avisos,
+            )
+            if not confirmar(pergunta):
+                logger.info("publish.publicacao.nao_confirmada revisao=%s", numero)
+                return PublicacaoResultado(attempted=False)
+
+        return self._escrita.gravar_e_conferir(
+            revisao,
+            montado,
+            etapa=etapa,
+            rotulo_gravacao=f"Gravando a revisão {numero} no Manager",
+            alvo_recusa=f"da revisão {numero}",
+        )

@@ -1,0 +1,19 @@
+path: /tarefas/{id}/atribuicao-responsavel
+destination:
+  url: "https://dev-backend.ecad.org.br/app-demo/servico-letras/v1/tarefas/{id}/atribuicao-responsavel"
+description: >-
+  Atribui o usuário autenticado como responsável de uma tarefa pendente. O responsável é
+  obtido automaticamente do token JWT (claim sub). A tarefa deve estar no status PENDENTE.
+  Requer perfil EDITOR ou ADMIN.
+
+inherit: false
+# o fluxo abaixo substitui o herdado, e é o que este ponto executa
+# não executa, do herdado: Additional Info, Custom#125, Custom#178, Custom#32, Log, Payload size, Rate limit, XSS threat protection
+
+interceptors_request:
+  - type: Log
+    content:
+      encryptContent: true
+      encryptPathAndParameters: true
+      acceptedTerms: true
+      ignoreBodyValidationMultiPartFormData: false
