@@ -142,12 +142,30 @@ def test_texto_mostra_a_revisao_alvo_e_o_resultado():
     assert "30000 ms" in saida
 
 
-def test_texto_quando_o_dev_recusa():
+def test_responder_n_encerra_sem_relatorio():
+    """Recusa não produz relatório — só o desfecho."""
     view = _view(execution_mode="local", publicacao=PublicacaoResultado(attempted=False))
     resultado = runner.invoke(app, ["sen", "publish"], obj=_ctx(_ServicoFake(resultado=view)))
+    saida = " ".join(resultado.output.split())
 
     assert resultado.exit_code == 0
-    assert "não gravada" in resultado.output
+    assert "Publicação cancelada. Nada foi gravado." in saida
+    assert "#2" not in saida and "30000 ms" not in saida
+
+
+@pytest.mark.parametrize("entrada", ["", "﻿y\n"])
+def test_ctrl_c_no_prompt_interrompe_com_130(entrada):
+    class _ServicoQuePergunta(_ServicoFake):
+        def publish(self, repo_path, *, confirmar, progresso=None):
+            confirmar("O conteúdo deste repositório será gravado.")
+            raise AssertionError("o comando deveria ter sido interrompido no prompt")
+
+    resultado = runner.invoke(
+        app, ["sen", "publish"], obj=_ctx(_ServicoQuePergunta()), input=entrada
+    )
+
+    assert resultado.exit_code == 130
+    assert "Publicação cancelada. Nada foi gravado." in " ".join(resultado.output.split())
 
 
 # --- exit codes ----------------------------------------------------------------

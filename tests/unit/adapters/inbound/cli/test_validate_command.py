@@ -400,18 +400,36 @@ def test_confirmacao_explica_que_grava_um_rascunho_sem_deploy():
         "﻿y\n",       # resposta inválida e depois fim da entrada (PowerShell 5.1)
     ],
 )
-def test_cancelar_o_prompt_e_recusa_e_nao_erro_interno(entrada):
-    """Ctrl+C / fim da entrada no prompt levanta Abort: vale como "N"."""
-    capturado = {}
+def test_cancelar_o_prompt_interrompe_com_130_e_sem_relatorio(entrada):
+    """Ctrl+C / fim da entrada não é um "não": interrompe o comando.
 
+    O serviço não chega a devolver nada, nenhum relatório é exibido e o
+    código de saída distingue "cancelado" (130) de "recusado" (0) e de falha (1).
+    """
     class _ServicoQuePergunta(_ServicoFake):
         def validate(self, repo_path, *, confirmar, progresso=None):
-            capturado["respondeu"] = confirmar("Uma versão de rascunho será gravada.")
-            return self._resultado
+            confirmar("Uma versão de rascunho será gravada.")
+            raise AssertionError("o comando deveria ter sido interrompido no prompt")
 
     servico = _ServicoQuePergunta(resultado=_view())
     resultado = runner.invoke(app, ["sen", "validate"], obj=_ctx(servico), input=entrada)
+    saida = " ".join(resultado.output.split())
 
-    assert capturado["respondeu"] is False
+    assert resultado.exit_code == 130
+    assert "Validação cancelada. Nada foi gravado." in saida
+    assert "Conformidade" not in saida
+    assert INTERNAL_ERROR_MESSAGE not in saida
+
+
+def test_responder_n_encerra_sem_relatorio():
+    """Sem a cascata completa não há relatório parcial — só o desfecho."""
+    view = _view(publicacao=PublicacaoResultado(attempted=False))
+    resultado = runner.invoke(
+        app, ["sen", "validate"], obj=_ctx(_ServicoFake(resultado=view))
+    )
+    saida = " ".join(resultado.output.split())
+
     assert resultado.exit_code == 0
-    assert INTERNAL_ERROR_MESSAGE not in " ".join(resultado.output.split())
+    assert "Validação cancelada. Nada foi gravado." in saida
+    assert "Conformidade" not in saida and "Validação  " not in saida
+    assert "sobrescreve a regua" not in saida

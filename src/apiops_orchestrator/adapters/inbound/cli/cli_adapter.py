@@ -1061,9 +1061,7 @@ def _render_validate_text(view: ValidateView) -> None:
         else:
             rprint("[bold red]Rascunho[/bold red]  recusado")
         rprint()
-    else:
-        rprint("[grey53]Rascunho não gravado — publicação não confirmada.[/grey53]")
-        rprint()
+    # Sem `attempted`, o comando já encerrou com "Validação cancelada".
 
     # --- quality score: informativo aqui; o gate trava em DEV+ ---------------
     comp = view.completeness
@@ -1158,6 +1156,21 @@ class _ProgressoValidate:
             self._live.start()
 
 
+class _OperacaoCancelada(Exception):
+    """Ctrl+C (ou fim da entrada) no prompt: interrompe o comando inteiro."""
+
+
+# Código de saída convencional de interrupção (128 + SIGINT), para que script ou
+# esteira distingam "cancelado" de "recusado" (0) e de falha (1).
+EXIT_CANCELADO = 130
+
+
+def _encerrar_sem_gravar(comando: str, codigo: int = 0) -> NoReturn:
+    """Sem a cascata completa não há relatório — só o desfecho."""
+    rprint(f"[yellow]{comando} cancelada.[/yellow] Nada foi gravado.")
+    raise typer.Exit(code=codigo)
+
+
 def _confirmar_publicacao(
     mensagem: str, progresso: Optional["_ProgressoValidate"] = None
 ) -> bool:
@@ -1167,6 +1180,9 @@ def _confirmar_publicacao(
     lê `stdin`. O texto vem pronto do serviço; o que a borda acrescenta é a
     pergunta de sim/não e a caixa, para que o aviso não se perca numa linha
     solta no meio da saída.
+
+    `n` devolve `False` e o comando encerra sem gravar. Ctrl+C não é resposta:
+    interrompe o comando (`_OperacaoCancelada`).
     """
     def _perguntar() -> bool:
         rprint()
@@ -1185,10 +1201,10 @@ def _confirmar_publicacao(
         )
         try:
             return typer.confirm("Deseja prosseguir?", default=False)
-        except typer.Abort:
-            # Ctrl+C ou fim da entrada no prompt: é recusa, não erro — mesmo
-            # desfecho de responder "N".
-            return False
+        except typer.Abort as exc:
+            # Ctrl+C ou fim da entrada: o Click entrega os dois como `Abort`.
+            # Não é um "não" — é interromper. Nada foi gravado até aqui.
+            raise _OperacaoCancelada() from exc
 
     if progresso is None:
         return _perguntar()
@@ -1228,6 +1244,9 @@ def validate(
                 progresso=progresso.etapa,
             )
 
+        if not view.publicacao.attempted:
+            _encerrar_sem_gravar("Validação")
+
         display_output(
             view.to_document(),
             output_format=output,
@@ -1236,6 +1255,8 @@ def validate(
 
     except typer.Exit:
         raise
+    except _OperacaoCancelada:
+        _encerrar_sem_gravar("Validação", EXIT_CANCELADO)
     except ValidateError as e:
         rprint(f"[bold red]Erro:[/bold red] {e.message}")
         raise typer.Exit(code=e.exit_code)
@@ -1293,13 +1314,10 @@ def _render_publish_text(view: PublishView) -> None:
         )
         rprint()
 
+    # Recusa, divergência e erro encerram antes de chegar aqui: só o
+    # sucesso conferido é renderizado.
     numero = view.revision.revision_number
-    if view.publicacao.attempted:
-        # Divergência e recusa viram erro antes de chegar aqui: só o sucesso
-        # conferido é renderizado.
-        rprint(f"[bold]Revisão {numero}[/bold]  [green]gravada e conferida[/green]")
-    else:
-        rprint(f"[grey53]Revisão {numero} não gravada — publicação não confirmada.[/grey53]")
+    rprint(f"[bold]Revisão {numero}[/bold]  [green]gravada e conferida[/green]")
     rprint()
 
 
@@ -1337,6 +1355,9 @@ def publish(
                 progresso=progresso.etapa,
             )
 
+        if not view.publicacao.attempted:
+            _encerrar_sem_gravar("Publicação")
+
         display_output(
             view.to_document(),
             output_format=output,
@@ -1345,6 +1366,8 @@ def publish(
 
     except typer.Exit:
         raise
+    except _OperacaoCancelada:
+        _encerrar_sem_gravar("Publicação", EXIT_CANCELADO)
     except ValidateError as e:
         rprint(f"[bold red]Erro:[/bold red] {e.message}")
         raise typer.Exit(code=e.exit_code)
