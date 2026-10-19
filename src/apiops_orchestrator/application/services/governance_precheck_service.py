@@ -55,6 +55,8 @@ class PrecheckResultado:
     faltantes: List[AtributoExigido] = field(default_factory=list)
     avisos: List[str] = field(default_factory=list)
     tags_invalidas: List[TagInvalida] = field(default_factory=list)
+    # Stage da revisão como veio do workflow; `None` quando não foi encontrado.
+    stage: Optional[Dict[str, Any]] = None
 
     @property
     def bloqueado(self) -> bool:
@@ -115,7 +117,11 @@ class GovernancePrecheckService:
         ]
         if not requisitos:
             return PrecheckResultado(
-                workflow_id, stage_id, avisos=avisos, tags_invalidas=invalidas
+                workflow_id,
+                stage_id,
+                avisos=avisos,
+                tags_invalidas=invalidas,
+                stage=stage,
             )
 
         catalogo = self._catalogo()
@@ -141,7 +147,7 @@ class GovernancePrecheckService:
             len(invalidas),
         )
         return PrecheckResultado(
-            workflow_id, stage_id, exigidos, faltantes, avisos, invalidas
+            workflow_id, stage_id, exigidos, faltantes, avisos, invalidas, stage=stage
         )
 
     # --- apoio ---------------------------------------------------------------

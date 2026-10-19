@@ -245,3 +245,19 @@ def test_catalogo_e_lido_uma_vez_por_execucao():
         REVISAO, [_declarado("My new", "Tag1"), _declarado("teste giroto", "teste giroto")]
     )
     assert manager.chamadas.count(("list_attributes", None)) == 1
+
+
+# --- stage exposto (usado pelo `sen deploy`) ---------------------------------
+
+
+@pytest.mark.parametrize("stage_id", [1401, 1402])
+def test_stage_encontrado_e_exposto_com_ou_sem_requisito(stage_id):
+    revisao = dict(REVISAO, workflowStageId=stage_id)
+    r = GovernancePrecheckService(ManagerFake()).avaliar(revisao, _tags("My new", "teste giroto"))
+    assert r.stage["workflowStageId"] == stage_id
+
+
+@pytest.mark.parametrize("revisao", [dict(REVISAO, workflowStageId=420), {"id": 1}])
+def test_stage_nao_encontrado_fica_none(revisao):
+    r = GovernancePrecheckService(ManagerFake()).avaliar(revisao, [])
+    assert r.stage is None
