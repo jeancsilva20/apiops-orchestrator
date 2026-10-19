@@ -378,8 +378,9 @@ def test_completeness_text_rendering_literally():
     assert "55.0%" in flat                      # percentual puro, sem Basic/Intermediate/Advanced
     assert "(gate: ≥70%)" in flat or "(gate: >=70%)" in flat
     assert "faltam 15.0 pts para o gate" in flat
-    assert "SUGESTÕES (2):" in flat
-    assert "  1." in flat and "  2." in flat
+    assert "SUGESTÕES (2)" in flat
+    assert "SUGESTÃO" in flat                   # cabeçalho da grade
+    assert re.search(r"\b1\s*[│|]", flat) and re.search(r"\b2\s*[│|]", flat)
     assert "texto longo" in flat
     assert "Classification" not in flat and "severity" not in flat
 

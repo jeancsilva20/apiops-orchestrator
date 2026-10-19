@@ -2,7 +2,6 @@ import importlib.metadata
 import logging
 import platform
 import sys
-import textwrap
 from contextlib import contextmanager
 import time
 from datetime import datetime, timezone
@@ -731,7 +730,6 @@ def main_callback(
 # ---------------------------------------------------------------------------
 
 COMPLETENESS_BAR_WIDTH = 30
-COMPLETENESS_WRAP_WIDTH = 92
 
 
 def _completeness_glyph(kind: str) -> str:
@@ -792,7 +790,7 @@ def _completeness_field_grid(view: CompletenessView) -> Table:
     return grid
 
 
-def _render_completeness_headline(view: CompletenessView, score_only: bool) -> Group:
+def _render_completeness_headline(view: CompletenessView) -> Group:
     body_bits: list[Any] = [_completeness_field_grid(view), Text("")]
 
     bar_line = Text.assemble(
@@ -809,48 +807,38 @@ def _render_completeness_headline(view: CompletenessView, score_only: bool) -> G
         body_bits.append(
             Text(f"{_completeness_glyph('warn')} {deficit}", style="yellow")
         )
-
-    if score_only:
-        return Group(*body_bits)
-
-    suggestions = view.suggestions
-    body_bits.append(Text(""))
-    if not suggestions:
-        body_bits.append(
-            Text("Nenhuma sugestão de melhoria para esta revisão.", style="white")
-        )
-        return Group(*body_bits)
-
-    body_bits.append(Text(f"SUGESTÕES ({len(suggestions)}):", style="bold white"))
-    wrapper = textwrap.TextWrapper(
-        width=COMPLETENESS_WRAP_WIDTH,
-        subsequent_indent="      ",
-    )
-    for item in suggestions:
-        lines = wrapper.wrap(item.text)
-        if not lines:
-            continue
-        numbered = Text("")
-        numbered.append(f"  {item.index:>2}. ", style="bold white")
-        numbered.append(lines[0])
-        body_bits.append(numbered)
-        for continuation in lines[1:]:
-            body_bits.append(Text(f"      {continuation}"))
     return Group(*body_bits)
 
 
+SUGGESTIONS_HEADER = ("#", "SUGESTÃO")
+
+
 def _render_completeness_text(view: CompletenessView, score_only: bool) -> None:
-    width = _framed_logo_width()
-    body = _render_completeness_headline(view, score_only)
-    panel = Panel(
-        body,
-        box=box.ROUNDED if _stdout_supports_rounded_box() else box.ASCII,
-        border_style="grey53",
-        padding=(0, 1),
-        width=width,
+    """Painel da revisão à esquerda e, abaixo, as sugestões na grade do `list`."""
+    rprint(
+        Panel(
+            _render_completeness_headline(view),
+            box=_GRADE_BOX,
+            border_style="grey53",
+            padding=(0, 1),
+            expand=False,
+        )
     )
-    rprint(Align.center(panel))
-    rprint()
+    if score_only:
+        return
+
+    suggestions = [item for item in view.suggestions if item.text]
+    if not suggestions:
+        rprint("Nenhuma sugestão de melhoria para esta revisão.")
+        return
+
+    rprint(Text(f"SUGESTÕES ({len(suggestions)})", style="bold white"))
+    _render_grade(
+        [(str(item.index), item.text) for item in suggestions],
+        header=SUGGESTIONS_HEADER,
+        column_justify=("right", None),
+        column_decorators=((lambda v: Text(str(v), style="dim")), None),
+    )
 
 
 MISSING_TARGET_MESSAGE = (
