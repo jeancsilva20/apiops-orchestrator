@@ -21,6 +21,7 @@ from typing import Any, Callable, Dict, List, Optional
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
     GovernanceBlockedError,
     TagInvalidaError,
+    TemplateNaoConfiguradaError,
     ValidateError,
 )
 from apiops_orchestrator.application.services.governance_precheck_service import (
@@ -126,6 +127,11 @@ class ValidateService:
         o que a borda faz com o texto — pode ser barra, log ou nada.
         """
         etapa = progresso or (lambda _: None)
+
+        # Configuração primeiro: uma esteira mal configurada não deve gastar
+        # autenticação nem rede para descobrir isso.
+        if self._settings.modo_pipeline and self._settings.TEMPLATE_API_ID is None:
+            raise TemplateNaoConfiguradaError()
 
         etapa("Lendo o repositório")
         lido = self._escrita.carregar(repo_path)

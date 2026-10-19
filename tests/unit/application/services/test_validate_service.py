@@ -20,6 +20,7 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
     PublicacaoDivergenteError,
     PublicacaoRecusadaError,
     TagInvalidaError,
+    TemplateNaoConfiguradaError,
 )
 from apiops_orchestrator.application.exceptions.manager_failure_messages import (
     INTERNAL_ERROR_MESSAGE,
@@ -775,3 +776,22 @@ def test_escopo_com_fluxo_proprio_tem_os_proprios_achados_e_herdeiros(tmp_path):
                for m in por_escopo["raiz da revision"])
     assert all(m.endswith("2 rotas que herdam este fluxo") for m in por_escopo["resource A"])
 
+
+
+def test_esteira_sem_template_api_id_falha_antes_do_manager(tmp_path):
+    """Configuração da esteira é conferida antes de qualquer chamada."""
+    manager = ManagerFake()
+    settings = SimpleNamespace(
+        EXECUTION_MODE="pipeline", modo_pipeline=True,
+        TEMPLATE_API_ID=None, TARGET_REVISION_NUMBER=2,
+    )
+    servico = ValidateService(
+        manager_api=manager, importer=LocalFileImporterAdapter(), settings=settings
+    )
+
+    with pytest.raises(TemplateNaoConfiguradaError) as capturado:
+        servico.validate(_repo(tmp_path), confirmar=SIM)
+
+    assert capturado.value.exit_code == 1
+    assert "TEMPLATE_API_ID não está definida" in capturado.value.message
+    assert manager.chamadas == []

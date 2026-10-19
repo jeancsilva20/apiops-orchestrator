@@ -90,6 +90,23 @@ class LayoutInvalidoError(ValidateError):
         self.caminho_esperado = caminho_esperado
 
 
+class TemplateNaoConfiguradaError(ValidateError):
+    """Na esteira, `TEMPLATE_API_ID` não está definida.
+
+    É falha de configuração, não de rede: a esteira não deixa o repositório
+    escolher a régua, então sem a variável não há contra o que comparar. É
+    detectada antes de qualquer chamada ao Manager.
+    """
+
+    def __init__(self):
+        super().__init__(
+            "TEMPLATE_API_ID não está definida. Na esteira ela é obrigatória para o "
+            "validate: é o id da API-template usada como padrão de comparação.\n\n"
+            "Defina a variável na configuração da esteira e rode o comando "
+            "novamente.\n\nNada foi publicado."
+        )
+
+
 class ArquivoIlegivelError(ValidateError):
     """Um arquivo do repositório existe, mas não pôde ser lido.
 

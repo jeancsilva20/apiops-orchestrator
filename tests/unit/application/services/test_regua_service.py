@@ -10,6 +10,7 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
     CustomInexistenteError,
     ReguaInalcancavelError,
     TemplateAusenteError,
+    TemplateNaoConfiguradaError,
 )
 from apiops_orchestrator.application.exceptions.manager_failure_messages import (
     INTERNAL_ERROR_MESSAGE,
@@ -101,8 +102,11 @@ def test_pipeline_avisa_a_divergencia_de_binding():
 def test_pipeline_sem_id_configurado_aborta():
     """Validar contra nada numa esteira é pior do que parar (V-11 §4)."""
     servico = ReguaService(ManagerFake(), _settings("pipeline", template_id=None))
-    with pytest.raises(ReguaInalcancavelError):
+    with pytest.raises(TemplateNaoConfiguradaError) as capturado:
         servico.resolver_id(_basic_info(template=414))
+    # É configuração, não rede: a mensagem não pode mandar verificar a conexão.
+    assert "TEMPLATE_API_ID não está definida" in capturado.value.message
+    assert "rede" not in capturado.value.message
 
 
 # --- leitura e aborto (P-2) -------------------------------------------------

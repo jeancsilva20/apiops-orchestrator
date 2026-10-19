@@ -25,6 +25,7 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
     CustomInexistenteError,
     ReguaInalcancavelError,
     TemplateAusenteError,
+    TemplateNaoConfiguradaError,
 )
 from apiops_orchestrator.application.services.manager_failure_translator import (
     classify_manager_failure,
@@ -101,10 +102,8 @@ class ReguaService:
     def _resolver_em_pipeline(self, do_manifesto: Any) -> int:
         do_cofre = self._settings.TEMPLATE_API_ID
         if do_cofre is None:
-            # Validar contra nada numa esteira é pior do que parar (V-11 §4).
-            raise ReguaInalcancavelError(
-                template_id="(não configurado)", status_code=None
-            )
+            # Validar contra nada numa esteira é pior do que parar.
+            raise TemplateNaoConfiguradaError()
         if do_manifesto not in (None, "") and str(do_manifesto) != str(do_cofre):
             logger.info(
                 "regua.divergencia manifesto=%s cofre=%s", do_manifesto, do_cofre
