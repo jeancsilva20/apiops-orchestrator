@@ -14,6 +14,7 @@ eles viajam na cópia, e nada aqui os reescreve.
 
 import copy
 import json
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 
@@ -138,6 +139,116 @@ def _herda(bloco: Dict[str, Any]) -> bool:
     return True if valor is None else bool(valor)
 
 
+# --- identidade do recurso: as rotas, não o nome (V-12a) ---------------------
+#
+# O Manager aceita dois recursos com o mesmo nome (a 409 rev1 tem dois `Letras`)
+# e o repositório não versiona `id` (D-005 §2). O único elo estável entre uma
+# pasta e o recurso remoto é o conjunto de rotas — e cada rota pertence a um só
+# recurso, lá (W-6) e aqui (I-6).
+
+Rota = Tuple[str, Optional[str]]
+
+
+def _rota(metodo: Any, path: Any) -> Rota:
+    return (str(metodo or "").upper(), path)
+
+
+def _rotulo_rota(rota: Rota) -> str:
+    return f"{rota[0]} {rota[1]}"
+
+
+def _rotas_do_no(recurso: Dict[str, Any]) -> List[Rota]:
+    return [_rota(o.get("method"), o.get("path")) for o in recurso.get("operations") or []]
+
+
+def parear_por_rotas(
+    lado: Sequence[Tuple[Optional[str], Sequence[Rota]]],
+    remotos: Sequence[Tuple[Optional[str], Sequence[Rota]]],
+) -> Dict[int, int]:
+    """Liga cada recurso de `lado` a no máximo um de `remotos`, 1:1, pelas rotas.
+
+    Ganha o par com mais rotas em comum; empatado, o de mesmo nome; ainda
+    empatado, o que vem primeiro em `lado` — as pastas, que a descoberta já
+    entrega em ordem alfabética. Recurso com rotas, mas nenhuma em comum, fica
+    sem par: pela V-12a é outro recurso, mesmo com nome igual.
+    """
+    dono: Dict[Rota, int] = {}
+    for j, (_, rotas) in enumerate(remotos):
+        for rota in rotas:
+            dono.setdefault(rota, j)
+
+    candidatos = []
+    for i, (nome, rotas) in enumerate(lado):
+        em_comum = Counter(dono[r] for r in rotas if r in dono)
+        for j, quantidade in em_comum.items():
+            candidatos.append((-quantidade, remotos[j][0] != nome, i, j))
+
+    pares: Dict[int, int] = {}
+    tomados = set()
+    for _, _, i, j in sorted(candidatos):
+        if i in pares or j in tomados:
+            continue
+        pares[i] = j
+        tomados.add(j)
+
+    # Recurso SEM rota nenhuma, dos dois lados, não tem identidade por rotas —
+    # recriá-lo perderia o que o Manager preserva nele (V-22). Só aqui o nome
+    # decide, e só quando é único entre os que sobraram sem rota.
+    sem_rota_a = [i for i, (_, rotas) in enumerate(lado) if not rotas and i not in pares]
+    sem_rota_b = [j for j, (_, rotas) in enumerate(remotos) if not rotas and j not in tomados]
+    for i in sem_rota_a:
+        nome = lado[i][0]
+        iguais_a = [k for k in sem_rota_a if lado[k][0] == nome]
+        iguais_b = [k for k in sem_rota_b if remotos[k][0] == nome]
+        if len(iguais_a) == 1 and len(iguais_b) == 1:
+            pares[i] = iguais_b[0]
+    return pares
+
+
+def _rotulos_de_recursos(
+    recursos: Sequence[Tuple[Optional[str], Sequence[Rota]]],
+) -> List[str]:
+    """Como cada recurso é nomeado nas mensagens e nos escopos.
+
+    Nome repetido ganha a primeira rota como qualificador — `Letras (rota GET
+    /letras/{id})`. A rota identifica o recurso nos dois lados, repositório e
+    Manager (V-12a); sem ela, dois `Letras` virariam o mesmo escopo e as
+    contagens se misturariam.
+    """
+    repeticoes = Counter(nome for nome, _ in recursos)
+    rotulos = []
+    for nome, rotas in recursos:
+        if repeticoes[nome] > 1 and rotas:
+            primeira = min(rotas, key=lambda r: (r[1] or "", r[0]))
+            rotulos.append(f"{nome} (rota {_rotulo_rota(primeira)})")
+        else:
+            rotulos.append(str(nome))
+    return rotulos
+
+
+def _avisos_de_homonimos(recursos: Sequence[Any]) -> List[str]:
+    """Pastas diferentes com o mesmo `name`: aceito, mas quase sempre engano."""
+    pastas_por_nome: Dict[str, List[str]] = {}
+    for recurso in recursos:
+        nome = (recurso.dados or {}).get("name")
+        if nome:
+            pastas_por_nome.setdefault(nome, []).append(recurso.slug)
+
+    avisos = []
+    for nome, pastas in pastas_por_nome.items():
+        if len(pastas) < 2:
+            continue
+        lista = ", ".join(f"`{p}`" for p in pastas[:-1]) + f" e `{pastas[-1]}`"
+        avisos.append(
+            f"As pastas {lista} declaram recursos com o mesmo nome, \"{nome}\". O "
+            "Manager aceita, mas quem olha a API vê recursos iguais e não sabe qual é "
+            "qual.\n"
+            "Se são o mesmo recurso, junte as rotas em uma pasta só. Se não são, dê a "
+            "cada um um nome diferente no `resource.yaml`."
+        )
+    return avisos
+
+
 def montar(
     *,
     draft: Dict[str, Any],
@@ -207,23 +318,47 @@ def montar(
     )
 
     # --- recursos e operações ------------------------------------------------
-    remotos_por_nome = {
-        r.get("name"): r for r in (draft.get("resources") or []) if r.get("name")
-    }
-    saida_recursos: List[Dict[str, Any]] = []
-    rotas_sumidas: List[str] = []
+    # Cada pasta é ligada ao recurso remoto pelas rotas, não pelo nome (V-12a):
+    # pelo nome, dois homônimos caíam no mesmo remoto e um deles sumia calado.
+    remotos: List[Dict[str, Any]] = list(draft.get("resources") or [])
+    rotas_remotas = [_rotas_do_no(r) for r in remotos]
+    lado_remoto = [(r.get("name"), rotas) for r, rotas in zip(remotos, rotas_remotas)]
+    lado_repo = [
+        (
+            (recurso.dados or {}).get("name"),
+            [_rota(op.metodo, (op.dados or {}).get("path")) for op in recurso.operacoes],
+        )
+        for recurso in recursos
+    ]
+    pares = parear_por_rotas(lado_repo, lado_remoto)
+    rotulos_repo = _rotulos_de_recursos(lado_repo)
+    rotulos_remotos = _rotulos_de_recursos(lado_remoto)
+    dono_remoto: Dict[Rota, int] = {}
+    for j, rotas in enumerate(rotas_remotas):
+        for rota in rotas:
+            dono_remoto.setdefault(rota, j)
+    no_repositorio = {rota for _, rotas in lado_repo for rota in rotas}
 
-    for recurso in recursos:
+    avisos.extend(_avisos_de_homonimos(recursos))
+    saida_recursos: List[Dict[str, Any]] = []
+    rotas_movidas: List[str] = []
+
+    for i, recurso in enumerate(recursos):
         dados = recurso.dados or {}
         nome = dados.get("name")
-        remoto = remotos_por_nome.get(nome) or {}
-        bloco = copy.deepcopy(remoto) if remoto else {"name": nome}
+        rotulo = rotulos_repo[i]
+        indice_remoto = pares.get(i)
+        remoto = remotos[indice_remoto] if indice_remoto is not None else {}
+        bloco = copy.deepcopy(remoto) if remoto else {}
+        # Ligado pelas rotas, o recurso pode ter trocado de nome: o repositório
+        # prevalece, e o `id` fica — trocar o nome não recria o recurso.
+        bloco["name"] = nome if nome is not None else bloco.get("name")
 
         fluxo_recurso = resolver_fluxo_declarado(
             _declarados(dados), fluxo_raiz.efetivo, inherit=_herda(dados)
         )
-        avisos.extend(_avisos_do_escopo(fluxo_recurso, remoto, f"resource {nome}"))
-        _esperar(f"resource {nome}", fluxo_recurso)
+        avisos.extend(_avisos_do_escopo(fluxo_recurso, remoto, f"resource {rotulo}"))
+        _esperar(f"resource {rotulo}", fluxo_recurso)
         if dados.get("description") is not None:
             bloco["description"] = dados.get("description")
         url, timeout = _destino(dados)
@@ -237,14 +372,23 @@ def montar(
         )
 
         remotas_por_chave = {
-            (str(o.get("method") or "").upper(), o.get("path")): o
+            _rota(o.get("method"), o.get("path")): o
             for o in (remoto.get("operations") or [])
         }
         operacoes: List[Dict[str, Any]] = []
         for op in recurso.operacoes:
             od = op.dados or {}
-            chave = (op.metodo, od.get("path"))
+            chave = _rota(op.metodo, od.get("path"))
+            # Só reaproveita o remoto se a rota estiver no recurso ligado ao seu
+            # dono: `remotas_por_chave` é do recurso pareado, e só dele (W-6).
             remota = remotas_por_chave.get(chave) or {}
+            origem = dono_remoto.get(chave)
+            if origem is not None and origem != indice_remoto:
+                rotas_movidas.append(
+                    f"{_rotulo_rota(chave)}: sai do recurso {rotulos_remotos[origem]} e "
+                    f"vai para o recurso {nome} (pasta `{recurso.slug}`)"
+                    + (", que será criado" if indice_remoto is None else "")
+                )
             item = copy.deepcopy(remota) if remota else {}
             fluxo_op = resolver_fluxo_declarado(
                 _declarados(od), fluxo_recurso.efetivo, inherit=_herda(od)
@@ -252,7 +396,7 @@ def montar(
             avisos.extend(
                 _avisos_do_escopo(fluxo_op, remota, f"{op.metodo} {od.get('path')}")
             )
-            _esperar(f"{nome}/{str(op.metodo or '').upper()} {od.get('path')}", fluxo_op)
+            _esperar(_rotulo_rota(chave), fluxo_op)
             item["method"] = op.metodo
             item["path"] = od.get("path")
             if od.get("description") is not None:
@@ -273,14 +417,6 @@ def montar(
                 item.pop("id", None)
             operacoes.append(item)
 
-        # Só para recurso que continua: o que some junto com o recurso inteiro
-        # já é nomeado no aviso de recursos.
-        enviadas = {(str(o.get("method") or "").upper(), o.get("path")) for o in operacoes}
-        rotas_sumidas.extend(
-            f"{metodo} {path} (recurso {nome})"
-            for metodo, path in sorted(set(remotas_por_chave) - enviadas, key=str)
-        )
-
         bloco["operations"] = operacoes
         saida_recursos.append(bloco)
 
@@ -288,14 +424,34 @@ def montar(
 
     # O PUT grava a revisão inteira: o que está no Manager e não no repositório
     # é apagado. Não bloqueia — remover pode ser a intenção —, mas é avisado.
-    sumidos = set(remotos_por_nome) - {r.get("name") for r in saida_recursos}
+    # A comparação é por recurso e por rota, nunca por nome: um homônimo que
+    # some precisa aparecer aqui mesmo com o nome ainda presente.
+    pareados = set(pares.values())
+    sumidos = [rotulos_remotos[j] for j in range(len(remotos)) if j not in pareados]
+    # Só para recurso que continua: o que some junto com o recurso inteiro já é
+    # nomeado no aviso de recursos. Rota que está em outra pasta não sumiu —
+    # mudou de recurso, e é avisada à parte.
+    rotas_sumidas = [
+        f"{_rotulo_rota(rota)} (recurso {rotulos_remotos[j]})"
+        for j in sorted(pareados)
+        for rota in sorted(rotas_remotas[j], key=str)
+        if rota not in no_repositorio
+    ]
     if sumidos:
         avisos.append(
             "Os recursos abaixo existem no Manager mas não estão no repositório. Ao "
             "publicar, eles serão apagados do Manager:\n"
-            + "\n".join(f"  - {s}" for s in sorted(str(s) for s in sumidos))
+            + "\n".join(f"  - {s}" for s in sorted(sumidos))
             + "\n\nSe não era essa a intenção, adicione-os ao repositório antes de "
             "publicar."
+        )
+    if rotas_movidas:
+        avisos.append(
+            "As rotas abaixo estão no repositório em um recurso diferente do que têm "
+            "hoje no Manager. Ao publicar, elas saem do recurso de origem e passam "
+            "para o de destino:\n"
+            + "\n".join(f"  - {r}" for r in rotas_movidas)
+            + "\n\nSe não era essa a intenção, devolva-as à pasta do recurso de origem."
         )
     if rotas_sumidas:
         avisos.append(
@@ -312,33 +468,70 @@ def montar(
 # --------------------------------------------------------------------------- E3.1
 
 
-def _assinatura_operacoes(no: Dict[str, Any]) -> set:
-    saida = set()
-    for recurso in no.get("resources") or []:
+def _lado(no: Dict[str, Any]) -> List[Tuple[Optional[str], List[Rota]]]:
+    return [(r.get("name"), _rotas_do_no(r)) for r in no.get("resources") or []]
+
+
+def _rotulos_da_conferencia(
+    enviado: Dict[str, Any], publicado: Dict[str, Any]
+) -> Tuple[List[str], List[str], Dict[int, int]]:
+    """Rótulos dos recursos dos dois lados, ligados pelas rotas.
+
+    O recurso publicado herda o rótulo do enviado com quem foi ligado — é a
+    mesma regra do `montar`, então os escopos do `esperado` batem. O que fica
+    sem par é divergência.
+    """
+    lado_enviado, lado_publicado = _lado(enviado), _lado(publicado)
+    pares = parear_por_rotas(lado_enviado, lado_publicado)
+
+    rotulos_enviados = _rotulos_de_recursos(lado_enviado)
+    proprios = _rotulos_de_recursos(lado_publicado)
+    por_publicado = {j: i for i, j in pares.items()}
+    rotulos_publicados = []
+    for j, proprio in enumerate(proprios):
+        if j in por_publicado:
+            rotulos_publicados.append(rotulos_enviados[por_publicado[j]])
+        elif proprio in rotulos_enviados:
+            # Não pode colidir com um escopo enviado: os itens se misturariam.
+            rotulos_publicados.append(f"{proprio} (só no Manager)")
+        else:
+            rotulos_publicados.append(proprio)
+    return rotulos_enviados, rotulos_publicados, pares
+
+
+def _escopos(
+    no: Dict[str, Any], rotulos: Sequence[str]
+) -> Iterator[Tuple[str, Dict[str, Any]]]:
+    """Cada escopo da árvore com o seu rótulo.
+
+    A rota basta como rótulo da operação: é única na revisão (W-6 e I-6).
+    """
+    yield "raiz", no
+    for recurso, rotulo in zip(no.get("resources") or [], rotulos):
+        yield f"resource {rotulo}", recurso
         for op in recurso.get("operations") or []:
-            saida.add(
-                (
-                    recurso.get("name"),
-                    str(op.get("method") or "").upper(),
-                    op.get("path"),
-                )
-            )
-    return saida
+            yield _rotulo_rota(_rota(op.get("method"), op.get("path"))), op
 
 
-def _por_escopo(no: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
+def _assinatura_operacoes(no: Dict[str, Any], rotulos: Sequence[str]) -> set:
+    return {
+        (rotulo, *_rota(op.get("method"), op.get("path")))
+        for recurso, rotulo in zip(no.get("resources") or [], rotulos)
+        for op in recurso.get("operations") or []
+    }
+
+
+def _por_escopo(
+    no: Dict[str, Any], rotulos: Sequence[str]
+) -> Dict[str, List[Dict[str, Any]]]:
     """Itens governados de cada escopo da árvore, indexados pelo rótulo."""
-    saida = {"raiz": particionar(no.get("interceptors"))[0]}
-    for recurso in no.get("resources") or []:
-        nome = recurso.get("name")
-        saida[f"resource {nome}"] = particionar(recurso.get("interceptors"))[0]
-        for op in recurso.get("operations") or []:
-            rotulo = f"{nome}/{str(op.get('method') or '').upper()} {op.get('path')}"
-            saida[rotulo] = particionar(op.get("interceptors"))[0]
-    return saida
+    return {
+        escopo: particionar(nodo.get("interceptors"))[0]
+        for escopo, nodo in _escopos(no, rotulos)
+    }
 
 
-def _contagem_por_escopo(no: Dict[str, Any]) -> Dict[str, int]:
+def _contagem_por_escopo(no: Dict[str, Any], rotulos: Sequence[str]) -> Dict[str, int]:
     """Quantos itens **vivos** cada escopo tem.
 
     Tombstones ficam de fora porque não são fluxo: contá-los faria um escopo com
@@ -346,27 +539,21 @@ def _contagem_por_escopo(no: Dict[str, Any]) -> Dict[str, int]:
     """
     return {
         escopo: len([i for i in itens if i.get("status") != "REMOVED"])
-        for escopo, itens in _por_escopo(no).items()
+        for escopo, itens in _por_escopo(no, rotulos).items()
     }
 
 
-def _destinos_por_escopo(no: Dict[str, Any]) -> Dict[str, Any]:
+def _destinos_por_escopo(no: Dict[str, Any], rotulos: Sequence[str]) -> Dict[str, Any]:
     """`destination` e `timeout` de cada escopo, para a conferência.
 
     Entram aqui porque `''` e `null` **não** são equivalentes na escrita: a
     plataforma guarda literalmente o que recebe (medido em 2026-10-15, fechando
     a P-8). Sem conferi-los, uma troca silenciosa de um pelo outro passaria.
     """
-    saida: Dict[str, Any] = {
-        "raiz": (no.get("destination"), no.get("timeout")),
+    return {
+        escopo: (nodo.get("destination"), nodo.get("timeout"))
+        for escopo, nodo in _escopos(no, rotulos)
     }
-    for recurso in no.get("resources") or []:
-        nome = recurso.get("name")
-        saida[f"resource {nome}"] = (recurso.get("destination"), recurso.get("timeout"))
-        for op in recurso.get("operations") or []:
-            rotulo = f"{nome}/{str(op.get('method') or '').upper()} {op.get('path')}"
-            saida[rotulo] = (op.get("destination"), op.get("timeout"))
-    return saida
 
 
 def conferir(
@@ -386,11 +573,16 @@ def conferir(
     passaria intacta por uma comparação com o enviado.
     """
     divergencias: List[str] = []
+    # Os recursos dos dois lados são ligados pelas rotas, como no `montar`:
+    # pelo nome, dois homônimos virariam um só escopo e a contagem mentiria.
+    rotulos_e, rotulos_p, pares = _rotulos_da_conferencia(enviado, publicado)
     if esperado:
-        divergencias.extend(_divergencias_do_fluxo_declarado(esperado, publicado))
+        divergencias.extend(
+            _divergencias_do_fluxo_declarado(esperado, publicado, rotulos_p)
+        )
 
-    ops_enviadas = _assinatura_operacoes(enviado)
-    ops_publicadas = _assinatura_operacoes(publicado)
+    ops_enviadas = _assinatura_operacoes(enviado, rotulos_e)
+    ops_publicadas = _assinatura_operacoes(publicado, rotulos_p)
     for faltando in sorted(ops_enviadas - ops_publicadas):
         divergencias.append(
             f"a operação {faltando[1]} {faltando[2]}, do recurso {faltando[0]}, foi "
@@ -402,8 +594,8 @@ def conferir(
             "no Manager mas não foi enviada"
         )
 
-    enviadas = _contagem_por_escopo(enviado)
-    publicadas = _contagem_por_escopo(publicado)
+    enviadas = _contagem_por_escopo(enviado, rotulos_e)
+    publicadas = _contagem_por_escopo(publicado, rotulos_p)
     for escopo, quantidade in sorted(enviadas.items()):
         presente = publicadas.get(escopo)
         if presente is None:
@@ -414,14 +606,13 @@ def conferir(
                 f"gravou {presente}"
             )
 
-    nomes_enviados = {r.get("name") for r in (enviado.get("resources") or [])}
-    nomes_publicados = {r.get("name") for r in (publicado.get("resources") or [])}
-    for faltando in sorted(str(n) for n in nomes_enviados - nomes_publicados):
+    for faltando in sorted(r for i, r in enumerate(rotulos_e) if i not in pares):
         divergencias.append(f"o recurso {faltando} foi enviado mas não está no Manager")
     # O T10 provou que o que não está no repositório é removido. Um recurso que
     # sobrevive sem ter sido enviado é divergência na direção oposta — e sem esta
     # conferência ele passaria despercebido.
-    for sobrando in sorted(str(n) for n in nomes_publicados - nomes_enviados):
+    ligados = set(pares.values())
+    for sobrando in sorted(r for j, r in enumerate(rotulos_p) if j not in ligados):
         divergencias.append(
             f"o recurso {sobrando} está no Manager mas não foi enviado"
         )
@@ -430,7 +621,7 @@ def conferir(
     # a supressão se escreve omitindo o item da lista. Um `status: REMOVED` que
     # sobreviva ao PUT continua suprimindo um item herdado, então o fluxo
     # publicado não é o que o repositório declarou. Vale o veredito.
-    for escopo, itens in sorted(_por_escopo(publicado).items()):
+    for escopo, itens in sorted(_por_escopo(publicado, rotulos_p).items()):
         remanescentes = [i for i in itens if i.get("status") == "REMOVED"]
         if remanescentes:
             divergencias.append(
@@ -439,8 +630,8 @@ def conferir(
                 "enviadas; elas continuam suprimindo itens do fluxo herdado"
             )
 
-    destinos_enviados = _destinos_por_escopo(enviado)
-    destinos_publicados = _destinos_por_escopo(publicado)
+    destinos_enviados = _destinos_por_escopo(enviado, rotulos_e)
+    destinos_publicados = _destinos_por_escopo(publicado, rotulos_p)
     for escopo, enviado_par in sorted(destinos_enviados.items()):
         publicado_par = destinos_publicados.get(escopo)
         if publicado_par is None:
@@ -485,7 +676,9 @@ def _chaves_diferentes(declarado: Any, gravado: Any) -> str:
 
 
 def _divergencias_do_fluxo_declarado(
-    esperado: Dict[str, List[Dict[str, Any]]], publicado: Dict[str, Any]
+    esperado: Dict[str, List[Dict[str, Any]]],
+    publicado: Dict[str, Any],
+    rotulos: Sequence[str],
 ) -> List[str]:
     """Fluxo publicado × fluxo declarado, por escopo e execution point.
 
@@ -494,7 +687,7 @@ def _divergencias_do_fluxo_declarado(
     identifica o objeto (V-11 §4) —, e pela mesma normalização da conformidade.
     """
     divergencias: List[str] = []
-    publicados = _por_escopo(publicado)
+    publicados = _por_escopo(publicado, rotulos)
     for escopo, declarados in sorted(esperado.items()):
         gravados_do_escopo = publicados.get(escopo)
         if gravados_do_escopo is None:

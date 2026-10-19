@@ -30,9 +30,9 @@ class _Op:
 
 
 class _Rec:
-    def __init__(self, dados, operacoes=()):
+    def __init__(self, dados, operacoes=(), slug="r"):
         self.dados, self.operacoes = dados, list(operacoes)
-        self.slug, self.caminho = "r", "resources/r/resource.yaml"
+        self.slug, self.caminho = slug, f"resources/{slug}/resource.yaml"
 
 
 def _montar(raiz, recursos=(), draft=None):
@@ -432,7 +432,7 @@ def test_esperado_carrega_o_fluxo_declarado_por_escopo():
     montado = _montar(RAIZ_ALTERADA, [_Rec({"name": "R"}, [op])], draft=DRAFT_COM_CONTENT)
 
     assert _tipos(montado.esperado["raiz"]) == ["Log", "Rate limit"]
-    assert _tipos(montado.esperado["R/GET /x"]) == ["Payload size"]
+    assert _tipos(montado.esperado["GET /x"]) == ["Payload size"]
     # herança pura vai como `[]`: não há lista própria para conferir
     assert "resource R" not in montado.esperado
 
@@ -538,3 +538,205 @@ def test_nada_removido_nada_avisado():
     ])
     saude = _Rec({"name": "Saude"}, [_Op("GET", {"path": "/health"})])
     assert _montar({}, [letras, saude], draft=DRAFT_COM_ROTAS).avisos == []
+
+
+# --- identidade do recurso pelas rotas (V-12a) -------------------------------
+#
+# O Manager aceita recursos homônimos e o repositório não versiona `id`: o elo
+# entre pasta e recurso remoto são as rotas. Ligar pelo nome fazia dois
+# homônimos caírem no mesmo remoto — aviso falso, `id` repetido e um recurso
+# apagado sem aviso.
+
+DRAFT_TAREFAS = {
+    "id": 1, "api": {}, "interceptors": [],
+    "resources": [{"id": 50, "name": "Tarefas", "operations": [
+        {"id": 501, "method": "GET", "path": "/tarefas"},
+        {"id": 502, "method": "GET", "path": "/tarefas/{id}"},
+    ]}],
+}
+
+DRAFT_LETRAS_HOMONIMOS = {
+    "id": 1, "api": {}, "interceptors": [],
+    "resources": [
+        {"id": 101, "name": "Letras", "operations": [
+            {"id": 1, "method": "GET", "path": "/letras/{id}"},
+        ]},
+        {"id": 102, "name": "Letras", "operations": [
+            {"id": 2, "method": "POST", "path": "/tarefas/{id}/letras"},
+        ]},
+    ],
+}
+
+
+def _letras_homonimos():
+    return [
+        _Rec({"name": "Letras"}, [_Op("GET", {"path": "/letras/{id}"})],
+             slug="letras-letras-id"),
+        _Rec({"name": "Letras"}, [_Op("POST", {"path": "/tarefas/{id}/letras"})],
+             slug="letras-tarefas-id-letras"),
+    ]
+
+
+def _aviso_de_homonimos(pastas, nome):
+    return (
+        f"As pastas {pastas} declaram recursos com o mesmo nome, \"{nome}\". O "
+        "Manager aceita, mas quem olha a API vê recursos iguais e não sabe qual é "
+        "qual.\n"
+        "Se são o mesmo recurso, junte as rotas em uma pasta só. Se não são, dê a "
+        "cada um um nome diferente no `resource.yaml`."
+    )
+
+
+def test_rota_movida_para_pasta_homonima_nao_e_avisada_como_apagada():
+    """O caso da 417 rev3: a pasta copiada manteve o `name`."""
+    recursos = [
+        _Rec({"name": "Tarefas"}, [_Op("GET", {"path": "/tarefas/{id}"})], slug="tarefas"),
+        _Rec({"name": "Tarefas"}, [_Op("GET", {"path": "/tarefas"})], slug="tarefas 2"),
+    ]
+    montado = _montar({}, recursos, draft=DRAFT_TAREFAS)
+
+    assert montado.avisos == [
+        _aviso_de_homonimos("`tarefas` e `tarefas 2`", "Tarefas"),
+        "As rotas abaixo estão no repositório em um recurso diferente do que têm "
+        "hoje no Manager. Ao publicar, elas saem do recurso de origem e passam "
+        "para o de destino:\n"
+        "  - GET /tarefas: sai do recurso Tarefas e vai para o recurso Tarefas "
+        "(pasta `tarefas 2`), que será criado\n\n"
+        "Se não era essa a intenção, devolva-as à pasta do recurso de origem.",
+    ]
+    fica, nova = montado.corpo["resources"]
+    # empate (1 rota cada, mesmo nome): fica com o `id` a primeira pasta
+    assert fica["id"] == 50
+    assert [o["id"] for o in fica["operations"]] == [502]
+    assert "id" not in nova
+    assert "id" not in nova["operations"][0]  # W-6: operação que muda de recurso vai nova
+
+
+def test_homonimos_vindos_do_manager_voltam_intactos():
+    """A 409 rev1: puxar e publicar de volta sem mudança não altera nada."""
+    montado = _montar({}, _letras_homonimos(), draft=DRAFT_LETRAS_HOMONIMOS)
+
+    assert montado.avisos == [
+        _aviso_de_homonimos("`letras-letras-id` e `letras-tarefas-id-letras`", "Letras")
+    ]
+    assert [r["id"] for r in montado.corpo["resources"]] == [101, 102]
+    assert [r["operations"][0]["id"] for r in montado.corpo["resources"]] == [1, 2]
+
+
+def test_ligacao_independe_da_ordem_dos_recursos_no_manager():
+    draft = dict(DRAFT_LETRAS_HOMONIMOS,
+                 resources=list(reversed(DRAFT_LETRAS_HOMONIMOS["resources"])))
+    montado = _montar({}, _letras_homonimos(), draft=draft)
+    assert [r["id"] for r in montado.corpo["resources"]] == [101, 102]
+
+
+def test_homonimo_que_sai_e_avisado_mesmo_com_o_nome_ainda_presente():
+    """Antes, o aviso comparava nomes: `Letras` continuava lá e nada era dito."""
+    avisos = _montar({}, _letras_homonimos()[:1], draft=DRAFT_LETRAS_HOMONIMOS).avisos
+
+    assert avisos == [
+        "Os recursos abaixo existem no Manager mas não estão no repositório. Ao "
+        "publicar, eles serão apagados do Manager:\n"
+        "  - Letras (rota POST /tarefas/{id}/letras)\n\n"
+        "Se não era essa a intenção, adicione-os ao repositório antes de publicar."
+    ]
+
+
+def test_renomear_recurso_mantem_o_id():
+    recurso = _Rec({"name": "Tarefas v2"}, [
+        _Op("GET", {"path": "/tarefas"}),
+        _Op("GET", {"path": "/tarefas/{id}"}),
+    ])
+    montado = _montar({}, [recurso], draft=DRAFT_TAREFAS)
+
+    assert montado.avisos == []
+    bloco = montado.corpo["resources"][0]
+    assert (bloco["id"], bloco["name"]) == (50, "Tarefas v2")
+    assert [o["id"] for o in bloco["operations"]] == [501, 502]
+
+
+def test_juntar_dois_recursos_avisa_o_que_sai_e_o_que_muda_de_recurso():
+    draft = {
+        "id": 1, "api": {}, "interceptors": [],
+        "resources": [
+            {"id": 10, "name": "A", "operations": [{"id": 1, "method": "GET", "path": "/a"}]},
+            {"id": 20, "name": "B", "operations": [{"id": 2, "method": "GET", "path": "/b"}]},
+        ],
+    }
+    junto = _Rec({"name": "A"}, [_Op("GET", {"path": "/a"}), _Op("GET", {"path": "/b"})],
+                 slug="a")
+    montado = _montar({}, [junto], draft=draft)
+
+    assert montado.avisos == [
+        "Os recursos abaixo existem no Manager mas não estão no repositório. Ao "
+        "publicar, eles serão apagados do Manager:\n"
+        "  - B\n\n"
+        "Se não era essa a intenção, adicione-os ao repositório antes de publicar.",
+        "As rotas abaixo estão no repositório em um recurso diferente do que têm "
+        "hoje no Manager. Ao publicar, elas saem do recurso de origem e passam "
+        "para o de destino:\n"
+        "  - GET /b: sai do recurso B e vai para o recurso A (pasta `a`)\n\n"
+        "Se não era essa a intenção, devolva-as à pasta do recurso de origem.",
+    ]
+    bloco = montado.corpo["resources"][0]
+    assert bloco["id"] == 10
+    assert [o.get("id") for o in bloco["operations"]] == [1, None]
+
+
+def test_sem_rota_em_comum_e_recurso_novo_mesmo_com_nome_igual():
+    """Decisão: sem ligação pelo nome — sem rota em comum é outro recurso."""
+    recurso = _Rec({"name": "Tarefas"}, [_Op("GET", {"path": "/outra"})])
+    montado = _montar({}, [recurso], draft=DRAFT_TAREFAS)
+
+    assert "id" not in montado.corpo["resources"][0]
+    assert montado.avisos[0].startswith("Os recursos abaixo existem no Manager")
+    assert "  - Tarefas\n" in montado.avisos[0]
+
+
+def test_parear_desempata_por_quantidade_e_depois_pelo_nome():
+    remotos = [("X", [("GET", "/a"), ("GET", "/b")])]
+    # mais rotas em comum vence, mesmo com outro nome
+    assert revision_payload.parear_por_rotas(
+        [("X", [("GET", "/a")]), ("Y", [("GET", "/a"), ("GET", "/b")])], remotos
+    ) == {1: 0}
+    # empatado em rotas, vence o de mesmo nome
+    assert revision_payload.parear_por_rotas(
+        [("Y", [("GET", "/a")]), ("X", [("GET", "/b")])], remotos
+    ) == {1: 0}
+
+
+# --- conferência com homônimos ----------------------------------------------
+
+
+def test_conferir_homonimos_publicados_como_enviados_nao_diverge():
+    montado = _montar({}, _letras_homonimos(), draft=DRAFT_LETRAS_HOMONIMOS)
+    publicado = json.loads(json.dumps(montado.corpo))
+    publicado["resources"].reverse()  # a ordem do GET não é contrato
+
+    assert revision_payload.conferir(montado.corpo, publicado, esperado=montado.esperado) == []
+
+
+def test_conferir_acusa_rota_descartada_de_um_dos_homonimos():
+    montado = _montar({}, _letras_homonimos(), draft=DRAFT_LETRAS_HOMONIMOS)
+    publicado = json.loads(json.dumps(montado.corpo))
+    publicado["resources"][1]["operations"] = []
+
+    divergencias = revision_payload.conferir(montado.corpo, publicado)
+    assert (
+        "a operação POST /tarefas/{id}/letras, do recurso Letras (rota POST "
+        "/tarefas/{id}/letras), foi enviada mas não está no Manager"
+    ) in divergencias
+
+
+def test_conferir_acusa_rota_que_o_manager_nao_moveu():
+    """W-6: a mudança de recurso pode ser descartada com 200."""
+    recursos = [
+        _Rec({"name": "Tarefas"}, [_Op("GET", {"path": "/tarefas/{id}"})], slug="tarefas"),
+        _Rec({"name": "Tarefas"}, [_Op("GET", {"path": "/tarefas"})], slug="tarefas 2"),
+    ]
+    montado = _montar({}, recursos, draft=DRAFT_TAREFAS)
+
+    divergencias = revision_payload.conferir(montado.corpo, DRAFT_TAREFAS)
+    assert (
+        "o recurso Tarefas (rota GET /tarefas) foi enviado mas não está no Manager"
+    ) in divergencias
