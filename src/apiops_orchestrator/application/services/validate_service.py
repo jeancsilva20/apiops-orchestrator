@@ -13,6 +13,7 @@ Recebe **ports**, nunca adapters concretos, espelhando o `CompletenessService`.
 """
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -51,7 +52,10 @@ from apiops_orchestrator.domain.ports.local_file_importer_port import (
 )
 from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
 from apiops_orchestrator.domain.services import revision_payload
-from apiops_orchestrator.domain.services.interceptor_flow import fluxo_efetivo
+from apiops_orchestrator.domain.services.interceptor_flow import (
+    fluxo_efetivo,
+    particionar,
+)
 from apiops_orchestrator.domain.services.template_conformance import comparar
 
 logger = logging.getLogger(__name__)
@@ -61,6 +65,31 @@ GATE_COMPLETENESS = 70.0
 
 def _agora() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _so_herda(no: Dict[str, Any]) -> bool:
+    """Sem lista governada própria, o escopo executa o fluxo do escopo acima."""
+    return not particionar(no.get("interceptors"))[0]
+
+
+@dataclass
+class _DonoDoFluxo:
+    """Escopo com fluxo próprio, e quantos escopos abaixo dele só o herdam."""
+
+    escopo: str
+    efetivo: List[Dict[str, Any]]
+    recursos: int = 0
+    rotas: int = 0
+
+    def sufixo_dos_herdeiros(self) -> str:
+        partes = []
+        if self.recursos:
+            partes.append(f"{self.recursos} recurso" + ("s" if self.recursos > 1 else ""))
+        if self.rotas:
+            partes.append(f"{self.rotas} rota" + ("s" if self.rotas > 1 else ""))
+        if not partes:
+            return ""
+        return f" — vale também para {' e '.join(partes)} que herdam este fluxo"
 
 
 class ValidateService:
@@ -229,38 +258,51 @@ class ValidateService:
         return regua
 
     def _conformidade(self, payload: Dict[str, Any], regua) -> List[Achado]:
-        """Compara com a régua o fluxo efetivo DO PAYLOAD, escopo a escopo."""
-        achados: List[Achado] = []
-        raiz = fluxo_efetivo(payload.get("interceptors"), [])
-        achados.extend(
-            self._traduzir(comparar(raiz, regua.interceptors, "raiz da revision"))
-        )
+        """Compara com a régua o fluxo efetivo DO PAYLOAD, escopo a escopo.
+
+        Escopo que só herda executa o mesmo fluxo do escopo acima: compará-lo
+        repetiria os mesmos achados em cada recurso e rota. O achado sai uma vez,
+        no escopo dono do fluxo, dizendo quantos recursos e rotas também o
+        executam.
+        """
+        raiz = _DonoDoFluxo("raiz da revision", fluxo_efetivo(payload.get("interceptors"), []))
+        donos = [raiz]
         for recurso in payload.get("resources") or []:
-            nome = recurso.get("name")
-            efetivo = fluxo_efetivo(recurso.get("interceptors"), raiz)
-            achados.extend(
-                self._traduzir(comparar(efetivo, regua.interceptors, f"resource {nome}"))
-            )
+            if _so_herda(recurso):
+                dono_do_recurso = raiz
+                raiz.recursos += 1
+            else:
+                dono_do_recurso = _DonoDoFluxo(
+                    f"resource {recurso.get('name')}",
+                    fluxo_efetivo(recurso.get("interceptors"), raiz.efetivo),
+                )
+                donos.append(dono_do_recurso)
             for op in recurso.get("operations") or []:
-                rotulo = f"{str(op.get('method') or '').upper()} {op.get('path')}"
-                achados.extend(
-                    self._traduzir(
-                        comparar(
-                            fluxo_efetivo(op.get("interceptors"), efetivo),
-                            regua.interceptors,
-                            rotulo,
-                        )
+                if _so_herda(op):
+                    dono_do_recurso.rotas += 1
+                    continue
+                donos.append(
+                    _DonoDoFluxo(
+                        f"{str(op.get('method') or '').upper()} {op.get('path')}",
+                        fluxo_efetivo(op.get("interceptors"), dono_do_recurso.efetivo),
                     )
                 )
+
+        achados: List[Achado] = []
+        for dono in donos:
+            sufixo = dono.sufixo_dos_herdeiros()
+            achados.extend(
+                self._traduzir(comparar(dono.efetivo, regua.interceptors, dono.escopo), sufixo)
+            )
         return achados
 
     @staticmethod
-    def _traduzir(achados) -> List[Achado]:
+    def _traduzir(achados, sufixo: str = "") -> List[Achado]:
         return [
             Achado(
                 severity=a.severidade,
                 scope=a.escopo,
-                message=a.mensagem,
+                message=a.mensagem + sufixo,
                 interceptor_type=a.tipo,
                 custom_interceptor_id=a.custom_interceptor_id,
             )

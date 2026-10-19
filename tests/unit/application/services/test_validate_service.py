@@ -702,3 +702,76 @@ def test_alterar_content_de_interceptor_existente_chega_ao_put(tmp_path):
     enviado = manager.payload_enviado["interceptors"][0]
     assert enviado["id"] == 11 and '"quota": "500"' in enviado["content"]
     assert view.publicacao.verified is True
+
+
+# --- achado de escopo herdado sai uma vez, no dono do fluxo -------------------
+
+
+class _ManagerComRegua(ManagerFake):
+    def __init__(self, regua_interceptors, **kwargs):
+        super().__init__(**kwargs)
+        self._regua = {"id": 414, "lastRevision": {"revisionNumber": 1,
+                                                   "interceptors": regua_interceptors}}
+
+    def get_api_by_id(self, api_id=None):
+        self.chamadas.append("get_api_by_id")
+        return self._regua if api_id == 414 else self.api
+
+
+def _repo_com_recursos(tmp_path, recurso_a_proprio=False):
+    extras = {
+        "resources/a/resource.yaml": 'name: "A"\n',
+        "resources/a/get_a.yaml": "path: /a\n",
+        "resources/a/post_a.yaml": "path: /a\n",
+        "resources/b/resource.yaml": 'name: "B"\n',
+        "resources/b/get_b.yaml": "path: /b\n",
+    }
+    if recurso_a_proprio:
+        extras["resources/a/resource.yaml"] = (
+            'name: "A"\ninherit: false\ninterceptors_request:\n  - type: Payload size\n'
+            "    content:\n      maxSize: \"1\"\n"
+        )
+    repo = _repo(tmp_path, extras=extras)
+    (repo / "all.yaml").write_text(
+        "destination:\n  url: https://backend\n\n"
+        "interceptors_request:\n  - type: Log\n    content:\n      encryptContent: false\n",
+        encoding="utf-8",
+    )
+    return repo
+
+
+REGUA_SO_RATE_LIMIT = [
+    {"id": 1, "type": "Rate limit", "executionPoint": "FIRST", "position": 0, "content": "{}"},
+]
+
+
+def test_divergencia_da_raiz_sai_uma_vez_com_os_herdeiros(tmp_path):
+    """Recursos e rotas que só herdam não repetem o achado da raiz."""
+    manager = _ManagerComRegua(REGUA_SO_RATE_LIMIT)
+    view = _servico(manager, modo="pipeline").validate(
+        _repo_com_recursos(tmp_path), confirmar=SIM
+    )
+    da_template = [a for a in view.achados if a.scope != "repositório"]
+
+    assert {a.scope for a in da_template} == {"raiz da revision"}
+    assert all(
+        a.message.endswith("vale também para 2 recursos e 3 rotas que herdam este fluxo")
+        for a in da_template
+    )
+
+
+def test_escopo_com_fluxo_proprio_tem_os_proprios_achados_e_herdeiros(tmp_path):
+    manager = _ManagerComRegua(REGUA_SO_RATE_LIMIT)
+    view = _servico(manager, modo="pipeline").validate(
+        _repo_com_recursos(tmp_path, recurso_a_proprio=True), confirmar=SIM
+    )
+    por_escopo = {}
+    for a in view.achados:
+        if a.scope != "repositório":
+            por_escopo.setdefault(a.scope, []).append(a.message)
+
+    assert set(por_escopo) == {"raiz da revision", "resource A"}
+    assert all(m.endswith("1 recurso e 1 rota que herdam este fluxo")
+               for m in por_escopo["raiz da revision"])
+    assert all(m.endswith("2 rotas que herdam este fluxo") for m in por_escopo["resource A"])
+
