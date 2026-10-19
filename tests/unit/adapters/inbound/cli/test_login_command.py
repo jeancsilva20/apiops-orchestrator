@@ -1,4 +1,8 @@
+import json
+import re
+
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from apiops_orchestrator.adapters.inbound.cli.cli_adapter import app
@@ -125,3 +129,62 @@ def test_login_categories_map_to_exit_codes(exc, expected_code, expected_fragmen
     result = runner.invoke(app, ["sen", "login"], obj=_obj_with(failing_exc=exc))
     assert result.exit_code == expected_code
     assert expected_fragment in result.output
+
+
+# --- saída estruturada (-o json | yaml) --------------------------------------
+
+
+
+ISO_UTC = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+
+def test_flag_output_aparece_no_help():
+    resultado = runner.invoke(app, ["sen", "login", "--help"])
+    assert resultado.exit_code == 0
+    assert "--output" in resultado.output
+
+
+def test_json_developer_traz_so_o_documento_do_contrato():
+    resultado = runner.invoke(app, ["sen", "login", "-o", "json"], obj=_obj_with())
+
+    assert resultado.exit_code == 0
+    doc = json.loads(resultado.output)  # stdout é só o documento
+    assert list(doc) == ["schema", "authenticated", "user", "expiresAt"]
+    assert doc["schema"] == "apiops.sen-login/v1"
+    assert doc["authenticated"] is True
+    assert doc["user"] == {"name": "ci.runner", "email": "runner@company.test"}
+    assert ISO_UTC.match(doc["expiresAt"])
+
+
+def test_yaml_super_admin_sem_identidade_pessoal():
+    resultado = runner.invoke(
+        app, ["sen", "login", "-o", "yaml"], obj=_obj_with(session=_super_admin_session())
+    )
+
+    assert resultado.exit_code == 0
+    doc = yaml.safe_load(resultado.output)
+    assert list(doc) == ["schema", "authenticated", "profile", "scope", "expiresAt"]
+    assert doc["profile"] == "super-admin" and doc["scope"] == "admin"
+    assert "user" not in doc
+
+
+@pytest.mark.parametrize("formato", ["json", "yaml"])
+@pytest.mark.parametrize("sessao", [_developer_session, _super_admin_session])
+def test_modo_estruturado_sem_token_e_sem_elementos_visuais(formato, sessao):
+    resultado = runner.invoke(
+        app, ["sen", "login", "-o", formato], obj=_obj_with(session=sessao())
+    )
+
+    assert resultado.exit_code == 0
+    for proibido in (TOKEN_DEV, TOKEN_ADMIN, "Bearer", "Autenticando", "Login realizado"):
+        assert proibido not in resultado.output
+    assert "groups" not in resultado.output.lower()
+
+
+def test_erro_de_login_em_json_mantem_mensagem_e_exit_code():
+    resultado = runner.invoke(
+        app, ["sen", "login", "-o", "json"],
+        obj=_obj_with(failing_exc=AuthenticationRejectedError("Credencial recusada")),
+    )
+    assert resultado.exit_code == 3
+    assert "Credencial recusada" in resultado.output

@@ -5,10 +5,11 @@ import sys
 import textwrap
 from contextlib import contextmanager
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import typer
-from typing import Any, Callable, NoReturn, Optional, cast
+from typing import Any, Callable, Dict, NoReturn, Optional, cast
 from rich import print as rprint
 from rich import box
 from rich import get_console
@@ -240,13 +241,18 @@ def _exit_on_unexpected(exc: Exception, command: str, exit_code: int = 1) -> NoR
     raise typer.Exit(code=exit_code)
 
 
-def _authenticate_with_feedback(service_builder: Callable[[], Any]):
+def _authenticate_with_feedback(service_builder: Callable[[], Any], narrar: bool = True):
     """Runs the login flow with a spinner only when stdout is a terminal.
 
     In non-interactive stdout (CI runner, redirected output, docker logs),
     Rich's Live turns each animation frame into plain new lines polluting
     machine-readable output, so we fall back to a single dim status line.
+
+    With `narrar=False` (`-o json`/`-o yaml`) there is no feedback at all: stdout
+    carries only the document the pipeline will parse.
     """
+    if not narrar:
+        return service_builder().login()
     if not get_console().is_terminal:
         rprint("[dim]Autenticando...[/dim]")
         return service_builder().login()
@@ -264,12 +270,44 @@ def _authenticate_with_feedback(service_builder: Callable[[], Any]):
         live.stop()
 
 
+SCHEMA_SEN_LOGIN_V1 = "apiops.sen-login/v1"
+
+
+def _iso_utc(momento: Optional[datetime]) -> Optional[str]:
+    if momento is None:
+        return None
+    if momento.tzinfo is not None:
+        momento = momento.astimezone(timezone.utc)
+    return momento.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _documento_login(session: Any) -> Dict[str, Any]:
+    """Contrato `apiops.sen-login/v1`: o mesmo que o painel mostra, por perfil.
+
+    Nenhum token, em nenhum perfil. O super-admin não expõe identidade pessoal.
+    """
+    documento: Dict[str, Any] = {"schema": SCHEMA_SEN_LOGIN_V1, "authenticated": True}
+    if session.is_super_admin:
+        documento["profile"] = session.profile
+        documento["scope"] = session.scope
+    else:
+        documento["user"] = {"name": session.userName, "email": session.userEmail}
+    documento["expiresAt"] = _iso_utc(session.expiresAt)
+    return documento
+
+
 @sen_app.command("login")
-def login(ctx: typer.Context):
+def login(
+    ctx: typer.Context,
+    output: OutputFormat = typer.Option(
+        OutputFormat.TEXT, "--output", "-o", help="Output format (text, json, yaml)."
+    ),
+):
     """
     Authenticate against the Orchestrator Auth API and store the local session.
     Requires the SEN_CREDENTIALS environment variable (Base64 of client_id:secret).
     """
+    estruturado = output is not OutputFormat.TEXT
     try:
         login_service_factory = (ctx.obj or {}).get("login_service_factory")
         if not callable(login_service_factory):
@@ -278,15 +316,20 @@ def login(ctx: typer.Context):
             )
             raise typer.Exit(code=1)
 
-        print_welcome()
+        if not estruturado:
+            print_welcome()
         session = _authenticate_with_feedback(
-            cast(Callable[[], Any], login_service_factory)
+            cast(Callable[[], Any], login_service_factory), narrar=not estruturado
         )
     except LoginError as e:
         rprint(f"[bold red]Erro de login:[/bold red] {e.message}")
         raise typer.Exit(code=e.exit_code)
     except typer.Exit as e:
         raise e
+
+    if estruturado:
+        display_output(_documento_login(session), output_format=output)
+        return
 
     expires_at = (
         session.expiresAt.strftime("%d/%m/%Y %H:%M UTC") if session.expiresAt else "-"
