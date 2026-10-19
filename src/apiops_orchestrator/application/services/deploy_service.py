@@ -460,7 +460,7 @@ class DeployService:
             raise self._falha(
                 base,
                 f"O Manager aceitou o deploy (id {deployment_id}), mas a releitura "
-                f"não mostra a revisão {revisao.get('revisionNumber')} no ar no "
+                f"não mostra a revisão {revisao.get('revisionNumber')} deployada no "
                 f"ambiente {ambiente.manager_id}. Confira o ambiente no Manager.",
                 attempted=True,
                 accepted=True,

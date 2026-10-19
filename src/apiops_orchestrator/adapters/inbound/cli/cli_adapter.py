@@ -1353,7 +1353,7 @@ def _render_publish_text(view: PublishView) -> None:
     # Recusa, divergência e erro encerram antes de chegar aqui: só o
     # sucesso conferido é renderizado.
     numero = view.revision.revision_number
-    rprint(f"[bold]Revisão {numero}[/bold]  [green]gravada e conferida[/green]")
+    rprint(f"[bold]Revisão {numero}[/bold]  [green]gravada[/green]")
     rprint()
 
 
@@ -1413,7 +1413,7 @@ def publish(
 
 def _descrever_estado(estado: Optional[DeployState]) -> str:
     if estado is None:
-        return "[grey53]nenhuma revisão desta API no ar[/grey53]"
+        return "[grey53]nenhuma revisão desta API deployada[/grey53]"
     texto = f"[white]revisão #{estado.revision_number}[/white]"
     detalhe = f"deploy {estado.deployment_id}"
     if estado.deployed_at:
@@ -1487,8 +1487,8 @@ def _render_deploy_text(view: DeployView) -> None:
     rprint()
     rprint(
         f"[bold]Revisão {view.revision.revision_number}[/bold]  "
-        f"[green]no ar no ambiente {view.environment.name or view.environment.manager_id}"
-        " e conferida[/green]"
+        f"[green]deployada no ambiente {view.environment.name or view.environment.manager_id}"
+        "[/green]"
     )
     rprint()
 

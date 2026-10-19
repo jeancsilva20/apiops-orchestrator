@@ -136,14 +136,14 @@ def test_texto_mostra_ambiente_estados_e_resultado():
     assert resultado.exit_code == 0
     assert "DEV-APIOPS" in saida and "#3" in saida and "9327" in saida
     assert "revisão #2" in saida and "revisão #3" in saida
-    assert "conferida" in saida
+    assert "Revisão 3 deployada no ambiente DEV-APIOPS" in saida
 
 
 def test_texto_sem_estado_anterior():
     resultado = runner.invoke(
         app, ["sen", "deploy"], obj=_ctx(_ServicoFake(_view(previous_state=None)))
     )
-    assert "nenhuma revisão desta API no ar" in " ".join(resultado.output.split())
+    assert "nenhuma revisão desta API deployada" in " ".join(resultado.output.split())
 
 
 # --- exit codes --------------------------------------------------------------

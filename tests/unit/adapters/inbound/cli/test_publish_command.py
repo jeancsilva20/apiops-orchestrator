@@ -138,7 +138,7 @@ def test_texto_mostra_a_revisao_alvo_e_o_resultado():
     assert resultado.exit_code == 0
     assert "Publicação" in saida
     assert "#2" in saida and "9175" in saida
-    assert "gravada e conferida" in saida
+    assert "Revisão 2 gravada" in saida
     assert "30000 ms" in saida
 
 
