@@ -29,6 +29,7 @@ from apiops_orchestrator.application.services.admin_token_provider import (
 from apiops_orchestrator.application.services.api_listing_service import (
     ApiListingService,
 )
+from apiops_orchestrator.application.services.deploy_service import DeployService
 from apiops_orchestrator.application.services.publish_service import PublishService
 from apiops_orchestrator.application.services.regua_service import ReguaService
 from apiops_orchestrator.application.services.validate_service import (
@@ -185,6 +186,26 @@ def build_publish_service_factory():
     return factory
 
 
+def build_deploy_service_factory():
+    """Factory do `sen deploy`, montada preguiçosamente como a do `publish`."""
+
+    def factory() -> DeployService:
+        settings = _load_settings()
+        manager_adapter = ManagerApiAdapter(
+            token=_build_admin_token(settings),
+            base_path="/api-manager/api/v3/",
+            max_retries=3,
+            settings=settings,
+        )
+        return DeployService(
+            manager_api=manager_adapter,
+            importer=LocalFileImporterAdapter(),
+            settings=settings,
+        )
+
+    return factory
+
+
 def build_manager_api_factory():
     """Adapter do Manager + settings, para os diagnósticos somente leitura."""
 
@@ -308,6 +329,7 @@ def main():
             "completeness_service_factory": build_completeness_service_factory(),
             "validate_service_factory": build_validate_service_factory(),
             "publish_service_factory": build_publish_service_factory(),
+            "deploy_service_factory": build_deploy_service_factory(),
             "regua_service_factory": build_regua_service_factory(),
             "manager_api_factory": build_manager_api_factory(),
         }

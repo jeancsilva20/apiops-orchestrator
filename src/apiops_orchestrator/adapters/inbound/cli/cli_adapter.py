@@ -34,7 +34,12 @@ from apiops_orchestrator.application.exceptions.completeness_exceptions import (
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
     ValidateError,
 )
+from apiops_orchestrator.application.exceptions.deploy_exceptions import (
+    DeployError,
+    DeployFalhouError,
+)
 from apiops_orchestrator.domain.models.completeness_view import CompletenessView
+from apiops_orchestrator.domain.models.deploy_model import DeployState, DeployView
 from apiops_orchestrator.domain.models.publish_view import PublishView
 from apiops_orchestrator.domain.models.validate_view import (
     ESCOPO_REPOSITORIO,
@@ -1416,6 +1421,136 @@ def publish(
         raise typer.Exit(code=e.exit_code)
     except Exception as e:
         _exit_on_unexpected(e, command="publish")
+
+
+def _descrever_estado(estado: Optional[DeployState]) -> str:
+    if estado is None:
+        return "[grey53]nenhuma revisão desta API no ar[/grey53]"
+    texto = f"[white]revisão #{estado.revision_number}[/white]"
+    detalhe = f"deploy {estado.deployment_id}"
+    if estado.deployed_at:
+        detalhe += f" · {estado.deployed_at}"
+    return f"{texto} [grey53]({detalhe})[/grey53]"
+
+
+def _render_deploy_text(view: DeployView) -> None:
+    """Renderiza a resposta do `deploy` — mesma árvore de `json`/`yaml`."""
+    width = _largura_validate()
+
+    identidade = [("API", f"[bold white]{view.api.name or '-'}[/bold white]")]
+    detalhe = f"id {view.api.manager_id}"
+    if view.api.version:
+        detalhe += f"  ·  v{view.api.version}"
+    if view.api.base_path:
+        detalhe += f"  ·  {view.api.base_path}"
+    identidade.append(("", f"[grey53]{detalhe}[/grey53]"))
+    identidade.append(
+        (
+            "Revisão",
+            f"[white]#{view.revision.revision_number}[/white] "
+            f"[grey53](id {view.revision.manager_id})[/grey53]",
+        )
+    )
+    identidade.append(
+        (
+            "Ambiente",
+            f"[white]{view.environment.name or '-'}[/white] "
+            f"[grey53](id {view.environment.manager_id})[/grey53]",
+        )
+    )
+    identidade.append(("Modo", f"[grey53]{view.execution_mode}[/grey53]"))
+
+    rprint()
+    rprint(_painel_validate("Deploy", _grade_de_campos(identidade), width=width))
+    rprint()
+
+    if view.avisos:
+        rprint(f"[bold]Avisos[/bold]  [yellow]{len(view.avisos)}[/yellow]")
+        _render_avisos_do_repo(
+            [
+                Achado(severity=SEVERIDADE_WARNING, scope=ESCOPO_REPOSITORIO, message=a)
+                for a in view.avisos
+            ]
+        )
+        rprint()
+
+    gov = view.governanca
+    if gov.stage_id is not None:
+        criterios = [f"{len(gov.required)} atributo(s) exigido(s)"]
+        if gov.completeness_required:
+            criterios.append(
+                f"completeness {gov.completeness_actual:.1f} de "
+                f"{gov.completeness_required:.1f} exigida"
+            )
+        if gov.deployable_environments:
+            criterios.append("ambiente permitido pelo stage")
+        rprint(
+            f"[bold]Governança[/bold]  [green]liberada[/green] "
+            f"[grey53]({', '.join(criterios)})[/grey53]"
+        )
+        rprint(
+            f"  [grey53]workflow {gov.workflow_id} · stage {gov.stage_id} "
+            "(lidos da revisão)[/grey53]"
+        )
+        rprint()
+
+    rprint(f"[bold]Antes[/bold]   {_descrever_estado(view.previous_state)}")
+    rprint(f"[bold]Agora[/bold]   {_descrever_estado(view.new_state)}")
+    rprint()
+    rprint(
+        f"[bold]Revisão {view.revision.revision_number}[/bold]  "
+        f"[green]no ar no ambiente {view.environment.name or view.environment.manager_id}"
+        " e conferida[/green]"
+    )
+    rprint()
+
+
+@sen_app.command("deploy")
+def deploy(
+    ctx: typer.Context,
+    repo: Optional[Path] = typer.Option(
+        None, "--repo", help="Repositório da API (default: diretório atual)."
+    ),
+    output: OutputFormat = typer.Option(
+        OutputFormat.TEXT, "--output", "-o", help="Output format (text, json, yaml)."
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbosity only."),
+):
+    """
+    Deploy the revision set in TARGET_REVISION_NUMBER to TARGET_ENVIRONMENT_ID (pipeline only).
+    """
+    try:
+        service_factory = (ctx.obj or {}).get("deploy_service_factory")
+        if not callable(service_factory):
+            rprint("[bold red]Erro:[/bold red] Serviço de deploy indisponível no contexto.")
+            raise typer.Exit(code=1)
+
+        service = cast(Callable[[], Any], service_factory)()
+        progresso = _ProgressoValidate(
+            rotulo_inicial="Fazendo o deploy", narrar=output is OutputFormat.TEXT
+        )
+        with progresso:
+            view = service.deploy(repo_path=repo or Path.cwd(), progresso=progresso.etapa)
+
+        display_output(
+            view.to_document(),
+            output_format=output,
+            text_callback=lambda: _render_deploy_text(view),
+        )
+
+    except typer.Exit:
+        raise
+    except DeployFalhouError as e:
+        if output is OutputFormat.TEXT:
+            rprint(f"[bold red]Erro:[/bold red] {e.message}")
+        else:
+            display_output(e.view.to_document(), output_format=output)
+        raise typer.Exit(code=e.exit_code)
+    except DeployError as e:
+        rprint(f"[bold red]Erro:[/bold red] {e.message}")
+        raise typer.Exit(code=e.exit_code)
+    except Exception as e:
+        _exit_on_unexpected(e, command="deploy")
 
 
 # ---------------------------------------------------------------------------
