@@ -481,3 +481,64 @@ def test_platform_messages_unwraps_envelope_defensively(mock_settings, body, exp
             adapter.update_revision(9161, {})
 
     assert excinfo.value.messages == expected
+
+
+# ---------------------------------------------------------------------------
+# Deploy
+# ---------------------------------------------------------------------------
+
+
+def test_deploy_revision_posta_o_corpo_da_ui_e_devolve_o_id(mock_settings):
+    adapter = _make_adapter(mock_settings)
+
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.return_value = {"id": 267}
+        deployment_id = adapter.deploy_revision(7, 9327)
+
+    assert deployment_id == 267
+    kwargs = mock_request.call_args.kwargs
+    assert kwargs["method"] == "POST"
+    assert kwargs["url"] == "http://urltest.com/api-manager/api/v3/deployments"
+    assert kwargs["json"] == {"environmentId": 7, "revisionId": 9327, "status": "DEPLOYED"}
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "expected"),
+    [
+        (
+            400,
+            {"result": "failure", "errors": [{"path": "environment", "type": "INVALID",
+             "message": "Environment Variable '$backend' have not found"}], "status": 400},
+            ["Environment Variable '$backend' have not found"],
+        ),
+        (
+            404,
+            {"result": "failure", "errors": [{"path": "environment", "type": "INVALID",
+             "message": "Environment not found."}], "status": 404},
+            ["Environment not found."],
+        ),
+    ],
+)
+def test_deploy_revision_recusa_carrega_a_mensagem_da_plataforma(
+    mock_settings, status, body, expected
+):
+    adapter = _make_adapter(mock_settings)
+
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.side_effect = HttpClient4xxError(
+            status_code=status, title="x", detail="x", body=body
+        )
+        with pytest.raises(ManagerApiTransportRejectedError) as excinfo:
+            adapter.deploy_revision(7, 9327)
+
+    assert excinfo.value.status_code == status
+    assert excinfo.value.messages == expected
+
+
+def test_deploy_revision_5xx_esgotado_vira_indisponivel(mock_settings):
+    adapter = _make_adapter(mock_settings)
+
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.side_effect = HttpClientServerError("Internal Server Error")
+        with pytest.raises(ManagerApiTransportUnavailableError):
+            adapter.deploy_revision(7, None)

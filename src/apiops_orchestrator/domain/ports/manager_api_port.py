@@ -144,6 +144,10 @@ class ManagerApiPort(ABC):
         """
 
     @abstractmethod
+    def deploy_revision(self, environment_id: int, revision_id: int) -> Optional[int]:
+        """Coloca a revisão no ar no ambiente e devolve o id do deploy."""
+
+    @abstractmethod
     def get_workflow(self, workflow_id: int) -> Dict[str, Any]:
         """Workflow do Adaptive Governance, com `stages[].attributesRequisites`."""
 

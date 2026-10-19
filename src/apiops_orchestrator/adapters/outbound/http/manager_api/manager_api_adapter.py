@@ -467,6 +467,18 @@ class ManagerApiAdapter(ManagerApiPort):
         """PUT denso na revisão — atualiza a existente, nunca cria (D-005 §9)."""
         return self._request("PUT", f"revisions/{revision_id}", json=payload)
 
+    def deploy_revision(self, environment_id: int, revision_id: int) -> Optional[int]:
+        resposta = self._request(
+            "POST",
+            "deployments",
+            json={
+                "environmentId": environment_id,
+                "revisionId": revision_id,
+                "status": "DEPLOYED",
+            },
+        )
+        return _wire_int(resposta.get("id")) if isinstance(resposta, dict) else None
+
     def get_workflow(self, workflow_id: int) -> Dict[str, Any]:
         return self._request(
             "GET", f"workflows/{workflow_id}", base_path=GOVERNANCE_BASE_PATH
