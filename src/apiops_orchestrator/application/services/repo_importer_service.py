@@ -233,6 +233,26 @@ class RepositorioCarregado:
         return sum(len(r.operacoes) for r in self.recursos)
 
 
+def _motivo_da_leitura(exc: Exception) -> str:
+    """Por que o arquivo não pôde ser lido, em termos de quem vai corrigi-lo.
+
+    O adapter embrulha o erro do parser numa mensagem com o caminho absoluto da
+    máquina e o rastro inteiro do PyYAML. O que interessa ao dev é a linha, a
+    coluna e o problema — o erro original vem encadeado e tem as três coisas.
+    """
+    origem = exc.__cause__ or exc.__context__
+    marca = getattr(origem, "problem_mark", None)
+    if marca is not None:
+        problema = getattr(origem, "problem", None)
+        local = f"linha {marca.line + 1}, coluna {marca.column + 1}"
+        return f"erro de sintaxe YAML na {local}" + (f" ({problema})" if problema else "")
+    if isinstance(exc, PermissionError) or isinstance(origem, PermissionError):
+        return "sem permissão de leitura"
+    if isinstance(origem, UnicodeDecodeError):
+        return "o arquivo não está em UTF-8"
+    return "conteúdo inválido"
+
+
 class RepoCanonicalReader:
     """Lê um repositório no layout canônico. Sem rede — esta é a E1 inteira."""
 
@@ -257,7 +277,7 @@ class RepoCanonicalReader:
                 # Não engolir: um arquivo ilegível é falha do repositório, e o
                 # caso real existe — `replaceChar: *****` sem aspas torna o
                 # arquivo imparseável.
-                ilegiveis.append(f"{caminho_relativo}: {exc}")
+                ilegiveis.append(f"{caminho_relativo}: {_motivo_da_leitura(exc)}")
                 self.logger.info("repo.arquivo_ilegivel caminho=%s", caminho_relativo)
                 return {}
 

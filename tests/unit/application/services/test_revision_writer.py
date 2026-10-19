@@ -6,6 +6,7 @@ from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_import
     LocalFileImporterAdapter,
 )
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
+    ArquivoIlegivelError,
     RotaDuplicadaError,
 )
 from apiops_orchestrator.application.services.revision_writer import RevisionWriter
@@ -74,3 +75,36 @@ def test_nomes_repetidos_com_rotas_distintas_carregam(tmp_path):
         "resources/letras-b/post_tarefas_{id}_letras.yaml": "path: /tarefas/{id}/letras\n",
     })
     assert len(_writer().carregar(repo).recursos) == 2
+
+
+# --- arquivo que existe mas não pôde ser lido -------------------------------
+
+
+def test_yaml_com_erro_de_sintaxe_aponta_linha_e_coluna_sem_caminho_da_maquina(tmp_path):
+    repo = _repo(tmp_path, {
+        "resources/letras/resource.yaml": "name: [quebrado\n  : :\n",
+    })
+
+    with pytest.raises(ArquivoIlegivelError) as capturado:
+        _writer().carregar(repo)
+
+    mensagem = capturado.value.message
+    assert capturado.value.exit_code == 1
+    assert mensagem.startswith(
+        "O arquivo `resources/letras/resource.yaml` não pôde ser lido: erro de "
+        "sintaxe YAML na linha "
+    )
+    assert "Corrija o arquivo e rode o comando novamente." in mensagem
+    assert "Não encontrei" not in mensagem
+    assert str(tmp_path) not in mensagem
+    assert "Error parsing" not in mensagem
+
+
+def test_arquivo_ilegivel_nao_e_tratado_como_ausente(tmp_path):
+    repo = _repo(tmp_path, {"resources/x/resource.yaml": 'name: "X"\n'})
+    (repo / "all.yaml").write_text("interceptors_request: [\n", encoding="utf-8")
+
+    with pytest.raises(ArquivoIlegivelError) as capturado:
+        _writer().carregar(repo)
+
+    assert capturado.value.caminho == "all.yaml"

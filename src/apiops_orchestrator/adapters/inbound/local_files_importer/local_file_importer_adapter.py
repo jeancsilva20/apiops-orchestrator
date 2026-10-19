@@ -24,8 +24,10 @@ class LocalFileImporterAdapter(LocalFileImporterPort):
             self.logger.error(f"Permission denied: {path}")
             raise PermissionError(f"Permission denied when trying to read file at '{path}'.")
         except yaml.YAMLError as e:
-            self.logger.error(f"Error parsing YAML/JSON file {path}: {e}")
-            raise ValueError(f"Error parsing file at '{path}': {e}")
+            # Debug, não error: quem chama decide o desfecho e já explica a linha
+            # e a coluna ao dev. Em error, o rastro do parser saía no terminal.
+            self.logger.debug(f"Error parsing YAML/JSON file {path}: {e}")
+            raise ValueError(f"Error parsing file at '{path}': {e}") from e
         except Exception as e:
             self.logger.error(f"Unexpected error reading {path}: {e}")
             raise RuntimeError(f"An unexpected error occurred while reading '{path}': {e}")

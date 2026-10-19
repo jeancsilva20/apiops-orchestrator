@@ -21,6 +21,7 @@ from apiops_orchestrator.application.exceptions.manager_failure_messages import 
     INTERNAL_ERROR_MESSAGE,
 )
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
+    ArquivoIlegivelError,
     GovernanceBlockedError,
     IdentidadeDivergenteError,
     LayoutInvalidoError,
@@ -93,10 +94,8 @@ class RevisionWriter:
                 pista = f"Arquivos não reconhecidos na mesma árvore: {', '.join(lido.ignorados[:3])}."
             raise LayoutInvalidoError(ausente, pista or None)
         if lido.ilegiveis:
-            raise LayoutInvalidoError(
-                lido.ilegiveis[0].split(":")[0],
-                "O arquivo existe mas não pôde ser lido: " + lido.ilegiveis[0],
-            )
+            caminho, _, motivo = lido.ilegiveis[0].partition(": ")
+            raise ArquivoIlegivelError(caminho, motivo)
         self._sem_rota_duplicada(lido)
         return lido
 

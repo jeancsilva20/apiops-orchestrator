@@ -90,6 +90,23 @@ class LayoutInvalidoError(ValidateError):
         self.caminho_esperado = caminho_esperado
 
 
+class ArquivoIlegivelError(ValidateError):
+    """Um arquivo do repositório existe, mas não pôde ser lido.
+
+    Diferente do arquivo ausente: o dev precisa saber o que corrigir dentro dele
+    — linha e coluna do erro de sintaxe —, não que ele "não foi encontrado".
+    """
+
+    def __init__(self, caminho: str, motivo: str):
+        super().__init__(
+            f"O arquivo `{caminho}` não pôde ser lido: {motivo}.\n\n"
+            "Corrija o arquivo e rode o comando novamente. O comando parou antes de "
+            "acessar o Manager."
+        )
+        self.caminho = caminho
+        self.motivo = motivo
+
+
 class RotaDuplicadaError(ValidateError):
     """Duas operações do repositório declaram a mesma rota (I-6).
 
