@@ -153,32 +153,75 @@ def comparar(
     for ponto in PONTOS:
         achados.extend(
             _comparar_ponto(
-                _governados(fluxo_efetivo, ponto), _governados(regua, ponto), escopo
+                _governados(fluxo_efetivo, ponto),
+                _governados(regua, ponto),
+                escopo,
+                _NOME_DO_PONTO[ponto],
             )
         )
     return achados
 
 
+_NOME_DO_PONTO = {"FIRST": "request", "SECOND": "response"}
+
+
 def _comparar_ponto(
-    efetivo: Sequence[Dict[str, Any]], regua: Sequence[Dict[str, Any]], escopo: str
+    efetivo: Sequence[Dict[str, Any]],
+    regua: Sequence[Dict[str, Any]],
+    escopo: str,
+    nome_do_ponto: str,
 ) -> List[Achado]:
     achados: List[Achado] = []
     chaves_efetivo = [_chave(i) for i in efetivo]
     chaves_regua = [_chave(i) for i in regua]
 
+    ausentes: List[Tuple[int, Dict[str, Any]]] = []
+    acrescimos: List[Tuple[int, Dict[str, Any]]] = []
     matcher = difflib.SequenceMatcher(a=chaves_regua, b=chaves_efetivo, autojunk=False)
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag == "equal":
             for item_regua, item_efetivo in zip(regua[i1:i2], efetivo[j1:j2]):
                 achados.extend(_comparar_content(item_regua, item_efetivo, escopo))
-        elif tag == "insert":
-            achados.extend(_achados_append(efetivo[j1:j2], escopo))
-        elif tag == "delete":
-            achados.extend(_achados_ausente(regua[i1:i2], escopo))
-        elif tag == "replace":
-            achados.extend(_achados_ausente(regua[i1:i2], escopo))
-            achados.extend(_achados_append(efetivo[j1:j2], escopo))
+            continue
+        if tag in ("delete", "replace"):
+            ausentes.extend((i, regua[i]) for i in range(i1, i2))
+        if tag in ("insert", "replace"):
+            acrescimos.extend((j, efetivo[j]) for j in range(j1, j2))
+
+    # Um item que só mudou de lugar sai do alinhamento como "falta aqui" mais
+    # "sobra ali" — duas afirmações falsas sobre um item que existe dos dois
+    # lados. O par vira um achado só, de posição; a ordem muda o comportamento.
+    for indice_regua, item_regua in list(ausentes):
+        par = next(
+            ((j, e) for j, e in acrescimos if _chave(e) == _chave(item_regua)), None
+        )
+        if par is None:
+            continue
+        ausentes.remove((indice_regua, item_regua))
+        acrescimos.remove(par)
+        achados.append(
+            _achado_de_posicao(item_regua, indice_regua, par[0], escopo, nome_do_ponto)
+        )
+        achados.extend(_comparar_content(item_regua, par[1], escopo))
+
+    achados.extend(_achados_ausente([i for _, i in ausentes], escopo))
+    achados.extend(_achados_append([i for _, i in acrescimos], escopo))
     return achados
+
+
+def _achado_de_posicao(
+    item: Dict[str, Any], na_regua: int, aqui: int, escopo: str, nome_do_ponto: str
+) -> Achado:
+    return Achado(
+        severidade=SEVERIDADE_WARNING,
+        escopo=escopo,
+        mensagem=(
+            f'"{_rotulo(item)}" executa em outra posição: na template é o '
+            f"{na_regua + 1}º do {nome_do_ponto}, aqui é o {aqui + 1}º"
+        ),
+        tipo=item.get("type"),
+        custom_interceptor_id=_custom_id(item),
+    )
 
 
 def _comparar_content(

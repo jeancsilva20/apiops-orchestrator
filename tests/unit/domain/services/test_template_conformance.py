@@ -262,3 +262,63 @@ def test_content_ilegivel_nao_quebra_o_rotulo():
     regua = [_item("Custom", customInterceptorId=7, content="nao e json")]
     achados = comparar([], regua, "GET /x")
     assert "Custom #7" in achados[0].mensagem
+
+
+# --- item que só mudou de posição -------------------------------------------
+
+
+def _custom(cid, nome):
+    return _item("Custom", customInterceptorId=cid,
+                 content=json.dumps({"id": cid, "name": nome}))
+
+
+def test_item_que_mudou_de_posicao_vira_um_achado_so():
+    """O caso real da 417: o Custom #32 é o 1º na template e o 7º na API.
+
+    Antes saíam dois achados falsos: "não é executado aqui" e "não existe na
+    template". O item existe dos dois lados; o que mudou foi a ordem.
+    """
+    regua = [_custom(32, "Release Notes"), _item("Log", content=LOG), _custom(33, "CyberArk"),
+             _item("Rate limit"), _item("Payload size"), _item("XSS threat protection"),
+             _item("Log", content=LOG)]
+    efetivo = [_item("Log", content=LOG), _custom(33, "CyberArk"), _item("Rate limit"),
+               _item("Payload size"), _item("XSS threat protection"), _item("Log", content=LOG),
+               _custom(32, "Release Notes")]
+
+    achados = comparar(efetivo, regua, "raiz")
+
+    assert [(a.severidade, a.mensagem) for a in achados] == [(
+        SEVERIDADE_WARNING,
+        '"Custom #32 — Release Notes" executa em outra posição: na template é o 1º do '
+        "request, aqui é o 7º",
+    )]
+
+
+def test_item_movido_com_content_diferente_gera_posicao_e_configuracao():
+    regua = [_item("Payload size", content={"maxSize": 10}), _item("Log", content=LOG)]
+    efetivo = [_item("Log", content=LOG), _item("Payload size", content={"maxSize": 99})]
+
+    mensagens = [a.mensagem for a in comparar(efetivo, regua, "raiz")]
+
+    assert any("executa em outra posição" in m for m in mensagens)
+    assert any("configurado diferente" in m and "maxSize" in m for m in mensagens)
+    assert not any("não é executado aqui" in m or "acréscimo" in m for m in mensagens)
+
+
+def test_ausencia_e_acrescimo_de_verdade_continuam_reportados():
+    regua = [_item("Log", content=LOG), _custom(33, "CyberArk")]
+    efetivo = [_item("Log", content=LOG), _custom(32, "Release Notes")]
+
+    mensagens = [a.mensagem for a in comparar(efetivo, regua, "raiz")]
+
+    assert any("Custom #33" in m and "não é executado aqui" in m for m in mensagens)
+    assert any("Custom #32" in m and "acréscimo" in m for m in mensagens)
+    assert not any("outra posição" in m for m in mensagens)
+
+
+def test_posicao_no_response_nomeia_o_response():
+    regua = [_item("Log", "SECOND", content=LOG), _item("Payload size", "SECOND")]
+    efetivo = [_item("Payload size", "SECOND"), _item("Log", "SECOND", content=LOG)]
+
+    mensagens = [a.mensagem for a in comparar(efetivo, regua, "raiz")]
+    assert any("do response" in m for m in mensagens)
