@@ -276,8 +276,8 @@ class GovernanceBlockedError(ValidateError):
             corpo = (
                 "A governança do Manager não liberou a publicação. A API precisa ter "
                 f"estes atributos antes de subir:\n\n{faltantes}\n\n"
-                "Adicione em `apiTags`, no `api-basic-info.yaml`, e rode o comando de "
-                "novo."
+                "Adicione em `apiTags`, no `api-basic-info.yaml`, e rode o comando "
+                "novamente."
             )
         else:
             # O motivo é texto livre e não é só atributo faltante (completude,
