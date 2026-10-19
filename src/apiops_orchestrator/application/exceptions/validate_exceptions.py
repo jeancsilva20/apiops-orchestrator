@@ -90,6 +90,34 @@ class LayoutInvalidoError(ValidateError):
         self.caminho_esperado = caminho_esperado
 
 
+class RotaDuplicadaError(ValidateError):
+    """Duas operações do repositório declaram a mesma rota (I-6).
+
+    A rota `(método, path)` é a identidade da operação, e é por ela que cada
+    pasta é ligada ao seu recurso no Manager (V-12a). Repetida, a ligação fica
+    ambígua — por isso aborta na E1, antes de rede.
+    """
+
+    def __init__(self, repetidas: Dict[str, List[str]]):
+        linhas: List[str] = []
+        for rota, arquivos in repetidas.items():
+            linhas.append(f"`{rota}`, declarada em:")
+            linhas.extend(f"  - {arquivo}" for arquivo in arquivos)
+        abertura = (
+            "A rota abaixo está declarada em mais de um arquivo:"
+            if len(repetidas) == 1
+            else "As rotas abaixo estão declaradas em mais de um arquivo:"
+        )
+        super().__init__(
+            abertura
+            + "\n\n"
+            + "\n".join(linhas)
+            + "\n\nCada rota pertence a um único recurso. Mantenha um só arquivo para "
+            "cada rota. O comando parou antes de acessar o Manager."
+        )
+        self.repetidas = repetidas
+
+
 class CustomInexistenteError(ValidateError):
     """O repositório referencia um `Custom` que não existe no tenant (W-2).
 

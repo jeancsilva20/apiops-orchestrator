@@ -15,7 +15,7 @@ Recebe **ports**, nunca adapters concretos.
 
 import logging
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from apiops_orchestrator.application.exceptions.manager_failure_messages import (
     INTERNAL_ERROR_MESSAGE,
@@ -26,6 +26,7 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
     LayoutInvalidoError,
     PublicacaoDivergenteError,
     PublicacaoRecusadaError,
+    RotaDuplicadaError,
     ValidateError,
 )
 from apiops_orchestrator.application.services.manager_failure_translator import (
@@ -96,7 +97,27 @@ class RevisionWriter:
                 lido.ilegiveis[0].split(":")[0],
                 "O arquivo existe mas não pôde ser lido: " + lido.ilegiveis[0],
             )
+        self._sem_rota_duplicada(lido)
         return lido
+
+    @staticmethod
+    def _sem_rota_duplicada(lido: RepositorioCarregado) -> None:
+        """I-6: cada rota em um só arquivo, mesmo em pastas diferentes.
+
+        A montagem liga as pastas aos recursos do Manager pelas rotas (V-12a);
+        só funciona se cada rota tiver um único dono no repositório, como já
+        tem na plataforma (W-6).
+        """
+        arquivos_por_rota: Dict[str, List[str]] = {}
+        for recurso in lido.recursos:
+            for op in recurso.operacoes:
+                if not op.path:
+                    continue
+                rota = f"{str(op.metodo or '').upper()} {op.path}"
+                arquivos_por_rota.setdefault(rota, []).append(op.caminho)
+        repetidas = {r: a for r, a in arquivos_por_rota.items() if len(a) > 1}
+        if repetidas:
+            raise RotaDuplicadaError(repetidas)
 
     @staticmethod
     def guarda_identidade(spec: Dict[str, Any], api: Dict[str, Any]) -> None:
