@@ -1,4 +1,5 @@
-﻿import pytest
+﻿import pydantic
+import pytest
 from pydantic_settings import SettingsConfigDict
 
 from apiops_orchestrator.config.settings import Settings
@@ -262,3 +263,25 @@ def test_target_revision_number_ausente_fica_sem_valor(monkeypatch):
     monkeypatch.delenv("TARGET_REVISION_NUMBER", raising=False)
 
     assert Settings().TARGET_REVISION_NUMBER is None
+
+
+def test_target_environment_id_vem_da_variavel_da_esteira(monkeypatch):
+    _seed_required(monkeypatch)
+    monkeypatch.setenv("TARGET_ENVIRONMENT_ID", "7")
+
+    assert Settings().TARGET_ENVIRONMENT_ID == 7
+
+
+def test_target_environment_id_ausente_fica_sem_valor(monkeypatch):
+    _seed_required(monkeypatch)
+    monkeypatch.delenv("TARGET_ENVIRONMENT_ID", raising=False)
+
+    assert Settings().TARGET_ENVIRONMENT_ID is None
+
+
+def test_target_environment_id_nao_numerico_falha_na_carga(monkeypatch):
+    _seed_required(monkeypatch)
+    monkeypatch.setenv("TARGET_ENVIRONMENT_ID", "DEV-APIOPS")
+
+    with pytest.raises(pydantic.ValidationError):
+        Settings()

@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     # cada comando decide o que a ausência significa.
     TARGET_REVISION_NUMBER: int | None = None
 
+    # Id, no Manager, do ambiente que recebe o `sen deploy`.
+    TARGET_ENVIRONMENT_ID: int | None = None
+
     KIND_VERSION: str | None = None
 
     # DEPRECADA (fila de templates/schemas, item 10): os `apiTags` são fonte
