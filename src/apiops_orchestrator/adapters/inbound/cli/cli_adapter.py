@@ -34,9 +34,11 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
     ValidateError,
 )
 from apiops_orchestrator.domain.models.completeness_view import CompletenessView
+from apiops_orchestrator.domain.models.publish_view import PublishView
 from apiops_orchestrator.domain.models.validate_view import (
     ESCOPO_REPOSITORIO,
     SEVERIDADE_WARNING,
+    Achado,
     ValidateView,
 )
 from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
@@ -1241,6 +1243,115 @@ def validate(
         _exit_on_unexpected(e, command="validate")
 
 
+def _render_publish_text(view: PublishView) -> None:
+    """Renderiza a resposta do `publish` — mesma árvore de `json`/`yaml`."""
+    width = _largura_validate()
+
+    identidade = [("API", f"[bold white]{view.api.name or '-'}[/bold white]")]
+    detalhe = f"id {view.api.manager_id}"
+    if view.api.version:
+        detalhe += f"  ·  v{view.api.version}"
+    if view.api.base_path:
+        detalhe += f"  ·  {view.api.base_path}"
+    identidade.append(("", f"[grey53]{detalhe}[/grey53]"))
+    identidade.append(
+        (
+            "Revisão",
+            f"[white]#{view.revision.revision_number}[/white] "
+            f"[grey53](id {view.revision.manager_id})[/grey53]",
+        )
+    )
+    identidade.append(("Modo", f"[grey53]{view.execution_mode}[/grey53]"))
+
+    rprint()
+    rprint(_painel_validate("Publicação", _grade_de_campos(identidade), width=width))
+    rprint()
+
+    if view.avisos:
+        rprint(
+            f"[bold]O que vai mudar no Manager[/bold]  "
+            f"[yellow]{len(view.avisos)} aviso(s)[/yellow]"
+        )
+        _render_avisos_do_repo(
+            [
+                Achado(severity=SEVERIDADE_WARNING, scope=ESCOPO_REPOSITORIO, message=a)
+                for a in view.avisos
+            ]
+        )
+        rprint()
+
+    gov = view.governanca
+    if gov.stage_id is not None:
+        rprint(
+            f"[bold]Governança[/bold]  [green]liberada[/green] "
+            f"[grey53]({len(gov.required)} atributo(s) exigido(s), nenhum "
+            "faltando)[/grey53]"
+        )
+        rprint(
+            f"  [grey53]workflow {gov.workflow_id} · stage {gov.stage_id} "
+            "(lidos da revisão)[/grey53]"
+        )
+        rprint()
+
+    numero = view.revision.revision_number
+    if view.publicacao.attempted:
+        # Divergência e recusa viram erro antes de chegar aqui: só o sucesso
+        # conferido é renderizado.
+        rprint(f"[bold]Revisão {numero}[/bold]  [green]gravada e conferida[/green]")
+    else:
+        rprint(f"[grey53]Revisão {numero} não gravada — publicação não confirmada.[/grey53]")
+    rprint()
+
+
+@sen_app.command("publish")
+def publish(
+    ctx: typer.Context,
+    repo: Optional[Path] = typer.Option(
+        None, "--repo", help="Repositório da API (default: diretório atual)."
+    ),
+    output: OutputFormat = typer.Option(
+        OutputFormat.TEXT, "--output", "-o", help="Output format (text, json, yaml)."
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbosity only."),
+):
+    """
+    Publish the API repository to the revision set in TARGET_REVISION_NUMBER.
+    """
+    try:
+        service_factory = (ctx.obj or {}).get("publish_service_factory")
+        if not callable(service_factory):
+            rprint(
+                "[bold red]Erro:[/bold red] Serviço de publicação indisponível "
+                "no contexto."
+            )
+            raise typer.Exit(code=1)
+
+        service = cast(Callable[[], Any], service_factory)()
+        progresso = _ProgressoValidate(
+            rotulo_inicial="Publicando", narrar=output is OutputFormat.TEXT
+        )
+        with progresso:
+            view = service.publish(
+                repo_path=repo or Path.cwd(),
+                confirmar=lambda m: _confirmar_publicacao(m, progresso),
+                progresso=progresso.etapa,
+            )
+
+        display_output(
+            view.to_document(),
+            output_format=output,
+            text_callback=lambda: _render_publish_text(view),
+        )
+
+    except typer.Exit:
+        raise
+    except ValidateError as e:
+        rprint(f"[bold red]Erro:[/bold red] {e.message}")
+        raise typer.Exit(code=e.exit_code)
+    except Exception as e:
+        _exit_on_unexpected(e, command="publish")
+
+
 # ---------------------------------------------------------------------------
 # sen diag — subcomandos de diagnóstico, ocultos (D-19)
 #
@@ -1427,7 +1538,7 @@ def diag_draft(
 
         manager, settings = cast(Callable[[], Any], fabrica)()
         api = manager.get_api_by_id(spec.get("id")) or {}
-        numero = settings.TARGET_REVISION_NUMBER
+        numero = settings.TARGET_REVISION_NUMBER or 1
         revisao = next(
             (r for r in (api.get("revisions") or []) if r.get("revisionNumber") == numero),
             None,

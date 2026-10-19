@@ -256,8 +256,9 @@ def test_target_revision_number_vem_da_variavel_da_esteira(monkeypatch):
     assert settings.TARGET_REVISION_NUMBER == 3
 
 
-def test_target_revision_number_ausente_assume_a_draft(monkeypatch):
+def test_target_revision_number_ausente_fica_sem_valor(monkeypatch):
+    """Ausente não é 1: na esteira o `sen publish` precisa distinguir (P-1)."""
     _seed_required(monkeypatch)
     monkeypatch.delenv("TARGET_REVISION_NUMBER", raising=False)
 
-    assert Settings().TARGET_REVISION_NUMBER == 1
+    assert Settings().TARGET_REVISION_NUMBER is None

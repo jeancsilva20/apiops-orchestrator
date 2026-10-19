@@ -19,28 +19,17 @@ from typing import Any, Callable, Dict, List, Optional
 
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
     GovernanceBlockedError,
-    IdentidadeDivergenteError,
-    LayoutInvalidoError,
-    PublicacaoDivergenteError,
-    PublicacaoRecusadaError,
     TagInvalidaError,
     ValidateError,
 )
 from apiops_orchestrator.application.services.governance_precheck_service import (
     GovernancePrecheckService,
 )
-from apiops_orchestrator.application.exceptions.manager_failure_messages import (
-    INTERNAL_ERROR_MESSAGE,
-)
-from apiops_orchestrator.application.services.manager_failure_translator import (
-    classify_manager_failure,
-    manager_failure_message,
-)
 from apiops_orchestrator.application.services.regua_service import ReguaService
 from apiops_orchestrator.application.services.repo_importer_service import (
-    RepoCanonicalReader,
     RepositorioCarregado,
 )
+from apiops_orchestrator.application.services.revision_writer import RevisionWriter
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
 from apiops_orchestrator.domain.models.validate_view import (
@@ -60,20 +49,12 @@ from apiops_orchestrator.domain.models.validate_view import (
 from apiops_orchestrator.domain.ports.local_file_importer_port import (
     LocalFileImporterPort,
 )
-from apiops_orchestrator.domain.ports.manager_api_port import (
-    ManagerApiGovernanceBlockedError,
-    ManagerApiPort,
-    ManagerApiTransportRejectedError,
-)
+from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
 from apiops_orchestrator.domain.services import revision_payload
 from apiops_orchestrator.domain.services.interceptor_flow import fluxo_efetivo
 from apiops_orchestrator.domain.services.template_conformance import comparar
 
 logger = logging.getLogger(__name__)
-
-# Recusas da gravação cujo motivo da plataforma orienta a correção do repositório.
-# As demais (sessão, acesso, tamanho, limite de taxa) usam a mensagem da família.
-_STATUS_COM_MOTIVO = frozenset({400, 409, 412, 422})
 
 GATE_COMPLETENESS = 70.0
 
@@ -96,20 +77,7 @@ class ValidateService:
         self._session = session
         self._regua = ReguaService(manager_api, settings)
         self._governanca = GovernancePrecheckService(manager_api)
-        self._cache_custom: Dict[int, Optional[Dict[str, Any]]] = {}
-
-    def _resolver_custom(self, custom_id: int) -> Optional[Dict[str, Any]]:
-        """`{id, name, script}` do catálogo, para o `content` de um `Custom` novo.
-
-        A existência já foi verificada na E2 e aborta lá se faltar; aqui o
-        objetivo é só o conteúdo. O cache evita repetir o GET quando o mesmo
-        `Custom` aparece em vários escopos.
-        """
-        if custom_id not in self._cache_custom:
-            self._cache_custom[custom_id] = self._manager_api.get_custom_interceptor_by_id(
-                custom_id
-            )
-        return self._cache_custom[custom_id]
+        self._escrita = RevisionWriter(manager_api, importer, comando="validate")
 
     # --- cascata -------------------------------------------------------------
 
@@ -131,12 +99,12 @@ class ValidateService:
         etapa = progresso or (lambda _: None)
 
         etapa("Lendo o repositório")
-        lido = self._e1_carregar(repo_path)
+        lido = self._escrita.carregar(repo_path)
         spec = lido.basic_info.get("spec") or {}
 
         etapa("Consultando a API no Manager")
         api = self._manager_api.get_api_by_id(spec.get("id")) or {}
-        self._guarda_identidade(spec, api)
+        self._escrita.guarda_identidade(spec, api)
 
         revisao = self._revisao_alvo(api)
         draft = self._manager_api.get_revision(revisao["id"]) or {}
@@ -155,17 +123,20 @@ class ValidateService:
             basic_info=lido.basic_info,
             raiz=lido.raiz,
             recursos=lido.recursos,
-            resolver_custom=self._resolver_custom,
+            resolver_custom=self._escrita.resolver_custom,
         )
         achados = self._conformidade(montado.corpo, regua)
-        achados.extend(
-            Achado(
-                severity=SEVERIDADE_WARNING,
-                scope=ESCOPO_REPOSITORIO,
-                message=aviso,
+        # Em local, o que vai sair do Manager é mostrado na confirmação, antes
+        # da gravação, e não se repete no resultado. Na esteira não há pergunta.
+        if self._settings.modo_pipeline:
+            achados.extend(
+                Achado(
+                    severity=SEVERIDADE_WARNING,
+                    scope=ESCOPO_REPOSITORIO,
+                    message=aviso,
+                )
+                for aviso in montado.avisos
             )
-            for aviso in montado.avisos
-        )
 
         etapa("Verificando a governança")
         precheck = self._governanca.avaliar(draft, spec.get("apiTags"))
@@ -236,62 +207,25 @@ class ValidateService:
             completeness=completeness,
         )
 
-    # --- E1 ------------------------------------------------------------------
-
-    def _e1_carregar(self, repo_path: Path) -> RepositorioCarregado:
-        """Carrega o repositório. Sem rede — é o que permite abortar antes."""
-        lido = RepoCanonicalReader(self._importer).carregar(str(repo_path))
-        if lido.faltando:
-            ausente = lido.faltando[0]
-            pista = ""
-            if lido.ignorados:
-                pista = f"Arquivos não reconhecidos na mesma árvore: {', '.join(lido.ignorados[:3])}."
-            raise LayoutInvalidoError(ausente, pista or None)
-        if lido.ilegiveis:
-            raise LayoutInvalidoError(
-                lido.ilegiveis[0].split(":")[0],
-                "O arquivo existe mas não pôde ser lido: " + lido.ilegiveis[0],
-            )
-        return lido
-
-    def _guarda_identidade(self, spec: Dict[str, Any], api: Dict[str, Any]) -> None:
-        """Guarda 1 (D-11): `version` e `basePath` definem a identidade da API.
-
-        `spec.id` NÃO aborta — é o endereço do GET, não a identidade funcional.
-        """
-        for campo in ("version", "basePath"):
-            no_repo = spec.get(campo)
-            no_manager = api.get(campo)
-            if no_repo is not None and str(no_repo) != str(no_manager):
-                raise IdentidadeDivergenteError(
-                    campo, str(no_repo), str(no_manager), spec.get("id")
-                )
+    # --- revisão alvo ---------------------------------------------------------
 
     def _revisao_alvo(self, api: Dict[str, Any]) -> Dict[str, Any]:
-        """Resolve a revisão pelo NÚMERO (V-24); o id é detalhe de transporte."""
-        numero = self._settings.TARGET_REVISION_NUMBER
+        """Resolve a revisão pelo NÚMERO (V-24); ausente vale como Draft."""
+        numero = self._settings.TARGET_REVISION_NUMBER or 1
         if not self._settings.modo_pipeline and numero != 1:
             raise ValidateError(
                 f"Em modo local a única revisão publicável é a 1 (Draft), e "
                 f"TARGET_REVISION_NUMBER está em {numero}. A Draft não é ambiente "
                 "e não tem deploy: publicar nela é diagnóstico, não promoção."
             )
-        for revisao in api.get("revisions") or []:
-            if revisao.get("revisionNumber") == numero:
-                return revisao
-        raise ValidateError(
-            f"A API não tem revisão de número {numero}. Disponíveis: "
-            + ", ".join(
-                str(r.get("revisionNumber")) for r in (api.get("revisions") or [])
-            )
-        )
+        return self._escrita.revisao_por_numero(api, numero)
 
     # --- E2 ------------------------------------------------------------------
 
     def _e2_regua(self, lido: RepositorioCarregado):
         """Lê a régua e verifica os `Custom` referenciados — ambos abortam se falham."""
         regua = self._regua.carregar(lido.basic_info)
-        self._regua.verificar_customs(self._customs_referenciados(lido))
+        self._regua.verificar_customs(self._escrita.customs_referenciados(lido))
         return regua
 
     def _conformidade(self, payload: Dict[str, Any], regua) -> List[Achado]:
@@ -319,21 +253,6 @@ class ValidateService:
                     )
                 )
         return achados
-
-    @staticmethod
-    def _customs_referenciados(lido: RepositorioCarregado):
-        """Pares `(id, escopo)` de todo `Custom` que o repositório declara."""
-        def do_bloco(bloco: Dict[str, Any], escopo: str):
-            for chave in ("interceptors_request", "interceptors_response"):
-                for item in bloco.get(chave) or []:
-                    if item.get("type") == "Custom" and item.get("id") is not None:
-                        yield (item["id"], escopo)
-
-        yield from do_bloco(lido.raiz, "all.yaml")
-        for recurso in lido.recursos:
-            yield from do_bloco(recurso.dados or {}, recurso.caminho)
-            for op in recurso.operacoes:
-                yield from do_bloco(op.dados or {}, op.caminho)
 
     @staticmethod
     def _traduzir(achados) -> List[Achado]:
@@ -366,59 +285,24 @@ class ValidateService:
         if not self._settings.modo_pipeline:
             # A pergunta em si ("Deseja prosseguir?") fica na borda: o serviço
             # não sabe que a confirmação é um sim/não de terminal.
-            pergunta = (
+            pergunta = self._escrita.texto_de_confirmacao(
                 "Para validar a sua API, uma versão de rascunho será gravada no "
                 f"API Manager, na revisão {revisao.get('revisionNumber')} "
                 f"(id {revisao['id']}).\n"
-                "Nenhum ambiente recebe deploy, e nada é promovido."
+                "Nenhum ambiente recebe deploy, e nada é promovido.",
+                montado.avisos,
             )
             if not confirmar(pergunta):
                 return PublicacaoResultado(attempted=False)
 
-        # E3: UM ÚNICO PUT (W-7). `workflowId`/`workflowStageId` viajam na cópia
-        # profunda do estado remoto — nada aqui os reescreve (D-020).
-        etapa("Gravando o rascunho no Manager")
-        try:
-            self._manager_api.update_revision(revisao["id"], montado.corpo)
-        except ManagerApiGovernanceBlockedError as exc:
-            # O pré-check liberou, mas a plataforma bloqueou: o workflow que
-            # valida não é o gravado na revisão (V-23 §3). O faltante não é
-            # calculável sem o stage efetivo — degrada para o motivo literal.
-            logger.info(
-                "validate.publicacao.governanca_recusou workflow_erro=%s workflow_revisao=%s",
-                exc.workflow_id,
-                revisao.get("workflowId"),
-            )
-            raise GovernanceBlockedError(
-                workflow_id=exc.workflow_id,
-                stage_id=None,
-                missing=[],
-                raw=exc.raw,
-                motivos=exc.messages,
-            ) from exc
-        except ManagerApiTransportRejectedError as exc:
-            raise self._recusa_da_gravacao(exc) from exc
-
-        # E3.1: HTTP 200 não é prova de sucesso (W-8).
-        etapa("Conferindo o que foi gravado")
-        publicado = self._manager_api.get_revision(revisao["id"]) or {}
-        divergencias = revision_payload.conferir(montado.corpo, publicado)
-        if divergencias:
-            raise PublicacaoDivergenteError(divergencias)
-
-        return PublicacaoResultado(attempted=True, accepted=True, verified=True)
-
-    @staticmethod
-    def _recusa_da_gravacao(exc: ManagerApiTransportRejectedError) -> PublicacaoRecusadaError:
-        """Recusa do `PUT` fora da governança: motivo da plataforma ou mensagem da família."""
-        motivos = exc.messages if exc.status_code in _STATUS_COM_MOTIVO else []
-        logger.info(
-            "validate.publicacao.recusada status_code=%s motivos=%d",
-            exc.status_code,
-            len(motivos),
+        # E3 + E3.1: UM ÚNICO PUT (W-7) e a conferência — 200 não é prova (W-8).
+        return self._escrita.gravar_e_conferir(
+            revisao,
+            montado,
+            etapa=etapa,
+            rotulo_gravacao="Gravando o rascunho no Manager",
+            alvo_recusa="do rascunho",
         )
-        padrao = manager_failure_message(classify_manager_failure(exc))
-        return PublicacaoRecusadaError(padrao or INTERNAL_ERROR_MESSAGE, motivos)
 
     # --- E4 ------------------------------------------------------------------
 

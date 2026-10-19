@@ -395,3 +395,146 @@ def test_conferir_acusa_name_e_description_divergentes():
     assert revision_payload.conferir(enviado, publicado) == [
         "o campo `name` foi enviado como 'Novo' e gravado como 'Antigo'"
     ]
+
+
+# --- o repositório prevalece: content e ordem (regressão do S10) -------------
+
+DRAFT_COM_CONTENT = {
+    "id": 1,
+    "api": {},
+    "resources": [],
+    "interceptors": [
+        {"id": 10, "idTemp": 10, "type": "Log", "executionPoint": "FIRST", "position": 2,
+         "status": "REFERENCE", "content": '{"encryptContent": false}'},
+        {"id": 11, "idTemp": 11, "type": "Rate limit", "executionPoint": "FIRST", "position": 4,
+         "status": "REFERENCE", "content": '{"quota": "1000"}'},
+    ],
+}
+
+RAIZ_ALTERADA = {
+    "interceptors_request": [
+        {"type": "Log", "content": {"encryptContent": False}},
+        {"type": "Rate limit", "content": {"quota": "500"}},
+    ]
+}
+
+
+def test_payload_leva_o_content_alterado_no_repositorio():
+    montado = _montar(RAIZ_ALTERADA, draft=DRAFT_COM_CONTENT)
+    rate = next(i for i in montado.corpo["interceptors"] if i["type"] == "Rate limit")
+    assert json.loads(rate["content"]) == {"quota": "500"}
+    assert rate["id"] == 11
+
+
+def test_esperado_carrega_o_fluxo_declarado_por_escopo():
+    op = _Op("GET", {"path": "/x", "inherit": False,
+                     "interceptors_request": [{"type": "Payload size", "content": {"maxSize": 1}}]})
+    montado = _montar(RAIZ_ALTERADA, [_Rec({"name": "R"}, [op])], draft=DRAFT_COM_CONTENT)
+
+    assert _tipos(montado.esperado["raiz"]) == ["Log", "Rate limit"]
+    assert _tipos(montado.esperado["R/GET /x"]) == ["Payload size"]
+    # herança pura vai como `[]`: não há lista própria para conferir
+    assert "resource R" not in montado.esperado
+
+
+def _publicado_com(*itens):
+    return {"interceptors": list(itens), "resources": [], "api": {}}
+
+
+def test_conferir_acusa_content_que_nao_foi_gravado_como_declarado():
+    """O caso do S10: o 200 e a comparação com o payload davam verde."""
+    montado = _montar(RAIZ_ALTERADA, draft=DRAFT_COM_CONTENT)
+    publicado = _publicado_com(
+        {"id": 10, "type": "Log", "executionPoint": "FIRST", "position": 2,
+         "content": '{"encryptContent": false}'},
+        {"id": 11, "type": "Rate limit", "executionPoint": "FIRST", "position": 4,
+         "content": '{"quota": "1000"}'},
+    )
+    divergencias = revision_payload.conferir(
+        montado.corpo, publicado, esperado=montado.esperado
+    )
+    assert any("Rate limit" in d and "`quota` declarado" in d for d in divergencias)
+
+
+def test_conferir_acusa_ordem_diferente_da_declarada():
+    montado = _montar(RAIZ_ALTERADA, draft=DRAFT_COM_CONTENT)
+    publicado = _publicado_com(
+        {"id": 11, "type": "Rate limit", "executionPoint": "FIRST", "position": 2,
+         "content": '{"quota": "500"}'},
+        {"id": 10, "type": "Log", "executionPoint": "FIRST", "position": 4,
+         "content": '{"encryptContent": false}'},
+    )
+    divergencias = revision_payload.conferir(
+        montado.corpo, publicado, esperado=montado.esperado
+    )
+    assert any("declarado como [Log, Rate limit]" in d for d in divergencias)
+
+
+def test_conferir_normaliza_escalar_e_ignora_content_de_custom():
+    """`"500"` e `500` são o mesmo valor (V-11 §4); Custom casa só pelo id."""
+    raiz = {"interceptors_request": [
+        {"type": "Rate limit", "content": {"quota": 500}},
+        {"type": "Custom", "id": 32},
+    ]}
+    montado = _montar(raiz)
+    publicado = _publicado_com(
+        {"id": 1, "type": "Rate limit", "executionPoint": "FIRST", "position": 1,
+         "content": '{"quota": "500"}'},
+        {"id": 2, "type": "Custom", "customInterceptorId": 32, "executionPoint": "FIRST",
+         "position": 2, "content": '{"id": 32, "script": "qualquer"}'},
+    )
+    assert revision_payload.conferir(montado.corpo, publicado, esperado=montado.esperado) == []
+
+
+# --- avisos de remoção: o PUT grava a revisão inteira -------------------------
+
+DRAFT_COM_ROTAS = {
+    "id": 1,
+    "api": {},
+    "interceptors": [],
+    "resources": [
+        {"name": "Letras", "operations": [
+            {"id": 1, "method": "POST", "path": "/letras"},
+            {"id": 2, "method": "DELETE", "path": "/letras/{id}"},
+        ]},
+        {"name": "Saude", "operations": [{"id": 3, "method": "GET", "path": "/health"}]},
+    ],
+}
+
+
+def test_rota_que_saiu_do_repositorio_e_avisada():
+    letras = _Rec({"name": "Letras"}, [_Op("POST", {"path": "/letras"})])
+    saude = _Rec({"name": "Saude"}, [_Op("GET", {"path": "/health"})])
+    avisos = _montar({}, [letras, saude], draft=DRAFT_COM_ROTAS).avisos
+
+    rotas = [a for a in avisos if a.startswith("As rotas abaixo")]
+    assert rotas == [
+        "As rotas abaixo existem no Manager mas não estão no repositório. Ao "
+        "publicar, elas serão apagadas do Manager:\n"
+        "  - DELETE /letras/{id} (recurso Letras)\n\n"
+        "Se não era essa a intenção, adicione-as ao repositório antes de publicar."
+    ]
+
+
+def test_recurso_que_saiu_e_avisado_sem_repetir_as_rotas_dele():
+    letras = _Rec({"name": "Letras"}, [
+        _Op("POST", {"path": "/letras"}),
+        _Op("DELETE", {"path": "/letras/{id}"}),
+    ])
+    avisos = _montar({}, [letras], draft=DRAFT_COM_ROTAS).avisos
+
+    assert avisos == [
+        "Os recursos abaixo existem no Manager mas não estão no repositório. Ao "
+        "publicar, eles serão apagados do Manager:\n"
+        "  - Saude\n\n"
+        "Se não era essa a intenção, adicione-os ao repositório antes de publicar."
+    ]
+
+
+def test_nada_removido_nada_avisado():
+    letras = _Rec({"name": "Letras"}, [
+        _Op("POST", {"path": "/letras"}),
+        _Op("DELETE", {"path": "/letras/{id}"}),
+    ])
+    saude = _Rec({"name": "Saude"}, [_Op("GET", {"path": "/health"})])
+    assert _montar({}, [letras, saude], draft=DRAFT_COM_ROTAS).avisos == []

@@ -102,9 +102,7 @@ class CustomInexistenteError(ValidateError):
         super().__init__(
             f"O interceptor Custom de id {custom_id}, declarado em {escopo}, não "
             "existe neste ambiente.\n\n"
-            "Ids de Custom valem só dentro de um ambiente — se este repositório veio "
-            "de outro, o id precisa ser atualizado. Confira o id na lista de "
-            "interceptors customizados do Manager.\n\n"
+            "Confira o id na lista de interceptors customizados do Manager.\n\n"
             "Nada foi publicado."
         )
         self.custom_id = custom_id
@@ -270,12 +268,19 @@ class PublicacaoRecusadaError(ValidateError):
     mensagem padrão da família da falha (sessão, acesso, erro interno).
     """
 
-    def __init__(self, mensagem_padrao: str, motivos: Optional[List[str]] = None):
+    def __init__(
+        self,
+        mensagem_padrao: str,
+        motivos: Optional[List[str]] = None,
+        alvo: str = "do rascunho",
+    ):
+        # `alvo` nomeia o que foi gravado: o `validate` grava o rascunho; o
+        # `publish`, a revisão de um ambiente.
         motivos = [m for m in (motivos or []) if m]
         if motivos:
             listados = "\n".join(f"  - {motivo}" for motivo in motivos)
             corpo = (
-                f"O Manager recusou a gravação do rascunho:\n\n{listados}\n\n"
+                f"O Manager recusou a gravação {alvo}:\n\n{listados}\n\n"
                 "Corrija o repositório conforme o motivo acima e rode o comando de novo."
             )
         else:

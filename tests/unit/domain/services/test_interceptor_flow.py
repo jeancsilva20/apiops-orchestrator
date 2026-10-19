@@ -1,5 +1,7 @@
 """Partição e aritmética de identidade dos fluxos (V-22, W-9)."""
 
+import json
+
 import pytest
 
 from apiops_orchestrator.domain.services.interceptor_flow import (
@@ -231,26 +233,153 @@ def test_heranca_pura_manda_a_lista_governada_vazia():
     assert fluxo == []
 
 
-def test_position_dos_reusados_nao_e_renumerada():
-    """W-3: as posicoes reais nem sao contiguas — a raiz da 417 usa 0,2,...,8."""
+def test_position_nao_e_renumerada_e_segue_a_ordem_declarada():
+    """W-3: as posicoes reais nem sao contiguas — a raiz da 417 usa 0,2,...,8.
+
+    O escopo reusa os numeros que ja ocupa (2 e 6) e o item novo estende a
+    faixa (7); o conjunto e redistribuido na ordem do YAML, sem virar 1..N.
+    """
     fluxo = montar_fluxo_do_escopo(
         _resolvido("Custom", "Log", "XSS threat protection"),
         REMOTO_RESOLVIDO,
         gerar_idtemp=preparar_contador_idtemp({}),
     )
-    # O `Custom` do resolvido nao traz id, entao so os dois nativos casam.
-    reusados = [i for i in fluxo if i.get("id")]
-    assert [i["position"] for i in reusados] == [2, 6]
+    # O `Custom` do resolvido nao traz id: nasce novo, mas fica onde foi declarado.
+    assert [(i["type"], i["position"]) for i in fluxo] == [
+        ("Custom", 2),
+        ("Log", 6),
+        ("XSS threat protection", 7),
+    ]
 
 
-def test_item_ja_presente_no_remoto_volta_intacto():
+def test_item_ja_presente_no_remoto_reusa_a_identidade():
     fluxo = montar_fluxo_do_escopo(
         _resolvido("Log"),
         REMOTO_RESOLVIDO,
         gerar_idtemp=preparar_contador_idtemp({}),
     )
     assert len(fluxo) == 1
-    assert fluxo[0] is REMOTO_RESOLVIDO[1]
+    assert fluxo[0]["id"] == 2 and fluxo[0]["position"] == 2
+
+
+# --- o repositorio prevalece no que declara (V-22 §3, V-11 §4, D14) ------------
+
+REMOTO_COM_CONTENT = [
+    {"id": 10, "idTemp": 10, "type": "Log", "executionPoint": "FIRST", "position": 2,
+     "status": "REFERENCE", "content": '{"encryptContent": false}'},
+    {"id": 11, "idTemp": 11, "type": "Rate limit", "executionPoint": "FIRST", "position": 4,
+     "status": "REFERENCE", "content": '{"quota": "1000", "interval": "SECOND"}'},
+    {"id": 12, "idTemp": 12, "type": "Payload size", "executionPoint": "FIRST", "position": 5,
+     "status": "REFERENCE", "content": '{"maxSize": "2048"}'},
+    {"id": 13, "idTemp": 13, "type": "Custom", "customInterceptorId": 32, "executionPoint": "FIRST",
+     "position": 7, "status": "REFERENCE", "content": '{"id": 32, "name": "Release Notes"}'},
+]
+
+
+def _declarado(tipo, content=None, custom_id=None, ponto="FIRST"):
+    return {
+        "type": tipo,
+        "executionPoint": ponto,
+        "content": content,
+        "customInterceptorId": custom_id,
+    }
+
+
+def _montar(*declarados, remotos=REMOTO_COM_CONTENT):
+    return montar_fluxo_do_escopo(
+        FluxoDoEscopo(efetivo=list(declarados)),
+        remotos,
+        gerar_idtemp=preparar_contador_idtemp({"id": 100}),
+    )
+
+
+def test_content_de_nativo_existente_vem_do_yaml():
+    """Regressao do S10: quota 1000 -> 500 era descartada e o Manager mantinha 1000."""
+    fluxo = _montar(
+        _declarado("Log", {"encryptContent": False}),
+        _declarado("Rate limit", {"quota": "500", "interval": "SECOND"}),
+        _declarado("Payload size", {"maxSize": "2048"}),
+        _declarado("Custom", custom_id=32),
+    )
+    rate = next(i for i in fluxo if i["type"] == "Rate limit")
+    assert json.loads(rate["content"]) == {"quota": "500", "interval": "SECOND"}
+    # identidade tecnica reaproveitada
+    assert rate["id"] == 11 and rate["idTemp"] == 11 and rate["status"] == "REFERENCE"
+
+
+def test_custom_existente_mantem_o_content_do_manager():
+    """V-11 §4: mesmo id e o mesmo objeto no tenant."""
+    fluxo = _montar(_declarado("Custom", custom_id=32))
+    assert fluxo[0]["content"] == '{"id": 32, "name": "Release Notes"}'
+
+
+def test_remoto_nao_e_alterado_pela_montagem():
+    remotos = json.loads(json.dumps(REMOTO_COM_CONTENT))
+    _montar(_declarado("Rate limit", {"quota": "1"}), remotos=remotos)
+    assert remotos == REMOTO_COM_CONTENT
+
+
+def test_reordenar_no_yaml_reordena_as_positions():
+    fluxo = _montar(
+        _declarado("Rate limit", {"quota": "1000", "interval": "SECOND"}),
+        _declarado("Log", {"encryptContent": False}),
+        _declarado("Payload size", {"maxSize": "2048"}),
+        _declarado("Custom", custom_id=32),
+    )
+    por_posicao = sorted(fluxo, key=lambda i: i["position"])
+    assert [i["type"] for i in por_posicao] == ["Rate limit", "Log", "Payload size", "Custom"]
+    # mesmos numeros que o escopo ja ocupava
+    assert sorted(i["position"] for i in fluxo) == [2, 4, 5, 7]
+
+
+def test_inserir_no_meio_fica_no_meio():
+    """Antes, o novo ia para o fim e 'roubava' a identidade do existente do mesmo tipo."""
+    fluxo = _montar(
+        _declarado("Log", {"encryptContent": False}),
+        _declarado("Payload size", {"maxSize": "999"}),
+        _declarado("Rate limit", {"quota": "1000", "interval": "SECOND"}),
+        _declarado("Payload size", {"maxSize": "2048"}),
+        _declarado("Custom", custom_id=32),
+    )
+    por_posicao = sorted(fluxo, key=lambda i: i["position"])
+    assert [(i["type"], json.loads(i["content"]).get("maxSize")) for i in por_posicao] == [
+        ("Log", None),
+        ("Payload size", "999"),
+        ("Rate limit", None),
+        ("Payload size", "2048"),
+        ("Custom", None),
+    ]
+
+
+def test_remover_do_meio_mantem_a_ordem_do_restante():
+    fluxo = _montar(
+        _declarado("Log", {"encryptContent": False}),
+        _declarado("Payload size", {"maxSize": "2048"}),
+        _declarado("Custom", custom_id=32),
+    )
+    por_posicao = sorted(fluxo, key=lambda i: i["position"])
+    assert [i["type"] for i in por_posicao] == ["Log", "Payload size", "Custom"]
+    assert all(i["id"] is not None for i in fluxo)
+
+
+def test_request_e_response_sao_ordenados_cada_um_no_seu_ponto():
+    remotos = REMOTO_COM_CONTENT + [
+        {"id": 20, "type": "Log", "executionPoint": "SECOND", "position": 0,
+         "content": '{"encryptContent": false}'},
+    ]
+    fluxo = _montar(
+        _declarado("Payload size", {"maxSize": "2048"}),
+        _declarado("Log", {"encryptContent": False}),
+        _declarado("Log", {"encryptContent": True}, ponto="SECOND"),
+        remotos=remotos,
+    )
+    response = [i for i in fluxo if i["executionPoint"] == "SECOND"]
+    assert response[0]["position"] == 0
+    assert json.loads(response[0]["content"]) == {"encryptContent": True}
+    request = sorted(
+        (i for i in fluxo if i["executionPoint"] == "FIRST"), key=lambda i: i["position"]
+    )
+    assert [i["type"] for i in request] == ["Payload size", "Log"]
 
 
 def test_item_que_o_remoto_nao_tem_nasce_novo():

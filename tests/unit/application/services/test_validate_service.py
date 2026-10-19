@@ -463,14 +463,28 @@ def test_heranca_pura_sobre_lista_propria_vira_warning(tmp_path):
             }
         ],
     )
+    # Na esteira não há confirmação: o aviso sai no resultado.
     manager = ManagerFake(draft=draft)
-    view = _servico(manager).validate(_repo(tmp_path, extras=extras), confirmar=SIM)
+    view = _servico(manager, modo="pipeline").validate(
+        _repo(tmp_path, extras=extras), confirmar=SIM
+    )
 
     avisos = [a for a in view.achados if a.scope == "repositório"]
     assert len(avisos) == 1
     assert "esses interceptors saem" in avisos[0].message
     assert "Log" in avisos[0].message
     assert avisos[0].severity == "WARNING"
+
+    # Em local o aviso vai para a confirmação, ANTES da gravação, e não se repete.
+    perguntas = []
+    (tmp_path / "local").mkdir()
+    view = _servico(ManagerFake(draft=draft)).validate(
+        _repo(tmp_path / "local", extras=extras),
+        confirmar=lambda texto: perguntas.append(texto) or True,
+    )
+    assert "esses interceptors saem" in perguntas[0]
+    assert "Atenção:" in perguntas[0]
+    assert [a for a in view.achados if a.scope == "repositório"] == []
 
 
 def test_o_texto_da_confirmacao_nao_promete_deploy(tmp_path):
@@ -665,3 +679,26 @@ def test_apitags_apagadas_pela_plataforma_viram_divergencia(tmp_path):
         _servico(manager).validate(repo, confirmar=SIM)
 
     assert "`My new` foi enviado em `apiTags`" in capturado.value.message
+
+
+def test_alterar_content_de_interceptor_existente_chega_ao_put(tmp_path):
+    """Regressão do S10: o validate grava o content do repositório, não o do Manager."""
+    draft = dict(
+        DRAFT,
+        interceptors=[
+            {"id": 11, "idTemp": 11, "type": "Rate limit", "executionPoint": "FIRST",
+             "position": 4, "status": "REFERENCE", "content": '{"quota": "1000"}'},
+        ],
+    )
+    repo = _repo(tmp_path)
+    (repo / "all.yaml").write_text(
+        "destination:\n  url: https://backend\n\n"
+        "interceptors_request:\n  - type: Rate limit\n    content:\n      quota: \"500\"\n",
+        encoding="utf-8",
+    )
+    manager = ManagerFake(draft=draft)
+    view = _servico(manager).validate(repo, confirmar=SIM)
+
+    enviado = manager.payload_enviado["interceptors"][0]
+    assert enviado["id"] == 11 and '"quota": "500"' in enviado["content"]
+    assert view.publicacao.verified is True

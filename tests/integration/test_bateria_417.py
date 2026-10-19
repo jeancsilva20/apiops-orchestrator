@@ -74,7 +74,8 @@ def settings_local():
 
     settings = _load_settings()
     assert not settings.modo_pipeline, "a bateria roda em modo local"
-    assert settings.TARGET_REVISION_NUMBER == REVISAO_DRAFT
+    # Ausente vale como Draft em modo local.
+    assert (settings.TARGET_REVISION_NUMBER or REVISAO_DRAFT) == REVISAO_DRAFT
     return settings
 
 

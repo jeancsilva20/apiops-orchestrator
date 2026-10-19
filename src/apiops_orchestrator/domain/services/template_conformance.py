@@ -79,6 +79,10 @@ def _normalizar_content(content: Any) -> Any:
     return _normalizar_escalar(content)
 
 
+# Pública para a conferência pós-publicação comparar `content` pela mesma regra.
+normalizar_content = _normalizar_content
+
+
 def _custom_id(item: Dict[str, Any]) -> Optional[int]:
     valor = item.get("customInterceptorId")
     if valor is None and item.get("type") == "Custom":

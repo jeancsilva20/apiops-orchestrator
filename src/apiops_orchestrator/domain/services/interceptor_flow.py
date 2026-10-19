@@ -7,7 +7,8 @@ são determinísticas.
 A regra de identidade, condensada:
 
     position  ->  do ESCOPO    (por escopo e execution point; contínua entre
-                                escopos no wire; NÃO renumerada nos reusados)
+                                escopos no wire; nunca renumerada 1..N — os
+                                números do escopo seguem a ordem do YAML)
     idTemp    ->  do PAYLOAD   (único em toda a chamada; contador global)
     id        ->  null em item novo; preservado em item existente
 
@@ -16,6 +17,7 @@ computado a partir do repositório (`all.yaml` → `resource.yaml` → operaçã
 publicado resolvido. A plataforma guarda; não decide.
 """
 
+import copy
 import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
@@ -295,10 +297,17 @@ def montar_fluxo_do_escopo(
 
     Aqui não se decide mais **o que** o escopo executa — isso saiu para
     `resolver_fluxo_declarado` (V-27). O que resta é casar o resolvido com o que
-    a plataforma já tem, para reaproveitar identidade: item que já existe volta
-    **intacto**, com a `position` original — renumerar 1..N por escopo corrompe
-    a ordem de execução (W-3), e as posições reais nem sequer são contíguas (a
-    raiz da 417 usa 0, 2, 3, 4, 5, 6, 7, 8). O que não existe nasce com `idTemp`.
+    a plataforma já tem, para reaproveitar **identidade técnica**: `id`,
+    `idTemp`, `status`, `parentType`. Configuração e ordem vêm do repositório,
+    que prevalece em tudo o que declara (V-22 §3, D14):
+
+    * `content` de tipo nativo vem do YAML — nele, o `content` **é** a
+      configuração (V-11 §4). Só o `Custom` mantém o do Manager: mesmo id é o
+      mesmo objeto no tenant;
+    * a ordem de cada execution point é a do YAML. Os números de `position` não
+      são renumerados 1..N (W-3) — o escopo reusa os que já ocupa, e os itens
+      novos estendem a faixa com `max + 1`; o conjunto é redistribuído na ordem
+      declarada. O que não existe nasce com `idTemp`.
     """
     gerar_idtemp = gerar_idtemp or preparar_contador_idtemp({})
     governados, preservados = particionar(remotos)
@@ -327,30 +336,59 @@ def montar_fluxo_do_escopo(
         fila = disponiveis.get(chave)
         return fila.pop(0) if fila else None
 
+    def content_declarado(declarado: Dict[str, Any]) -> Any:
+        if resolver_content is not None:
+            return resolver_content(declarado)
+        return declarado.get("content")
+
     saida: List[Dict[str, Any]] = []
     posicao = max([i.get("position") or 0 for i in governados] or [0])
 
     for declarado in fluxo.efetivo:
         existente = consumir(chave_interceptor(declarado))
         if existente is not None:
-            # Volta intacto, com a `position` original (W-3).
-            saida.append(existente)
+            # Cópia: o remoto pertence a quem chamou e não pode ser alterado.
+            item = copy.deepcopy(existente)
+            if declarado.get("type") != "Custom":
+                item["content"] = _content_do_wire(content_declarado(declarado))
+            saida.append(item)
             continue
         posicao += 1
-        content = declarado.get("content")
-        if resolver_content is not None:
-            content = resolver_content(declarado)
         saida.append(
             construir_item_novo(
                 tipo=str(declarado.get("type")),
                 execution_point=str(declarado.get("executionPoint") or "FIRST"),
                 idtemp=next(gerar_idtemp),
                 position=posicao,
-                content=content,
+                content=content_declarado(declarado),
                 custom_interceptor_id=declarado.get("customInterceptorId")
                 or (declarado.get("id") if declarado.get("type") == "Custom" else None),
             )
         )
 
+    _ordenar_posicoes_como_declarado(saida)
+
     # V-22: o não governado volta intacto, sempre.
     return saida + list(preservados)
+
+
+def _content_do_wire(content: Any) -> Any:
+    """O wire carrega `content` como STRING JSON (ver `construir_item_novo`)."""
+    if isinstance(content, (dict, list)):
+        return json.dumps(content, ensure_ascii=False)
+    return content
+
+
+def _ordenar_posicoes_como_declarado(itens: List[Dict[str, Any]]) -> None:
+    """Redistribui, por execution point, as posições do escopo na ordem da lista.
+
+    A plataforma executa pela `position`, não pela ordem da lista (W-3, D-8).
+    Manter a posição remota de um item reusado ignoraria uma reordenação feita
+    no YAML, e um item inserido no meio iria para o fim. Os números usados são
+    os mesmos que o escopo já ocupa — só a atribuição muda.
+    """
+    for ponto in GOVERNED_EXECUTION_POINTS:
+        do_ponto = [i for i in itens if str(i.get("executionPoint") or "").upper() == ponto]
+        numeros = sorted(i.get("position") or 0 for i in do_ponto)
+        for item, numero in zip(do_ponto, numeros):
+            item["position"] = numero

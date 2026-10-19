@@ -24,12 +24,17 @@ from apiops_orchestrator.domain.services.interceptor_flow import (
     preparar_contador_idtemp,
     resolver_fluxo_declarado,
 )
+from apiops_orchestrator.domain.services.template_conformance import normalizar_content
 
 
 @dataclass(frozen=True)
 class PayloadMontado:
     corpo: Dict[str, Any]
     avisos: List[str] = field(default_factory=list)
+    # Fluxo que o REPOSITÓRIO declara para cada escopo com lista própria, na
+    # ordem declarada. É o oráculo da conferência: comparar o publicado só com o
+    # payload deixaria passar qualquer perda na própria montagem.
+    esperado: Dict[str, List[Dict[str, Any]]] = field(default_factory=dict)
 
 
 def _declarados(bloco: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -149,7 +154,14 @@ def montar(
     """
     corpo = copy.deepcopy(draft)
     avisos: List[str] = []
+    esperado: Dict[str, List[Dict[str, Any]]] = {}
     contador: Iterator[int] = preparar_contador_idtemp(draft)
+
+    def _esperar(escopo: str, fluxo: FluxoDoEscopo) -> None:
+        # Herança pura vai como `[]` e a plataforma resolve: não há lista
+        # própria para conferir — a contagem por escopo já cobre esse caso.
+        if not fluxo.heranca_pura:
+            esperado[escopo] = list(fluxo.efetivo)
 
     def _content(declarado: Dict[str, Any]) -> Any:
         """O wire quer `content` como string JSON (ver `construir_item_novo`)."""
@@ -183,6 +195,7 @@ def montar(
     # fluxo é exatamente o que o `all.yaml` declara.
     fluxo_raiz = resolver_fluxo_declarado(_declarados(raiz), raiz=True)
     avisos.extend(_avisos_do_escopo(fluxo_raiz, draft, "raiz da revision", raiz=True))
+    _esperar("raiz", fluxo_raiz)
     url, timeout = _destino(raiz)
     corpo["destination"] = url
     corpo["timeout"] = timeout
@@ -198,6 +211,7 @@ def montar(
         r.get("name"): r for r in (draft.get("resources") or []) if r.get("name")
     }
     saida_recursos: List[Dict[str, Any]] = []
+    rotas_sumidas: List[str] = []
 
     for recurso in recursos:
         dados = recurso.dados or {}
@@ -209,6 +223,7 @@ def montar(
             _declarados(dados), fluxo_raiz.efetivo, inherit=_herda(dados)
         )
         avisos.extend(_avisos_do_escopo(fluxo_recurso, remoto, f"resource {nome}"))
+        _esperar(f"resource {nome}", fluxo_recurso)
         if dados.get("description") is not None:
             bloco["description"] = dados.get("description")
         url, timeout = _destino(dados)
@@ -237,6 +252,7 @@ def montar(
             avisos.extend(
                 _avisos_do_escopo(fluxo_op, remota, f"{op.metodo} {od.get('path')}")
             )
+            _esperar(f"{nome}/{str(op.metodo or '').upper()} {od.get('path')}", fluxo_op)
             item["method"] = op.metodo
             item["path"] = od.get("path")
             if od.get("description") is not None:
@@ -257,21 +273,40 @@ def montar(
                 item.pop("id", None)
             operacoes.append(item)
 
+        # Só para recurso que continua: o que some junto com o recurso inteiro
+        # já é nomeado no aviso de recursos.
+        enviadas = {(str(o.get("method") or "").upper(), o.get("path")) for o in operacoes}
+        rotas_sumidas.extend(
+            f"{metodo} {path} (recurso {nome})"
+            for metodo, path in sorted(set(remotas_por_chave) - enviadas, key=str)
+        )
+
         bloco["operations"] = operacoes
         saida_recursos.append(bloco)
 
     corpo["resources"] = saida_recursos
 
+    # O PUT grava a revisão inteira: o que está no Manager e não no repositório
+    # é apagado. Não bloqueia — remover pode ser a intenção —, mas é avisado.
     sumidos = set(remotos_por_nome) - {r.get("name") for r in saida_recursos}
     if sumidos:
         avisos.append(
-            "Estes recursos existem no Manager e não no repositório, e serão "
-            f"removidos ao publicar: {', '.join(sorted(str(s) for s in sumidos))}. "
-            "O que não está no repositório não é enviado, e o que não é enviado o "
-            "Manager apaga."
+            "Os recursos abaixo existem no Manager mas não estão no repositório. Ao "
+            "publicar, eles serão apagados do Manager:\n"
+            + "\n".join(f"  - {s}" for s in sorted(str(s) for s in sumidos))
+            + "\n\nSe não era essa a intenção, adicione-os ao repositório antes de "
+            "publicar."
+        )
+    if rotas_sumidas:
+        avisos.append(
+            "As rotas abaixo existem no Manager mas não estão no repositório. Ao "
+            "publicar, elas serão apagadas do Manager:\n"
+            + "\n".join(f"  - {r}" for r in rotas_sumidas)
+            + "\n\nSe não era essa a intenção, adicione-as ao repositório antes de "
+            "publicar."
         )
 
-    return PayloadMontado(corpo=corpo, avisos=avisos)
+    return PayloadMontado(corpo=corpo, avisos=avisos, esperado=esperado)
 
 
 # --------------------------------------------------------------------------- E3.1
@@ -334,14 +369,25 @@ def _destinos_por_escopo(no: Dict[str, Any]) -> Dict[str, Any]:
     return saida
 
 
-def conferir(enviado: Dict[str, Any], publicado: Dict[str, Any]) -> List[str]:
+def conferir(
+    enviado: Dict[str, Any],
+    publicado: Dict[str, Any],
+    esperado: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+) -> List[str]:
     """Compara enviado × publicado e devolve as divergências.
 
     **HTTP 200 não é prova de sucesso** (W-8): foram observadas três perdas
     silenciosas distintas sob 200 — `idTemp` colidido, operação migrada de
     recurso e item descartado por dedupe. A releitura é o veredito.
+
+    `esperado` é o fluxo que o repositório declara (`PayloadMontado.esperado`).
+    Com ele, o fluxo publicado é comparado também com o **declarado** — tipo,
+    ordem e `content` —, e não só com o payload: uma perda na própria montagem
+    passaria intacta por uma comparação com o enviado.
     """
     divergencias: List[str] = []
+    if esperado:
+        divergencias.extend(_divergencias_do_fluxo_declarado(esperado, publicado))
 
     ops_enviadas = _assinatura_operacoes(enviado)
     ops_publicadas = _assinatura_operacoes(publicado)
@@ -406,6 +452,86 @@ def conferir(enviado: Dict[str, Any], publicado: Dict[str, Any]) -> List[str]:
             )
 
     divergencias.extend(_divergencias_do_basic_info(enviado, publicado))
+    return divergencias
+
+
+_NOME_DO_PONTO = {"FIRST": "request", "SECOND": "response"}
+
+
+def _custom_id(item: Dict[str, Any]) -> Optional[int]:
+    valor = item.get("customInterceptorId")
+    if valor is None and item.get("type") == "Custom":
+        valor = item.get("id")
+    return valor
+
+
+def _rotulo_item(item: Dict[str, Any]) -> str:
+    custom_id = _custom_id(item)
+    return f"Custom#{custom_id}" if item.get("type") == "Custom" else str(item.get("type"))
+
+
+def _chaves_diferentes(declarado: Any, gravado: Any) -> str:
+    """Quais campos do `content` mudaram — o valor inteiro seria ilegível."""
+    if isinstance(declarado, dict) and isinstance(gravado, dict):
+        chaves = sorted(
+            k for k in set(declarado) | set(gravado) if declarado.get(k) != gravado.get(k)
+        )
+        if chaves:
+            return ", ".join(
+                f"`{k}` declarado {declarado.get(k)!r}, gravado {gravado.get(k)!r}"
+                for k in chaves
+            )
+    return f"declarado {declarado!r}, gravado {gravado!r}"
+
+
+def _divergencias_do_fluxo_declarado(
+    esperado: Dict[str, List[Dict[str, Any]]], publicado: Dict[str, Any]
+) -> List[str]:
+    """Fluxo publicado × fluxo declarado, por escopo e execution point.
+
+    A plataforma executa pela `position`, então é por ela que o publicado é
+    lido. O `content` só é comparado nos tipos nativos — no `Custom` o id
+    identifica o objeto (V-11 §4) —, e pela mesma normalização da conformidade.
+    """
+    divergencias: List[str] = []
+    publicados = _por_escopo(publicado)
+    for escopo, declarados in sorted(esperado.items()):
+        gravados_do_escopo = publicados.get(escopo)
+        if gravados_do_escopo is None:
+            continue  # a ausência do escopo é reportada pela contagem
+        for ponto, nome_do_ponto in _NOME_DO_PONTO.items():
+            quer = [
+                d for d in declarados
+                if str(d.get("executionPoint") or "").upper() == ponto
+            ]
+            tem = sorted(
+                (
+                    i for i in gravados_do_escopo
+                    if str(i.get("executionPoint") or "").upper() == ponto
+                    and i.get("status") != "REMOVED"
+                ),
+                key=lambda i: i.get("position") or 0,
+            )
+            assinatura_quer = [(d.get("type"), _custom_id(d)) for d in quer]
+            assinatura_tem = [(i.get("type"), _custom_id(i)) for i in tem]
+            if assinatura_quer != assinatura_tem:
+                divergencias.append(
+                    f"{escopo}: o {nome_do_ponto} foi declarado como "
+                    f"[{', '.join(_rotulo_item(d) for d in quer)}] e gravado como "
+                    f"[{', '.join(_rotulo_item(i) for i in tem)}]"
+                )
+                continue
+            for posicao, (d, i) in enumerate(zip(quer, tem), start=1):
+                if d.get("type") == "Custom":
+                    continue
+                quer_content = normalizar_content(d.get("content"))
+                tem_content = normalizar_content(i.get("content"))
+                if quer_content != tem_content:
+                    divergencias.append(
+                        f"{escopo}: o {d.get('type')} (item {posicao} do "
+                        f"{nome_do_ponto}) não foi gravado como declarado — "
+                        f"{_chaves_diferentes(quer_content, tem_content)}"
+                    )
     return divergencias
 
 
