@@ -101,6 +101,14 @@ Em `local` os avisos vão **na caixa de confirmação**, antes do `s/n`, e não 
 exibidos só depois, o dev confirmaria sem saber o que perde. Em `pipeline` não há pergunta, e eles
 saem no resultado (`warnings[]`). Vale para `validate` e `publish`.
 
+### 6.1 Recusa e cancelamento na confirmação (D-18)
+
+A D-18 fixou que só a cascata completa produz relatório. Responder `n` encerra sem gravar e **sem
+relatório**: só "Validação cancelada" / "Publicação cancelada. Nada foi gravado.", com exit 0. Ctrl+C
+(ou fim da entrada) no prompt não é um "não": interrompe o comando com a mesma mensagem e exit 130.
+Corrige o T-21 do plano, que ainda descrevia a premissa revogada pela D-18 ("reporta o que E1/E2 já
+coletaram"). Vale para `validate` e `publish`.
+
 ### 7. Correção encontrada no smoke: o repositório prevalece em `content` e ordem
 
 O smoke contra a revisão 2 da API 417 (2026-10-16) mostrou que alterar o `content` de um interceptor
@@ -118,6 +126,17 @@ sobrescreve a plataforma. Correção, em código compartilhado com o `validate`:
   ordem do YAML, por execution point — sem renumerar 1..N (W-3);
 - a conferência passa a comparar o publicado com o **fluxo declarado** (tipo, ordem e `content`
   normalizado), e não só com o payload.
+
+### 8. Conformidade: posição e escopos herdados
+
+A comparação por sequência transformava um item que só mudou de lugar em dois achados falsos — "não é
+executado aqui" e "não existe na template". O par passa a ser reconhecido e vira um achado só:
+"executa em outra posição: na template é o Nº, aqui é o Mº". Continua `WARNING`: a ordem muda o
+comportamento.
+
+Todos os escopos continuam comparados (D-13), mas o que só herda executa o fluxo do escopo acima e
+repetiria os mesmos achados. Eles saem uma vez, no escopo dono do fluxo, com quantos recursos e rotas
+também o executam. No caso real da 417, 23 achados viraram 2.
 
 ## Open Questions
 

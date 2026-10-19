@@ -424,7 +424,8 @@ E        exit code 0
 | T-18 | — | `null` dentro de `content` | **aceito** — é valor, não regime | `0` |
 | T-19 | — | `content` com campo de tipo errado (`quota: "abacaxi"`) | ⚠️ **ABERTO (D-5)** — sem os `*-default-interceptors` ninguém valida shape por tipo localmente; hoje só falharia na E3, pelo Manager | ⚠️ |
 | T-20 | E3 | dois developers validando a mesma API ao mesmo tempo | **risco aceito (D-15, fechada)** — sobrescrevem-se, mas a janela é curta. Sem lock, sem aviso. Ver a ressalva da janela E3→E4 abaixo | `0` |
-| T-21 | guarda 2 | developer responde `n` à confirmação | encerra sem escrever; reporta o que E1/E2 já coletaram | `0` |
+| T-21 | guarda 2 | developer responde `n` à confirmação | encerra sem escrever e **sem relatório** — só "Validação cancelada. Nada foi gravado." (D-18; corrigido em 2026-10-19, a linha anterior dizia "reporta o que E1/E2 já coletaram", premissa que a D-18 revogou) | `0` |
+| T-21b | guarda 2 | Ctrl+C (ou fim da entrada) no prompt | interrompe o comando, sem relatório, com a mesma mensagem — não é um "não" | `130` |
 | T-22 | guarda 2 | execução em esteira (`EXECUTION_MODE=pipeline`) | **não pergunta** (D-17, fechada); guarda 1 continua valendo | — |
 | T-23 | E2/E3/E4 | sessão expirada ou token inválido | mensagem orientando `sen login`, sem stacktrace nem segredo em log | `1` |
 | T-24 | guarda 1 | `version` ou `basePath` divergem do Manager | aborta **antes** de qualquer escrita; orienta o administrador (D-11) | `1` |

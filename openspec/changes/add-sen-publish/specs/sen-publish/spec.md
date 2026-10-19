@@ -67,7 +67,12 @@ CLI. Recusa MUST encerrar sem escrita e com `exit 0`. Em `pipeline` nenhuma conf
 
 #### Scenario: Dev recusa
 - **WHEN** o comando roda em local e o dev responde `N`
-- **THEN** nenhum `PUT` é emitido e a saída informa que nada foi gravado
+- **THEN** nenhum `PUT` é emitido, nenhum relatório é exibido e a saída é só
+  "Publicação cancelada. Nada foi gravado.", com `exit 0`
+
+#### Scenario: Dev interrompe no prompt
+- **WHEN** o dev pressiona Ctrl+C na confirmação
+- **THEN** o comando é interrompido sem `PUT` e sem relatório, com a mesma mensagem e `exit 130`
 
 ### Requirement: Single PUT followed by verification
 
