@@ -19,8 +19,9 @@ class RecordingApp:
     def __init__(self):
         self.calls = []
 
-    def __call__(self, obj=None):
+    def __call__(self, obj=None, prog_name=None):
         self.calls.append(obj)
+        self.prog_name = prog_name
 
 
 def _stub_settings(project_root: Path):
@@ -115,6 +116,18 @@ def test_no_args_routes_to_sen_help(recording_app, monkeypatch, argv0):
     assert sys.argv == [argv0, "sen"]
     assert len(recording_app.calls) == 1
     load_spy.assert_not_called()
+
+
+def test_console_script_help_usage_does_not_repeat_sen(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", [r"C:\venv\Scripts\sen.exe", "validate", "--help"])
+    monkeypatch.setenv("COLUMNS", "200")
+
+    with pytest.raises(SystemExit):
+        main_mod.main()
+
+    out = capsys.readouterr().out
+    assert "Usage: sen validate" in out
+    assert "sen sen" not in out
 
 
 def test_load_settings_translates_missing_config_into_educational_cli_error(monkeypatch):

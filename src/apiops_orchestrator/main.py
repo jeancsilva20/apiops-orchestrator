@@ -232,13 +232,16 @@ def main():
     (D1-a). Sem argumentos, mostra o help do `sen`.
     """
     try:
+        is_console_script = Path(sys.argv[0]).stem.lower() == "sen"
         if len(sys.argv) <= 1:
             sys.argv[1:] = ["sen"]
         # O console-script `sen` chega com argv[0]="...sen(.cmd)" e o primeiro
         # argumento já é o comando (ex.: "login") — a árvore Typer espera o
         # token "sen" na frente, presente só na forma `python main.py sen ...`.
-        elif Path(sys.argv[0]).stem.lower() == "sen" and sys.argv[1] != "sen":
+        elif is_console_script and sys.argv[1] != "sen":
             sys.argv.insert(1, "sen")
+        # Sem prog_name vazio, o Usage do console-script sairia "sen sen ...".
+        prog_name = "" if is_console_script else None
         ctx_obj = {
             "login_service_factory": build_login_service_factory(),
             "api_listing_service_factory": build_listing_service_factory(),
@@ -249,7 +252,7 @@ def main():
             "regua_service_factory": build_regua_service_factory(),
             "manager_api_factory": build_manager_api_factory(),
         }
-        app(obj=ctx_obj)
+        app(obj=ctx_obj, prog_name=prog_name)
 
     except CliError as e:
         rprint(f"[bold red]Erro:[/bold red] {e.message}")
