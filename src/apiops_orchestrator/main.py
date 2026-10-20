@@ -41,6 +41,15 @@ from apiops_orchestrator.infrastructure.secure_storage.session_store import Sess
 
 logger = logging.getLogger(__name__)
 
+_PACKAGE_LOGGER = "apiops_orchestrator"
+
+
+def _mute_unconfigured_logging() -> None:
+    """Impede que logs internos vazem para o terminal via `logging.lastResort`."""
+    package_logger = logging.getLogger(_PACKAGE_LOGGER)
+    if not any(isinstance(h, logging.NullHandler) for h in package_logger.handlers):
+        package_logger.addHandler(logging.NullHandler())
+
 
 def _load_settings() -> Settings:
     """Carregamento lazy de configuração (ADR 0006).
@@ -231,6 +240,7 @@ def main():
     configuração — `--help`/`--version` respondem sem nenhum `.env`/`.sen`
     (D1-a). Sem argumentos, mostra o help do `sen`.
     """
+    _mute_unconfigured_logging()
     try:
         is_console_script = Path(sys.argv[0]).stem.lower() == "sen"
         if len(sys.argv) <= 1:
