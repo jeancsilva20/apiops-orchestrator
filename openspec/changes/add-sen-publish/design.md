@@ -73,7 +73,8 @@ parâmetro, com default que preserva o texto do `validate`.
 ```
 schema, generatedAt, executionMode,
 api { managerId, name, version, basePath },
-revision { managerId, revisionNumber },
+revision { managerId, revisionNumber,
+           deployments[] { deploymentId, environment { managerId, name }, deployedAt } },   ← §9
 governance { workflowId, stageId, required[], missing[], blocked },
 publication { attempted, accepted, verified, divergences[] },
 warnings[]   ← avisos da montagem e do pré-check
@@ -137,6 +138,24 @@ comportamento.
 Todos os escopos continuam comparados (D-13), mas o que só herda executa o fluxo do escopo acima e
 repetiria os mesmos achados. Eles saem uma vez, no escopo dono do fluxo, com quantos recursos e rotas
 também o executam. No caso real da 417, 23 achados viraram 2.
+
+### 9. Ambientes em que a revisão alvo está no ar (2026-10-20)
+
+O publish não faz deploy, mas a revisão que ele grava pode estar no ar. Quando está, **o conteúdo
+gravado passa a valer no ambiente sem novo deploy** (confirmado pelo usuário em 2026-10-20). Por isso o
+resultado diz onde a revisão alvo está deployada, só como informação: não bloqueia nem muda o exit code.
+
+- Fonte: `revisions[<alvo>].deployments` com `status = DEPLOYED`, do `GET /apis/{id}` que a E2 já faz,
+  sem chamada nova. É a mesma fonte do `sen deploy` (sondagem 2026-10-19 §5.5); a leitura antes da
+  gravação vale porque o publish não muda deploy.
+- Um registro por ambiente, o mais recente; ordem pelo id do ambiente.
+- Nome do ambiente vem de `environments[]` da API. Ambiente não ligado (a plataforma aceita, E-3) sai
+  com `name: null`. `GET /environments/{id}` não é chamado: expõe segredos (L-5b).
+- Só a revisão alvo; `TARGET_ENVIRONMENT_ID` continua ignorado pelo publish.
+- Sem deploy, `revision.deployments` é `[]` e o texto diz "não está deployada em nenhum ambiente".
+  Com deploy, uma linha por ambiente abaixo de "gravada":
+  `deployada em DEV-APIOPS (id 7) · deploy em 2026-10-19T14:02:11Z`.
+- O campo é acréscimo ao contrato: o schema continua `apiops.sen-publish/v1`.
 
 ## Open Questions
 

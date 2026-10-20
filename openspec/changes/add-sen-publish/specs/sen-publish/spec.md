@@ -104,6 +104,23 @@ documento MUST NOT conter token nem dump cru do wire. Em `json`/`yaml` nenhum pr
 - **WHEN** a esteira roda `sen publish -o json` e a publicação é conferida
 - **THEN** o stdout contém só o documento, com `revision.revisionNumber` igual ao alvo e `publication.verified = true`
 
+### Requirement: Target revision deploy status is reported
+
+O resultado SHALL listar em `revision.deployments[]` os ambientes em que a revisão alvo está no ar
+(`deploymentId`, `environment { managerId, name }`, `deployedAt`), lidos de
+`revisions[].deployments` do `GET /apis/{id}` já feito, sem chamada nova. Sem deploy, a lista MUST
+ser `[]`. A informação MUST NOT bloquear nem alterar o exit code. O comando MUST NOT chamar
+`GET /environments/{id}`.
+
+#### Scenario: Revisão deployada
+- **WHEN** a revisão 3 está `DEPLOYED` no ambiente 7 (`DEV-APIOPS`) e a publicação é conferida
+- **THEN** `revision.deployments` traz o ambiente 7 com o id do deploy e a data, e o texto mostra
+  `deployada em DEV-APIOPS (id 7) · deploy em <data>` abaixo de "gravada"
+
+#### Scenario: Revisão fora do ar
+- **WHEN** a revisão alvo não tem registro `DEPLOYED`
+- **THEN** `revision.deployments` é `[]` e o texto mostra "não está deployada em nenhum ambiente"
+
 ### Requirement: Repository prevails on declared interceptors
 
 Para interceptors de request e response, o payload SHALL usar o `content` declarado no repositório

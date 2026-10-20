@@ -37,4 +37,5 @@
 - [x] 6.8 Recusa (`n`) encerra sem relatório, exit 0; Ctrl+C interrompe, exit 130 — `validate` e `publish` (design §6.1, T-21 corrigido no plano)
 - [x] 6.9 Conformidade: item que só mudou de posição gera um achado de posição, não o par "ausente" + "acréscimo"
 - [x] 6.10 Conformidade: escopo que só herda não repete o achado do escopo acima; o achado sai uma vez, com "vale também para N recursos e M rotas"
+- [x] 6.11 Resultado lista os ambientes em que a revisão alvo está no ar (`revision.deployments[]`, design §9); helpers de leitura de deploy extraídos do `deploy_service` para `domain/services/deployments.py`
 - [ ] 6.7 Versionador: a rota com `inherit: true` + itens volta do Manager como `inherit: false` com a lista resolvida — mesma execução, forma diferente no Git (registrar no change do versionador)
