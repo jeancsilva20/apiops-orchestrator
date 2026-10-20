@@ -40,3 +40,15 @@ def ativo_no_ambiente(api: Dict[str, Any], ambiente_id: int) -> Optional[Dict[st
     if not ativos:
         return None
     return max(ativos, key=lambda d: d.get("deployDate") or 0)
+
+
+def ativos_da_revisao(revisao: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Deploy `DEPLOYED` mais recente da revisão em cada ambiente, por id do ambiente."""
+    por_ambiente: Dict[Any, Dict[str, Any]] = {}
+    for d in registros(revisao):
+        if d.get("status") != DEPLOYED or d.get("environmentId") is None:
+            continue
+        atual = por_ambiente.get(d["environmentId"])
+        if atual is None or (d.get("deployDate") or 0) > (atual.get("deployDate") or 0):
+            por_ambiente[d["environmentId"]] = d
+    return [por_ambiente[k] for k in sorted(por_ambiente, key=str)]

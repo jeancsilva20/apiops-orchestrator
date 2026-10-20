@@ -1354,6 +1354,16 @@ def _render_publish_text(view: PublishView) -> None:
     # sucesso conferido é renderizado.
     numero = view.revision.revision_number
     rprint(f"[bold]Revisão {numero}[/bold]  [green]gravada[/green]")
+    if not view.deployments:
+        rprint("  [grey53]não está deployada em nenhum ambiente[/grey53]")
+    for d in view.deployments:
+        linha = "  deployada em "
+        if d.environment.name:
+            linha += f"[white]{d.environment.name}[/white] "
+        detalhe = f"(id {d.environment.manager_id})"
+        if d.deployed_at:
+            detalhe += f" · deploy em {d.deployed_at}"
+        rprint(f"{linha}[grey53]{detalhe}[/grey53]")
     rprint()
 
 

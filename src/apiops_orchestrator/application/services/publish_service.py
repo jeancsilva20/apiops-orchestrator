@@ -7,6 +7,7 @@ sem o diagnóstico em volta: não compara com a API-template nem lê completenes
          revisão alvo pelo número               sem rede — P-1 / P-2
     E1   carregar o repositório                 sem rede — P-8
     E2   API + guarda de identidade             GET      — P-3 / P-4 / P-10
+         ambientes com a revisão no ar          do mesmo GET, só informativo
          Custom referenciados existem           GET
          pré-check de tags e governança         GET      — aborta ANTES de escrever
          ── confirmação ──                      só em EXECUTION_MODE=local
@@ -17,7 +18,7 @@ sem o diagnóstico em volta: não compara com a API-template nem lê completenes
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
     GovernanceBlockedError,
@@ -30,9 +31,11 @@ from apiops_orchestrator.application.services.governance_precheck_service import
 from apiops_orchestrator.application.services.regua_service import ReguaService
 from apiops_orchestrator.application.services.revision_writer import RevisionWriter
 from apiops_orchestrator.config.settings import Settings
+from apiops_orchestrator.domain.models.deploy_model import DeployEnvironment
 from apiops_orchestrator.domain.models.publish_view import (
     SCHEMA_SEN_PUBLISH_V1,
     PublishView,
+    RevisionDeployment,
 )
 from apiops_orchestrator.domain.models.validate_view import (
     AtributoExigido,
@@ -45,7 +48,7 @@ from apiops_orchestrator.domain.ports.local_file_importer_port import (
     LocalFileImporterPort,
 )
 from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
-from apiops_orchestrator.domain.services import revision_payload
+from apiops_orchestrator.domain.services import deployments, revision_payload
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +57,25 @@ REVISAO_DRAFT = 1
 
 def _agora() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _no_ar(api: Dict[str, Any], revisao: Dict[str, Any]) -> List[RevisionDeployment]:
+    """Ambientes em que a revisão está no ar, com o nome dos ligados à API."""
+    nomes = {
+        e.get("id"): e.get("name")
+        for e in api.get("environments") or []
+        if isinstance(e, dict)
+    }
+    return [
+        RevisionDeployment(
+            deployment_id=d.get("id"),
+            environment=DeployEnvironment(
+                manager_id=d["environmentId"], name=nomes.get(d["environmentId"])
+            ),
+            deployed_at=deployments.instante(d.get("deployDate")),
+        )
+        for d in deployments.ativos_da_revisao(revisao)
+    ]
 
 
 class PublishService:
@@ -154,6 +176,7 @@ class PublishService:
             ),
             publicacao=publicacao,
             avisos=avisos,
+            deployments=_no_ar(api, revisao),
         )
 
     def _numero_alvo(self) -> int:

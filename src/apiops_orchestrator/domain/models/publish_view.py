@@ -8,8 +8,9 @@ Contrato: `apiops.sen-publish/v1`.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
+from apiops_orchestrator.domain.models.deploy_model import DeployEnvironment
 from apiops_orchestrator.domain.models.validate_view import (
     AtributoExigido,
     GovernancaResultado,
@@ -21,8 +22,28 @@ from apiops_orchestrator.domain.models.validate_view import (
 SCHEMA_SEN_PUBLISH_V1 = "apiops.sen-publish/v1"
 
 
+@dataclass(frozen=True)
+class RevisionDeployment:
+    """Ambiente em que a revisão alvo está no ar."""
+
+    deployment_id: Optional[int]
+    environment: DeployEnvironment
+    deployed_at: Optional[str] = None
+
+
 def _atributo(a: AtributoExigido) -> Dict[str, Any]:
     return {"attributeId": a.attribute_id, "name": a.name, "tagId": a.tag_id}
+
+
+def _deployment(d: RevisionDeployment) -> Dict[str, Any]:
+    return {
+        "deploymentId": d.deployment_id,
+        "environment": {
+            "managerId": d.environment.manager_id,
+            "name": d.environment.name,
+        },
+        "deployedAt": d.deployed_at,
+    }
 
 
 @dataclass(frozen=True)
@@ -39,6 +60,7 @@ class PublishView:
     # Avisos da montagem do payload e do pré-check: dizem o que vai mudar na
     # plataforma, ou quando o veredito da governança ficou para a gravação.
     avisos: List[str] = field(default_factory=list)
+    deployments: List[RevisionDeployment] = field(default_factory=list)
 
     def to_document(self) -> Dict[str, Any]:
         """Árvore do contrato v1, na ordem declarada — sem token e sem wire cru."""
@@ -55,6 +77,7 @@ class PublishView:
             "revision": {
                 "managerId": self.revision.manager_id,
                 "revisionNumber": self.revision.revision_number,
+                "deployments": [_deployment(d) for d in self.deployments],
             },
             "governance": {
                 "workflowId": self.governanca.workflow_id,

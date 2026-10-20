@@ -15,9 +15,11 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
     IdentidadeDivergenteError,
     ValidateError,
 )
+from apiops_orchestrator.domain.models.deploy_model import DeployEnvironment
 from apiops_orchestrator.domain.models.publish_view import (
     SCHEMA_SEN_PUBLISH_V1,
     PublishView,
+    RevisionDeployment,
 )
 from apiops_orchestrator.domain.models.validate_view import (
     AtributoExigido,
@@ -113,7 +115,7 @@ def test_json_conforme_ao_contrato_v1():
 
     doc = json.loads(resultado.output)
     assert doc["schema"] == "apiops.sen-publish/v1"
-    assert doc["revision"] == {"managerId": 9175, "revisionNumber": 2}
+    assert doc["revision"] == {"managerId": 9175, "revisionNumber": 2, "deployments": []}
     assert doc["publication"]["verified"] is True
     assert doc["warnings"] == ["O `timeout` da raiz passa a 30000 ms."]
 
@@ -141,6 +143,53 @@ def test_texto_mostra_a_revisao_alvo_e_o_resultado():
     assert "Revisão 2 gravada" in saida
     assert "30000 ms" in saida
 
+
+
+_NO_AR = [
+    RevisionDeployment(
+        deployment_id=269,
+        environment=DeployEnvironment(manager_id=7, name="DEV-APIOPS"),
+        deployed_at="2026-10-19T14:02:11Z",
+    )
+]
+
+
+def test_json_traz_os_ambientes_com_a_revisao_no_ar():
+    servico = _ServicoFake(resultado=_view(deployments=_NO_AR))
+    resultado = runner.invoke(app, ["sen", "publish", "-o", "json"], obj=_ctx(servico))
+
+    assert json.loads(resultado.output)["revision"]["deployments"] == [
+        {
+            "deploymentId": 269,
+            "environment": {"managerId": 7, "name": "DEV-APIOPS"},
+            "deployedAt": "2026-10-19T14:02:11Z",
+        }
+    ]
+
+
+def test_texto_mostra_onde_a_revisao_esta_deployada():
+    servico = _ServicoFake(resultado=_view(deployments=_NO_AR))
+    resultado = runner.invoke(app, ["sen", "publish"], obj=_ctx(servico))
+    saida = " ".join(resultado.output.split())
+
+    assert "deployada em DEV-APIOPS (id 7) · deploy em 2026-10-19T14:02:11Z" in saida
+
+
+def test_texto_ambiente_sem_nome_mostra_so_o_id():
+    sem_nome = [RevisionDeployment(deployment_id=271, environment=DeployEnvironment(9))]
+    servico = _ServicoFake(resultado=_view(deployments=sem_nome))
+    resultado = runner.invoke(app, ["sen", "publish"], obj=_ctx(servico))
+    saida = " ".join(resultado.output.split())
+
+    assert "deployada em (id 9)" in saida
+
+
+def test_texto_revisao_fora_do_ar_avisa():
+    servico = _ServicoFake(resultado=_view())
+    resultado = runner.invoke(app, ["sen", "publish"], obj=_ctx(servico))
+    saida = " ".join(resultado.output.split())
+
+    assert "não está deployada em nenhum ambiente" in saida
 
 def test_responder_n_encerra_sem_relatorio():
     """Recusa não produz relatório — só o desfecho."""

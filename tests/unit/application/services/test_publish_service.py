@@ -452,7 +452,7 @@ def test_documento_segue_o_contrato_v1(tmp_path):
         "governance", "publication", "warnings",
     ]
     assert doc["executionMode"] == "pipeline"
-    assert doc["revision"] == {"managerId": 9175, "revisionNumber": 2}
+    assert doc["revision"] == {"managerId": 9175, "revisionNumber": 2, "deployments": []}
     assert doc["publication"]["verified"] is True
     assert doc["governance"]["workflowId"] == 500
     assert doc["governance"]["stageId"] == 1402
@@ -569,3 +569,89 @@ def test_sem_remocao_a_confirmacao_nao_tem_atencao(tmp_path):
         _repo(tmp_path), confirmar=lambda texto: perguntas.append(texto) or True
     )
     assert "Atenção:" not in perguntas[0]
+
+
+# --- ambientes com a revisão alvo no ar (só informativo) ---------------------
+
+# 01/10/2026 e 19/10/2026, em epoch ms.
+_DIA_1 = 1790812800000
+_DIA_19 = 1792368000000
+
+
+def _api_com_deploys(deployments_da_rev_2, environments=None):
+    revisoes = [dict(r) for r in API["revisions"]]
+    revisoes[1]["deployments"] = deployments_da_rev_2
+    return dict(
+        API,
+        revisions=revisoes,
+        environments=environments
+        if environments is not None
+        else [{"id": 7, "name": "DEV-APIOPS"}, {"id": 8, "name": "HML-APIOPS"}],
+    )
+
+
+def _deploy(deployment_id, ambiente, status="DEPLOYED", data=_DIA_19):
+    return {
+        "id": deployment_id,
+        "revisionId": 9175,
+        "revisionNumber": 2,
+        "environmentId": ambiente,
+        "status": status,
+        "deployDate": data,
+    }
+
+
+def test_revisao_no_ar_traz_ambiente_deploy_e_data(tmp_path):
+    manager = ManagerFake(api=_api_com_deploys([_deploy(269, 7)]))
+    view = _servico(manager).publish(_repo(tmp_path), confirmar=_explode)
+
+    assert view.to_document()["revision"]["deployments"] == [
+        {
+            "deploymentId": 269,
+            "environment": {"managerId": 7, "name": "DEV-APIOPS"},
+            "deployedAt": "2026-10-19T00:00:00Z",
+        }
+    ]
+
+
+def test_undeployed_e_ignorado_e_cada_ambiente_aparece_uma_vez(tmp_path):
+    manager = ManagerFake(
+        api=_api_com_deploys(
+            [
+                _deploy(266, 7, status="UNDEPLOYED", data=_DIA_1),
+                _deploy(268, 8, data=_DIA_1),
+                _deploy(269, 7),
+            ]
+        )
+    )
+    view = _servico(manager).publish(_repo(tmp_path), confirmar=_explode)
+
+    assert [(d.environment.manager_id, d.deployment_id) for d in view.deployments] == [
+        (7, 269),
+        (8, 268),
+    ]
+
+
+def test_ambiente_nao_ligado_a_api_vem_sem_nome(tmp_path):
+    """A plataforma aceita deploy em ambiente fora de `environments[]` (E-3)."""
+    manager = ManagerFake(api=_api_com_deploys([_deploy(271, 9)]))
+    view = _servico(manager).publish(_repo(tmp_path), confirmar=_explode)
+
+    assert view.deployments[0].environment.manager_id == 9
+    assert view.deployments[0].environment.name is None
+
+
+def test_revisao_fora_do_ar_vem_como_lista_vazia(tmp_path):
+    manager = ManagerFake(api=_api_com_deploys([_deploy(266, 7, status="UNDEPLOYED")]))
+    view = _servico(manager).publish(_repo(tmp_path), confirmar=_explode)
+
+    assert view.to_document()["revision"]["deployments"] == []
+
+
+def test_deploy_de_outra_revisao_nao_conta(tmp_path):
+    revisoes = [dict(r) for r in API["revisions"]]
+    revisoes[2]["deployments"] = [dict(_deploy(270, 7), revisionId=9180, revisionNumber=3)]
+    manager = ManagerFake(api=dict(API, revisions=revisoes))
+    view = _servico(manager).publish(_repo(tmp_path), confirmar=_explode)
+
+    assert view.deployments == []
