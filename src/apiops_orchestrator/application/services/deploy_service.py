@@ -61,11 +61,11 @@ from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiPort,
     ManagerApiTransportRejectedError,
 )
+from apiops_orchestrator.domain.services import deployments
 
 logger = logging.getLogger(__name__)
 
 REVISAO_DRAFT = 1
-DEPLOYED = "DEPLOYED"
 
 # Recusas em que o motivo da plataforma diz o que corrigir.
 _STATUS_COM_MOTIVO = frozenset({400, 404, 409, 412, 422})
@@ -75,31 +75,11 @@ def _agora() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _instante(epoch_ms: Any) -> Optional[str]:
-    """Epoch em milissegundos → ISO-8601 UTC."""
-    try:
-        return datetime.fromtimestamp(int(epoch_ms) / 1000, tz=timezone.utc).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
-    except (TypeError, ValueError, OverflowError, OSError):
-        return None
-
-
 def _numero(valor: Any) -> Optional[float]:
     try:
         return float(valor)
     except (TypeError, ValueError):
         return None
-
-
-def _deploys(api: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Registros de deploy de todas as revisões da API."""
-    return [
-        d
-        for revisao in api.get("revisions") or []
-        for d in revisao.get("deployments") or []
-        if isinstance(d, dict)
-    ]
 
 
 def _estado(registro: Optional[Dict[str, Any]]) -> Optional[DeployState]:
@@ -109,20 +89,8 @@ def _estado(registro: Optional[Dict[str, Any]]) -> Optional[DeployState]:
         deployment_id=registro.get("id"),
         revision_id=registro.get("revisionId"),
         revision_number=registro.get("revisionNumber"),
-        deployed_at=_instante(registro.get("deployDate")),
+        deployed_at=deployments.instante(registro.get("deployDate")),
     )
-
-
-def _ativo_no_ambiente(api: Dict[str, Any], ambiente_id: int) -> Optional[Dict[str, Any]]:
-    """Deploy `DEPLOYED` mais recente da API no ambiente."""
-    ativos = [
-        d
-        for d in _deploys(api)
-        if d.get("status") == DEPLOYED and d.get("environmentId") == ambiente_id
-    ]
-    if not ativos:
-        return None
-    return max(ativos, key=lambda d: d.get("deployDate") or 0)
 
 
 class DeployService:
@@ -156,7 +124,7 @@ class DeployService:
         self._identidade(spec, api)
         revisao = self._revisao(api, numero)
         ambiente = self._ambiente(api, ambiente_id)
-        anterior = _estado(_ativo_no_ambiente(api, ambiente_id))
+        anterior = _estado(deployments.ativo_no_ambiente(api, ambiente_id))
 
         etapa("Verificando a governança")
         governanca, avisos = self._avaliar_governanca(api, revisao, ambiente_id)
@@ -443,11 +411,16 @@ class DeployService:
             ) from exc
 
         registro = next(
-            (d for d in _deploys(depois) if d.get("id") == deployment_id), None
+            (
+                d
+                for d in deployments.registros_da_api(depois)
+                if d.get("id") == deployment_id
+            ),
+            None,
         )
         conferido = (
             registro is not None
-            and registro.get("status") == DEPLOYED
+            and registro.get("status") == deployments.DEPLOYED
             and registro.get("environmentId") == ambiente.manager_id
             and registro.get("revisionId") == revisao["id"]
         )
@@ -465,7 +438,7 @@ class DeployService:
                 attempted=True,
                 accepted=True,
                 deployment_id=deployment_id,
-                novo=_estado(_ativo_no_ambiente(depois, ambiente.manager_id)),
+                novo=_estado(deployments.ativo_no_ambiente(depois, ambiente.manager_id)),
             )
         return _estado(registro)
 
