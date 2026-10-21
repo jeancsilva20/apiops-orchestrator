@@ -274,7 +274,7 @@ def test_revisions_drill_down_renders_canonical_grade():
     for col in ("REV ID", "REV #", "STAGE", "ENVS", "COMPLETE"):
         assert col in result.output
     assert "Stage One" in result.output
-    assert "85%" in result.output
+    assert "85.0%" in result.output
     assert "sem completeness" not in result.output
     mock_service.api_revisions.assert_called_once_with(400)
     mock_service.list_apis.assert_not_called()
@@ -306,6 +306,7 @@ def test_revisions_note_explains_missing_completeness():
 
     assert result.exit_code == 0
     output = " ".join(result.output.split())
+    assert "74.3%" in output
     assert "1 revisão sem completeness: o Manager não respondeu." in output
     assert "sen completeness --id 68 --revision <REV ID>" in output
 

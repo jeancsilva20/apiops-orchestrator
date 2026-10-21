@@ -677,7 +677,7 @@ REVISIONS_HEADER = (
 
 
 def _format_score(score):
-    return "-" if score is None else f"{score:.0f}%"
+    return "-" if score is None else f"{score:.1f}%"
 
 
 def _revision_cells(row: CatalogRevisionInfo) -> tuple:
