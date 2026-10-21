@@ -13,10 +13,8 @@ from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiTransportRejectedError,
     ManagerApiTransportUnavailableError,
 )
-from apiops_orchestrator.domain.models.api_catalog_model import (
-    ApiCatalogEntry,
-    OwnershipContext,
-)
+from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
+from apiops_orchestrator.domain.models.api_visibility_model import OwnershipContext
 from apiops_orchestrator.domain.models.catalog_revision_model import (
     CatalogRevision,
     CatalogRevisionCompleteness,

@@ -4,10 +4,8 @@ from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter 
     _resolve_last_revision_number,
     _translate_row,
 )
-from apiops_orchestrator.domain.models.api_catalog_model import (
-    ApiCatalogEntry,
-    OwnershipContext,
-)
+from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
+from apiops_orchestrator.domain.models.api_visibility_model import OwnershipContext
 
 
 def _row(raw) -> ApiCatalogEntry:

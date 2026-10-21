@@ -1,15 +1,12 @@
-from enum import StrEnum
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from apiops_orchestrator.domain.models.api_visibility_model import (
+    ApiVisibility,
+    OwnershipContext,
+)
 from apiops_orchestrator.domain.models.catalog_revision_model import CatalogRevision
-
-
-class OwnershipContext(StrEnum):
-    ORGANIZATION = "organization"
-    ME = "me"
-    GROUP = "group"
 
 
 class ApiCatalogEntry(BaseModel):
@@ -47,4 +44,13 @@ class ApiCatalogEntry(BaseModel):
 
     def last_revision_number(self) -> Optional[int]:
         return self.lastRevisionNumber
+
+    def visibility(self) -> ApiVisibility:
+        """Visibilidade da API a partir dos campos de contexto do catálogo."""
+        return ApiVisibility(
+            context=self.contextType,
+            owner=self.owner,
+            groupName=self.contextGroupName,
+            userLogins=self.contextUserLogins,
+        )
 
