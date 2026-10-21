@@ -34,6 +34,7 @@ __all__ = [
     "chave_interceptor",
     "maior_identificador",
     "fluxo_efetivo",
+    "fluxo_composto",
     "preparar_contador_idtemp",
     "construir_item_novo",
     "FluxoDoEscopo",
@@ -157,6 +158,25 @@ def fluxo_efetivo(
     return [i for i in efetivo_do_pai if i.get("id") not in suprimidos]
 
 
+def fluxo_composto(
+    proprios: Optional[Sequence[Dict[str, Any]]],
+    herdado: Optional[Sequence[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    """Fluxo que o Manager compõe para um escopo: o herdado, menos os itens
+    marcados como removidos no escopo, mais os itens próprios."""
+    governados, _ = particionar(proprios)
+    removidos = {
+        (i.get("parent") or {}).get("id")
+        for i in governados
+        if i.get("status") == "REMOVED"
+    }
+    mantidos = [
+        i for i in herdado or []
+        if i.get("id") is None or i.get("id") not in removidos
+    ]
+    return mantidos + [i for i in governados if i.get("status") != "REMOVED"]
+
+
 # --------------------------------------------------------------------------- publish
 
 
@@ -237,12 +257,15 @@ class FluxoDoEscopo:
       wire: é a codificação compacta da mesma resposta (V-27 §2), e mantém a
       propagação viva quando o `all.yaml` muda;
     * `contraditorio` — `inherit: false` sem itens. A plataforma não sabe
-      representar "escopo que não executa nada" (T06), então isso vira aviso.
+      representar "escopo que não executa nada" (T06), então isso vira aviso;
+    * `substitui` — `inherit: false` com itens: o herdado vai marcado como
+      removido no escopo.
     """
 
     efetivo: List[Dict[str, Any]] = field(default_factory=list)
     heranca_pura: bool = False
     contraditorio: bool = False
+    substitui: bool = False
 
 
 def resolver_fluxo_declarado(
@@ -261,7 +284,7 @@ def resolver_fluxo_declarado(
     |---|---|---|---|
     | vazio | `true` | o do pai | `[]` |
     | com itens | `true` | o do pai **+** os declarados | lista completa |
-    | com itens | `false` | exatamente os declarados | lista completa |
+    | com itens | `false` | exatamente os declarados | declarados + herdado marcado como removido |
     | vazio | `false` | o do pai (contraditório) | `[]` + aviso |
 
     A raiz não herda de ninguém: seu efetivo é o que o `all.yaml` declara, e
@@ -283,7 +306,7 @@ def resolver_fluxo_declarado(
 
     if inherit:
         return FluxoDoEscopo(efetivo=herdado + declarados)
-    return FluxoDoEscopo(efetivo=declarados)
+    return FluxoDoEscopo(efetivo=declarados, substitui=True)
 
 
 def montar_fluxo_do_escopo(
@@ -292,8 +315,12 @@ def montar_fluxo_do_escopo(
     *,
     gerar_idtemp: Optional["Iterator[int]"] = None,
     resolver_content: Optional[Any] = None,
+    herdado: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """Traduz um `FluxoDoEscopo` já resolvido para a lista do wire.
+
+    `herdado` é o fluxo que o Manager compõe para o pai (`fluxo_composto`); é
+    marcado como removido quando o escopo o substitui.
 
     Aqui não se decide mais **o que** o escopo executa — isso saiu para
     `resolver_fluxo_declarado` (V-27). O que resta é casar o resolvido com o que
@@ -324,8 +351,8 @@ def montar_fluxo_do_escopo(
     # mesma classe de perda silenciosa que a conferência existe para pegar.
     #
     # O tombstone fica FORA do pool: ele tem a mesma chave do item que suprime, e
-    # reaproveitá-lo publicaria um `status: REMOVED` no lugar do item vivo. Sob a
-    # V-27 a supressão se escreve por omissão da lista, não por tombstone.
+    # reaproveitá-lo publicaria um `status: REMOVED` no lugar do item vivo. As
+    # marcações de remoção são remontadas à parte, a partir do herdado.
     disponiveis: Dict[Any, List[Dict[str, Any]]] = {}
     for item in governados:
         if item.get("status") == "REMOVED":
@@ -368,8 +395,61 @@ def montar_fluxo_do_escopo(
 
     _ordenar_posicoes_como_declarado(saida)
 
+    if fluxo.substitui:
+        herdado = list(herdado or [])
+        _posicionar_depois_do_herdado(saida, herdado)
+        saida += _marcar_como_removido(herdado, governados, gerar_idtemp)
+
     # V-22: o não governado volta intacto, sempre.
     return saida + list(preservados)
+
+
+def _posicionar_depois_do_herdado(
+    proprios: List[Dict[str, Any]], herdado: Sequence[Dict[str, Any]]
+) -> None:
+    """Renumera os itens próprios a partir da maior posição herdada quando
+    algum deles colidiria com ela."""
+    teto = max((i.get("position") or 0 for i in herdado), default=-1)
+    if all((i.get("position") or 0) > teto for i in proprios):
+        return
+    for numero, item in enumerate(proprios, start=teto + 1):
+        item["position"] = numero
+
+
+def _marcar_como_removido(
+    herdado: Sequence[Dict[str, Any]],
+    remotos: Sequence[Dict[str, Any]],
+    gerar_idtemp: "Iterator[int]",
+) -> List[Dict[str, Any]]:
+    """Uma marcação de remoção para cada item herdado que já existe no Manager,
+    reaproveitando a que o escopo já tiver para o mesmo item."""
+    existentes = {
+        (i.get("parent") or {}).get("id"): i
+        for i in remotos
+        if i.get("status") == "REMOVED"
+    }
+    marcacoes: List[Dict[str, Any]] = []
+    for item in herdado:
+        if item.get("id") is None:
+            continue
+        existente = existentes.pop(item["id"], None)
+        if existente is not None:
+            marcacao = copy.deepcopy(existente)
+        else:
+            marcacao = construir_item_novo(
+                tipo=str(item.get("type")),
+                execution_point=str(item.get("executionPoint") or "FIRST"),
+                idtemp=next(gerar_idtemp),
+                position=item.get("position") or 0,
+                content=item.get("content"),
+                custom_interceptor_id=item.get("customInterceptorId"),
+                parent_type=item.get("parentType") or "REVISION",
+            )
+            marcacao["status"] = "REMOVED"
+            marcacao["parent"] = {"id": item["id"], "idTemp": item["id"]}
+        marcacao["position"] = item.get("position")
+        marcacoes.append(marcacao)
+    return marcacoes
 
 
 def _content_do_wire(content: Any) -> Any:

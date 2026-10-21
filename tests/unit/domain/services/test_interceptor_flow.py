@@ -7,6 +7,7 @@ import pytest
 from apiops_orchestrator.domain.services.interceptor_flow import (
     chave_interceptor,
     construir_item_novo,
+    fluxo_composto,
     maior_identificador,
     FluxoDoEscopo,
     montar_fluxo_do_escopo,
@@ -190,6 +191,13 @@ def test_inherit_false_com_itens_substitui():
     fluxo = resolver_fluxo_declarado(PROPRIO, HERDADO, inherit=False)
     assert [i["type"] for i in fluxo.efetivo] == ["Payload size"]
     assert not fluxo.heranca_pura
+
+
+def test_so_inherit_false_com_itens_substitui_o_herdado():
+    assert resolver_fluxo_declarado(PROPRIO, HERDADO, inherit=False).substitui
+    assert not resolver_fluxo_declarado(PROPRIO, HERDADO, inherit=True).substitui
+    assert not resolver_fluxo_declarado([], HERDADO, inherit=False).substitui
+    assert not resolver_fluxo_declarado(PROPRIO, HERDADO, raiz=True).substitui
 
 
 def test_inherit_false_sem_itens_e_contraditorio():
@@ -471,6 +479,134 @@ def test_repeticoes_do_herdado_sobrevivem_a_resolucao():
         fluxo, [], gerar_idtemp=preparar_contador_idtemp({"id": 50})
     )
     assert [i["type"] for i in publicado] == ["Log", "Log", "Payload size"]
+
+
+# --- herdado marcado como removido ------------------------------------------
+
+
+HERDADO_NO_WIRE = [
+    {"id": 10, "type": "Log", "executionPoint": "FIRST", "position": 0,
+     "content": '{"acceptedTerms": true}', "parentType": "REVISION"},
+    {"id": 11, "type": "Custom", "customInterceptorId": 178, "executionPoint": "FIRST",
+     "position": 1, "content": '{"id": 178}', "parentType": "REVISION"},
+    {"id": 12, "type": "Log", "executionPoint": "SECOND", "position": 2,
+     "content": '{"acceptedTerms": true}', "parentType": "REVISION"},
+]
+
+
+def _substitui(*tipos):
+    return FluxoDoEscopo(
+        efetivo=[{"type": t, "executionPoint": "FIRST"} for t in tipos], substitui=True
+    )
+
+
+def _marcacoes(fluxo):
+    return [i for i in fluxo if i.get("status") == "REMOVED"]
+
+
+def test_fluxo_composto_soma_o_herdado_ao_proprio():
+    proprios = [{"id": 20, "type": "Payload size", "executionPoint": "FIRST", "position": 3}]
+    composto = fluxo_composto(proprios, HERDADO_NO_WIRE)
+    assert [i["id"] for i in composto] == [10, 11, 12, 20]
+
+
+def test_fluxo_composto_tira_o_herdado_marcado_como_removido():
+    proprios = [
+        {"id": 20, "type": "Payload size", "executionPoint": "FIRST", "position": 3},
+        {"id": 21, "type": "Log", "executionPoint": "FIRST", "position": 0,
+         "status": "REMOVED", "parent": {"id": 10}},
+    ]
+    composto = fluxo_composto(proprios, HERDADO_NO_WIRE)
+    assert [i["id"] for i in composto] == [11, 12, 20]
+
+
+def test_substituir_marca_cada_herdado_como_removido():
+    fluxo = montar_fluxo_do_escopo(
+        _substitui("Payload size"),
+        [],
+        gerar_idtemp=preparar_contador_idtemp({"id": 50}),
+        herdado=HERDADO_NO_WIRE,
+    )
+    vivos = [i for i in fluxo if i.get("status") != "REMOVED"]
+    marcacoes = _marcacoes(fluxo)
+
+    assert [i["type"] for i in vivos] == ["Payload size"]
+    assert [m["parent"]["id"] for m in marcacoes] == [10, 11, 12]
+    for marcacao, herdado in zip(marcacoes, HERDADO_NO_WIRE):
+        assert marcacao["id"] is None and marcacao["idTemp"] is not None
+        assert marcacao["type"] == herdado["type"]
+        assert marcacao["executionPoint"] == herdado["executionPoint"]
+        assert marcacao["position"] == herdado["position"]
+        assert marcacao["content"] == herdado["content"]
+        assert marcacao["customInterceptorId"] == herdado.get("customInterceptorId")
+    assert len({i["idTemp"] for i in fluxo}) == len(fluxo)
+
+
+def test_marcacao_que_o_escopo_ja_tem_e_reaproveitada():
+    remotos = [
+        {"id": 90, "type": "Log", "executionPoint": "FIRST", "position": 0,
+         "status": "REMOVED", "parent": {"id": 10, "idTemp": 10}},
+    ]
+    fluxo = montar_fluxo_do_escopo(
+        _substitui("Payload size"),
+        remotos,
+        gerar_idtemp=preparar_contador_idtemp({"id": 50}),
+        herdado=HERDADO_NO_WIRE,
+    )
+    por_pai = {m["parent"]["id"]: m for m in _marcacoes(fluxo)}
+    assert por_pai[10]["id"] == 90
+    assert por_pai[11]["id"] is None
+
+
+def test_marcacao_de_item_que_nao_e_mais_herdado_sai():
+    remotos = [
+        {"id": 91, "type": "XSS threat protection", "executionPoint": "FIRST",
+         "position": 5, "status": "REMOVED", "parent": {"id": 99}},
+    ]
+    fluxo = montar_fluxo_do_escopo(
+        _substitui("Payload size"),
+        remotos,
+        gerar_idtemp=preparar_contador_idtemp({"id": 50}),
+        herdado=HERDADO_NO_WIRE,
+    )
+    assert 99 not in {m["parent"]["id"] for m in _marcacoes(fluxo)}
+
+
+def test_proprios_ficam_depois_do_herdado_na_numeracao():
+    fluxo = montar_fluxo_do_escopo(
+        _substitui("Payload size", "Rate limit"),
+        [],
+        gerar_idtemp=preparar_contador_idtemp({"id": 50}),
+        herdado=HERDADO_NO_WIRE,
+    )
+    vivos = [i for i in fluxo if i.get("status") != "REMOVED"]
+    assert [(i["type"], i["position"]) for i in vivos] == [
+        ("Payload size", 3),
+        ("Rate limit", 4),
+    ]
+
+
+def test_herdado_sem_id_nao_e_marcado():
+    herdado = HERDADO_NO_WIRE + [
+        {"id": None, "idTemp": 40, "type": "OAuth", "executionPoint": "FIRST", "position": 4}
+    ]
+    fluxo = montar_fluxo_do_escopo(
+        _substitui("Payload size"),
+        [],
+        gerar_idtemp=preparar_contador_idtemp({"id": 50}),
+        herdado=herdado,
+    )
+    assert "OAuth" not in {m["type"] for m in _marcacoes(fluxo)}
+
+
+def test_quem_nao_substitui_nao_marca_o_herdado():
+    fluxo = montar_fluxo_do_escopo(
+        _resolvido("Payload size"),
+        [],
+        gerar_idtemp=preparar_contador_idtemp({"id": 50}),
+        herdado=HERDADO_NO_WIRE,
+    )
+    assert _marcacoes(fluxo) == []
 
 
 def test_content_de_item_novo_vai_como_string_json():

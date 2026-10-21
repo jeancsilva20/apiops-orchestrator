@@ -20,6 +20,7 @@ from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tupl
 
 from apiops_orchestrator.domain.services.interceptor_flow import (
     FluxoDoEscopo,
+    fluxo_composto,
     montar_fluxo_do_escopo,
     particionar,
     preparar_contador_idtemp,
@@ -130,6 +131,23 @@ def _avisos_do_escopo(
         )
 
     return avisos
+
+
+def _avisos_de_herdado_novo(
+    fluxo: FluxoDoEscopo, herdado: Sequence[Dict[str, Any]], escopo: str
+) -> List[str]:
+    """Herdado que entra no Manager nesta publicação ainda não pode ser marcado
+    como removido no escopo que o substitui."""
+    novos = [i for i in herdado if i.get("id") is None]
+    if not fluxo.substitui or not novos:
+        return []
+    return [
+        f"{escopo}: o arquivo declara `inherit: false`, mas {len(novos)} "
+        f"interceptor(es) herdado(s) ({_rotular(novos)}) entram no Manager nesta "
+        "mesma publicação e ainda não podem ser removidos deste ponto. Até a próxima "
+        "publicação, ele também vai executá-los.\n"
+        "Rode o comando de novo depois desta publicação para que eles saiam daqui."
+    ]
 
 
 def _herda(bloco: Dict[str, Any]) -> bool:
@@ -316,6 +334,7 @@ def montar(
         gerar_idtemp=contador,
         resolver_content=_content,
     )
+    composto_raiz = fluxo_composto(corpo["interceptors"])
 
     # --- recursos e operações ------------------------------------------------
     # Cada pasta é ligada ao recurso remoto pelas rotas, não pelo nome (V-12a):
@@ -358,6 +377,9 @@ def montar(
             _declarados(dados), fluxo_raiz.efetivo, inherit=_herda(dados)
         )
         avisos.extend(_avisos_do_escopo(fluxo_recurso, remoto, f"resource {rotulo}"))
+        avisos.extend(
+            _avisos_de_herdado_novo(fluxo_recurso, composto_raiz, f"resource {rotulo}")
+        )
         _esperar(f"resource {rotulo}", fluxo_recurso)
         if dados.get("description") is not None:
             bloco["description"] = dados.get("description")
@@ -369,7 +391,9 @@ def montar(
             remoto.get("interceptors"),
             gerar_idtemp=contador,
             resolver_content=_content,
+            herdado=composto_raiz,
         )
+        composto_recurso = fluxo_composto(bloco["interceptors"], composto_raiz)
 
         remotas_por_chave = {
             _rota(o.get("method"), o.get("path")): o
@@ -396,6 +420,11 @@ def montar(
             avisos.extend(
                 _avisos_do_escopo(fluxo_op, remota, f"{op.metodo} {od.get('path')}")
             )
+            avisos.extend(
+                _avisos_de_herdado_novo(
+                    fluxo_op, composto_recurso, f"{op.metodo} {od.get('path')}"
+                )
+            )
             _esperar(_rotulo_rota(chave), fluxo_op)
             item["method"] = op.metodo
             item["path"] = od.get("path")
@@ -409,6 +438,7 @@ def montar(
                 remota.get("interceptors"),
                 gerar_idtemp=contador,
                 resolver_content=_content,
+                herdado=composto_recurso,
             )
             if not remota:
                 # W-6: a operação PERTENCE ao recurso. Reaproveitar o `id` de
@@ -531,6 +561,20 @@ def _por_escopo(
     }
 
 
+def _marcacoes_por_escopo(
+    no: Dict[str, Any], rotulos: Sequence[str]
+) -> Dict[str, Dict[Any, Dict[str, Any]]]:
+    """Marcações de remoção de cada escopo, indexadas pelo `parent.id` que apontam."""
+    return {
+        escopo: {
+            (i.get("parent") or {}).get("id"): i
+            for i in itens
+            if i.get("status") == "REMOVED"
+        }
+        for escopo, itens in _por_escopo(no, rotulos).items()
+    }
+
+
 def _contagem_por_escopo(no: Dict[str, Any], rotulos: Sequence[str]) -> Dict[str, int]:
     """Quantos itens **vivos** cada escopo tem.
 
@@ -617,17 +661,24 @@ def conferir(
             f"o recurso {sobrando} está no Manager mas não foi enviado"
         )
 
-    # V-27 §8 (E-2): sob a nova semântica o repositório nunca envia tombstone —
-    # a supressão se escreve omitindo o item da lista. Um `status: REMOVED` que
-    # sobreviva ao PUT continua suprimindo um item herdado, então o fluxo
-    # publicado não é o que o repositório declarou. Vale o veredito.
-    for escopo, itens in sorted(_por_escopo(publicado, rotulos_p).items()):
-        remanescentes = [i for i in itens if i.get("status") == "REMOVED"]
-        if remanescentes:
+    marcacoes_enviadas = _marcacoes_por_escopo(enviado, rotulos_e)
+    marcacoes_gravadas = _marcacoes_por_escopo(publicado, rotulos_p)
+    for escopo in sorted(set(marcacoes_enviadas) | set(marcacoes_gravadas)):
+        enviadas = marcacoes_enviadas.get(escopo, {})
+        gravadas = marcacoes_gravadas.get(escopo, {})
+        sobrando = [gravadas[k] for k in gravadas.keys() - enviadas.keys()]
+        faltando = [enviadas[k] for k in enviadas.keys() - gravadas.keys()]
+        if sobrando:
             divergencias.append(
-                f"{escopo}: o Manager ainda tem {len(remanescentes)} marcação(ões) de "
-                f"interceptor removido ({_rotular(remanescentes)}) que não foram "
+                f"{escopo}: o Manager ainda tem {len(sobrando)} marcação(ões) de "
+                f"interceptor removido ({_rotular(sobrando)}) que não foram "
                 "enviadas; elas continuam suprimindo itens do fluxo herdado"
+            )
+        if faltando:
+            divergencias.append(
+                f"{escopo}: foram enviadas {len(faltando)} marcação(ões) de interceptor "
+                f"removido ({_rotular(faltando)}) que o Manager não gravou; esses itens "
+                "herdados continuam executando aqui"
             )
 
     destinos_enviados = _destinos_por_escopo(enviado, rotulos_e)

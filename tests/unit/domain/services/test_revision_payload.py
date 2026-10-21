@@ -145,6 +145,83 @@ def test_inherit_false_publica_so_o_declarado():
     assert _tipos(publicados) == ["Payload size"]
 
 
+_RAIZ_NO_MANAGER = [
+    {"id": 10, "type": "Log", "executionPoint": "FIRST", "position": 0,
+     "status": "REFERENCE", "parentType": "REVISION"},
+    {"id": 11, "type": "Rate limit", "executionPoint": "FIRST", "position": 1,
+     "status": "REFERENCE", "parentType": "REVISION"},
+]
+_RAIZ_NO_REPO = {"interceptors_request": [{"type": "Log"}, {"type": "Rate limit"}]}
+
+
+def _draft_com(raiz, recursos=()):
+    return {"id": 1, "api": {}, "interceptors": list(raiz), "resources": list(recursos)}
+
+
+def _marcados(itens):
+    return sorted(i["parent"]["id"] for i in itens if i.get("status") == "REMOVED")
+
+
+def _vivos(itens):
+    return [i["type"] for i in itens if i.get("status") != "REMOVED"]
+
+
+def test_inherit_false_marca_o_herdado_da_raiz_como_removido():
+    op = _Op("GET", {"path": "/x", "inherit": False,
+                     "interceptors_request": [{"type": "Payload size"}]})
+    montado = _montar(
+        _RAIZ_NO_REPO, [_Rec({"name": "R", "inherit": True}, [op])],
+        draft=_draft_com(_RAIZ_NO_MANAGER),
+    )
+
+    publicados = montado.corpo["resources"][0]["operations"][0]["interceptors"]
+    assert _vivos(publicados) == ["Payload size"]
+    assert _marcados(publicados) == [10, 11]
+    assert montado.avisos == []
+
+
+def test_rota_abaixo_de_recurso_que_substitui_marca_so_o_do_recurso():
+    """O recurso já tirou a raiz; a rota herda só o que o recurso executa."""
+    recurso_remoto = {
+        "name": "R",
+        "interceptors": [{"id": 20, "type": "XSS threat protection",
+                          "executionPoint": "FIRST", "position": 2,
+                          "status": "REFERENCE", "parentType": "REVISION"}],
+        "operations": [{"id": 5, "method": "GET", "path": "/x", "interceptors": []}],
+    }
+    op = _Op("GET", {"path": "/x", "inherit": False,
+                     "interceptors_request": [{"type": "Payload size"}]})
+    recurso = _Rec(
+        {"name": "R", "inherit": False,
+         "interceptors_request": [{"type": "XSS threat protection"}]},
+        [op],
+    )
+    montado = _montar(
+        _RAIZ_NO_REPO, [recurso], draft=_draft_com(_RAIZ_NO_MANAGER, [recurso_remoto])
+    )
+
+    bloco = montado.corpo["resources"][0]
+    assert _marcados(bloco["interceptors"]) == [10, 11]
+    assert _marcados(bloco["operations"][0]["interceptors"]) == [20]
+
+
+def test_inherit_false_avisa_o_herdado_que_nasce_na_mesma_publicacao():
+    op = _Op("GET", {"path": "/x", "inherit": False,
+                     "interceptors_request": [{"type": "Payload size"}]})
+    montado = _montar(
+        {"interceptors_request": [{"type": "Log"}, {"type": "OAuth"}]},
+        [_Rec({"name": "R", "inherit": True}, [op])],
+        draft=_draft_com(_RAIZ_NO_MANAGER[:1]),
+    )
+
+    publicados = montado.corpo["resources"][0]["operations"][0]["interceptors"]
+    assert _marcados(publicados) == [10]
+    assert any(
+        "GET /x" in a and "OAuth" in a and "ainda não podem ser removidos" in a
+        for a in montado.avisos
+    )
+
+
 def test_o_nao_governado_volta_intacto_mesmo_na_heranca_pura():
     """V-22: `[]` na lista governada não pode levar o preservado junto."""
     preservado = {"id": 7, "type": "Custom", "executionPoint": "THIRD", "position": 9}
@@ -259,6 +336,31 @@ def test_conferir_reporta_tombstone_remanescente():
     }
     divergencias = revision_payload.conferir(enviado, publicado)
     assert any("marcação(ões) de interceptor removido" in d for d in divergencias)
+
+
+_MARCACAO = {"id": None, "idTemp": 30, "type": "Log", "executionPoint": "FIRST",
+             "position": 0, "status": "REMOVED", "parent": {"id": 10, "idTemp": 10}}
+
+
+def _com_rota(itens):
+    return {
+        "interceptors": [],
+        "resources": [{"name": "R", "interceptors": [], "operations": [
+            {"method": "GET", "path": "/x", "interceptors": itens}
+        ]}],
+    }
+
+
+def test_conferir_aceita_a_marcacao_enviada_e_gravada():
+    gravada = {**_MARCACAO, "id": 31}
+    assert revision_payload.conferir(_com_rota([_MARCACAO]), _com_rota([gravada])) == []
+
+
+def test_conferir_reporta_marcacao_enviada_e_nao_gravada():
+    divergencias = revision_payload.conferir(_com_rota([_MARCACAO]), _com_rota([]))
+    assert any(
+        d.startswith("GET /x:") and "que o Manager não gravou" in d for d in divergencias
+    )
 
 
 def test_conferir_nao_conta_tombstone_como_fluxo():
