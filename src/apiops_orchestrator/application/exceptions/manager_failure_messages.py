@@ -23,3 +23,7 @@ UNAVAILABLE_MESSAGE = (
     "Manager indisponível no momento. Verifique sua rede e tente novamente "
     "em instantes."
 )
+
+# Missing and invisible APIs share this text, so the answer never tells them
+# apart (api-visibility).
+API_NOT_FOUND_TEMPLATE = "API {api_id} não encontrada ou sem permissão de acesso."

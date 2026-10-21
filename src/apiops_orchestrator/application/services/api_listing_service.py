@@ -14,6 +14,7 @@ from apiops_orchestrator.application.exceptions.listing_exceptions import (
 from apiops_orchestrator.application.exceptions.manager_failure_messages import (
     INTERNAL_ERROR_MESSAGE,
 )
+from apiops_orchestrator.application.services.api_access_guard import ApiAccessGuard
 from apiops_orchestrator.application.services.manager_failure_translator import (
     classify_manager_failure,
     manager_failure_message,
@@ -21,7 +22,6 @@ from apiops_orchestrator.application.services.manager_failure_translator import 
 from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
 from apiops_orchestrator.domain.models.catalog_revision_model import CatalogRevisionInfo
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
-from apiops_orchestrator.domain.services.catalog_visibility import finder_rows_visible_to
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiPort,
     ManagerApiResponseTooLargeError,
@@ -65,6 +65,7 @@ class ApiListingService:
     ):
         self.manager_api = manager_api
         self.session = session
+        self._guard = ApiAccessGuard(session)
 
     def list_apis(
         self,
@@ -89,10 +90,7 @@ class ApiListingService:
         limit: Optional[int],
     ) -> List[ApiCatalogEntry]:
         if api_id is not None:
-            entry = self.manager_api.list_api_detail(api_id)
-            if not entry:
-                raise ApiNotFound(api_id)
-            return [entry]
+            return [self._visible_detail(api_id)]
 
         if self.session is not None:
             super_admin = self.session.is_super_admin
@@ -122,9 +120,7 @@ class ApiListingService:
             raise _catalog_access_error(exc, api_id) from exc
 
     def _api_revisions_internal(self, api_id: int) -> List[CatalogRevisionInfo]:
-        entry = self.manager_api.list_api_detail(api_id)
-        if not entry:
-            raise ApiNotFound(api_id)
+        entry = self._visible_detail(api_id)
 
         workflow_ids = sorted(
             {rev.workflowId for rev in entry.revisions if rev.workflowId is not None}
@@ -158,6 +154,13 @@ class ApiListingService:
             )
         rows.sort(key=lambda row: row.revision_number)
         return rows
+
+    def _visible_detail(self, api_id: int) -> ApiCatalogEntry:
+        """Linha da API no catálogo; inexistente ou invisível vira `ApiNotFound`."""
+        entry = self.manager_api.list_api_detail(api_id)
+        if not entry or not self._guard.can_see(entry.visibility()):
+            raise ApiNotFound(api_id)
+        return entry
 
     def _read_completeness_scores(
         self, revision_ids: List[int]
@@ -201,7 +204,7 @@ class ApiListingService:
 
     def _sees_everything(self) -> bool:
         """Sem sessão (fluxo legado) ou super admin: nenhuma linha é filtrada."""
-        return self.session is None or self.session.is_super_admin
+        return self._guard.sees_everything()
 
     def _scan_catalog(
         self,
@@ -268,11 +271,4 @@ class ApiListingService:
     def _filter_visibility(
         self, rows: List[ApiCatalogEntry]
     ) -> List[ApiCatalogEntry]:
-        if self.session is None:
-            return rows
-        return finder_rows_visible_to(
-            rows,
-            self.session.userName,
-            list(self.session.userGroups or []),
-            self.session.is_super_admin,
-        )
+        return [row for row in rows if self._guard.can_see(row.visibility())]

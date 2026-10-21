@@ -279,22 +279,45 @@ class TestVisibilityOnListing:
         # Bloqueio ANTES de consumir/complementar dados na colecao
         mock_manager_api.get_apis.assert_not_called()
 
-    def test_drill_down_by_id_ignores_visibility_session(
+    def test_drill_down_shows_api_visible_to_the_session(self, mock_manager_api):
+        mock_manager_api.list_api_detail.return_value = _wire(
+            {"apiId": 9, "contextType": "GROUP", "contextGroupName": "APIOps"}
+        )
+        service = ApiListingService(
+            manager_api=mock_manager_api, session=_make_session(groups=["APIOps"])
+        )
+
+        assert [entry.id for entry in service.list_apis(api_id=9)] == [9]
+
+    def test_drill_down_answers_invisible_api_like_a_missing_one(
         self, mock_manager_api
     ):
-        mock_manager_api.list_api_detail.return_value = _wire({
-            "apiId": 9, "apiName": "Qualquer", "description": "d",
-            "version": "1", "basePath": "/q/v1",
-        })
-        session = MagicMock(spec=LoginSession)
-        session.is_super_admin = False
-        session.userName = "isaac.machado"
-        session.userGroups = []
+        service = ApiListingService(
+            manager_api=mock_manager_api, session=_make_session(groups=["APIOps"])
+        )
 
-        service = ApiListingService(manager_api=mock_manager_api, session=session)
-        result = service.list_apis(api_id=9)
+        mock_manager_api.list_api_detail.return_value = None
+        with pytest.raises(ApiNotFound) as inexistente:
+            service.list_apis(api_id=9)
 
-        assert [entry.id for entry in result] == [9]
+        mock_manager_api.list_api_detail.return_value = _wire(
+            {"apiId": 9, "contextType": "GROUP", "contextGroupName": "Lab-tech"}
+        )
+        with pytest.raises(ApiNotFound) as invisivel:
+            service.list_apis(api_id=9)
+
+        assert str(invisivel.value) == str(inexistente.value)
+        mock_manager_api.list_catalog_apis.assert_not_called()
+
+    def test_drill_down_of_super_admin_ignores_visibility(self, mock_manager_api):
+        mock_manager_api.list_api_detail.return_value = _wire(
+            {"apiId": 9, "contextType": "GROUP", "contextGroupName": "Lab-tech"}
+        )
+        service = ApiListingService(
+            manager_api=mock_manager_api, session=_make_session(profile="super-admin")
+        )
+
+        assert [entry.id for entry in service.list_apis(api_id=9)] == [9]
 
 
 MANAGER_SCORES = {8862: 74.3, 8876: 75.8, 8882: 88.8}
@@ -399,6 +422,19 @@ class TestApiRevisionsOrchestration:
         with pytest.raises(ApiNotFound):
             service.api_revisions(999)
 
+        mock_manager_api.get_revision_completeness.assert_not_called()
+
+    def test_invisible_api_reads_neither_stages_nor_completeness(
+        self, mock_manager_api
+    ):
+        service = ApiListingService(
+            manager_api=mock_manager_api, session=_make_session(groups=["APIOps"])
+        )
+
+        with pytest.raises(ApiNotFound):
+            service.api_revisions(400)
+
+        mock_manager_api.get_workflow_stages.assert_not_called()
         mock_manager_api.get_revision_completeness.assert_not_called()
 
     def test_stage_failure_degrades_to_workflow_id(self, mock_manager_api):

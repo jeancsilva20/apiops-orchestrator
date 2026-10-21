@@ -1,3 +1,8 @@
+from apiops_orchestrator.application.exceptions.manager_failure_messages import (
+    API_NOT_FOUND_TEMPLATE,
+)
+
+
 class ListingError(Exception):
     exit_code = 1
 
@@ -14,9 +19,7 @@ class ApiCollectionError(ListingError):
 
 class ApiNotFound(ApiCollectionError):
     def __init__(self, api_id: int):
-        super().__init__(
-            f"API {api_id} não encontrada ou sem permissão de acesso."
-        )
+        super().__init__(API_NOT_FOUND_TEMPLATE.format(api_id=api_id))
 
 class InvalidWindow(ApiCollectionError):
     _TEMPLATES = {
