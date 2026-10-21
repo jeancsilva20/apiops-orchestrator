@@ -24,6 +24,7 @@ from apiops_orchestrator.application.exceptions.manager_failure_messages import 
 from apiops_orchestrator.application.services.admin_token_provider import (
     AdminTokenProvider,
 )
+from apiops_orchestrator.application.services.api_access_guard import ApiAccessGuard
 from apiops_orchestrator.application.services.api_listing_service import (
     ApiListingService,
 )
@@ -233,7 +234,7 @@ def build_deploy_service_factory():
 
 
 def build_manager_api_factory():
-    """Adapter do Manager + settings, para os diagnósticos somente leitura."""
+    """Adapter do Manager, settings e guarda de visibilidade, para os diagnósticos somente leitura."""
 
     def factory():
         settings = _load_settings()
@@ -245,6 +246,7 @@ def build_manager_api_factory():
                 settings=settings,
             ),
             settings,
+            ApiAccessGuard(_build_session_store(settings).load()),
         )
 
     return factory

@@ -7,11 +7,17 @@ testar a CLI sem rede.
 """
 
 import json
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
 
 from apiops_orchestrator.adapters.inbound.cli.cli_adapter import app
+from apiops_orchestrator.application.services.api_access_guard import ApiAccessGuard
+from apiops_orchestrator.domain.models.login_session_model import LoginSession
+from apiops_orchestrator.domain.ports.manager_api_port import (
+    ManagerApiTransportRejectedError,
+)
 from apiops_orchestrator.application.exceptions.manager_failure_messages import (
     INTERNAL_ERROR_MESSAGE,
 )
@@ -330,6 +336,77 @@ def test_diag_structure_aponta_o_arquivo_base_ausente(tmp_path):
     assert doc["completo"] is False
     assert "all.yaml" in doc["faltando"]
     assert "alll.yaml" in doc["ignorados"]
+
+
+# --- sen diag draft: api-visibility -----------------------------------------
+
+
+class _ManagerDoDraft:
+    def __init__(self, visibility):
+        self.visibility = visibility
+        self.chamadas = []
+
+    def get_api_by_id(self, api_id=None):
+        self.chamadas.append("get_api_by_id")
+        if self.visibility is None:
+            raise ManagerApiTransportRejectedError(status_code=404, title="Not Found")
+        return {
+            "id": api_id,
+            "name": "Servico de Letras",
+            "revisions": [{"id": 9161, "revisionNumber": 1}],
+            "visibility": self.visibility,
+        }
+
+    def get_revision(self, revision_id):
+        self.chamadas.append("get_revision")
+        return {"id": revision_id, "revisionNumber": 1, "interceptors": [], "resources": []}
+
+
+def _diag_draft(tmp_path, visibility):
+    (tmp_path / "api-basic-info.yaml").write_text(
+        "apiVersion: api-management.sensedia.com/v1\nkind: ApiBasicInfo\nspec:\n  id: 417\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "all.yaml").write_text("destination:\n  url: https://x\n", encoding="utf-8")
+    sessao = LoginSession.model_validate({
+        "accessToken": "x", "tokenType": "Bearer", "expiresIn": 3600,
+        "scope": "validate", "profile": "developer",
+        "userName": "isaac.machado", "userEmail": "isaac.machado@sensedia.com",
+        "userGroups": ["APIOps"],
+    })
+    manager = _ManagerDoDraft(visibility)
+    fabrica = lambda: (  # noqa: E731
+        manager, SimpleNamespace(modo_pipeline=False), ApiAccessGuard(sessao)
+    )
+    resultado = runner.invoke(
+        app,
+        ["sen", "diag", "draft", "--repo", str(tmp_path), "-o", "json"],
+        obj={"manager_api_factory": fabrica},
+    )
+    return resultado, manager
+
+
+@pytest.mark.parametrize(
+    "visibility",
+    [{"visibilityType": "GROUP", "groupVisibility": {"name": "Lab-tech"}}, None],
+    ids=["invisivel", "inexistente"],
+)
+def test_diag_draft_de_api_invisivel_responde_como_inexistente(tmp_path, visibility):
+    resultado, manager = _diag_draft(tmp_path, visibility)
+
+    assert resultado.exit_code == 1
+    assert "API 417 não encontrada ou sem permissão de acesso." in resultado.output
+    assert manager.chamadas == ["get_api_by_id"]
+
+
+def test_diag_draft_de_api_visivel_mostra_a_revisao(tmp_path):
+    resultado, manager = _diag_draft(
+        tmp_path, {"visibilityType": "GROUP", "groupVisibility": {"name": "APIOps"}}
+    )
+
+    assert resultado.exit_code == 0
+    assert json.loads(resultado.output)["revision"]["managerId"] == 9161
+    assert manager.chamadas == ["get_api_by_id", "get_revision"]
 
 
 def test_json_sobrevive_a_valor_mais_longo_que_o_console(tmp_path):

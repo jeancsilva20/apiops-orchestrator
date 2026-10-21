@@ -53,6 +53,7 @@ from apiops_orchestrator.application.exceptions.listing_exceptions import (
     ApiCollectionError,
 )
 from apiops_orchestrator.application.exceptions.manager_failure_messages import (
+    API_NOT_FOUND_TEMPLATE,
     INTERNAL_ERROR_MESSAGE,
 )
 from apiops_orchestrator.application.services.manager_failure_translator import (
@@ -1762,7 +1763,10 @@ def diag_draft(
     from apiops_orchestrator.application.services.repo_importer_service import (
         RepoCanonicalReader,
     )
-    from apiops_orchestrator.application.services.validate_service import numero_alvo
+    from apiops_orchestrator.application.services.validate_service import (
+        api_visivel,
+        numero_alvo,
+    )
     from apiops_orchestrator.domain.services.interceptor_flow import particionar
 
     try:
@@ -1775,8 +1779,11 @@ def diag_draft(
         lido = RepoCanonicalReader(LocalFileImporterAdapter()).carregar(str(alvo))
         spec = (lido.basic_info or {}).get("spec") or {}
 
-        manager, settings = cast(Callable[[], Any], fabrica)()
-        api = manager.get_api_by_id(spec.get("id")) or {}
+        manager, settings, acesso = cast(Callable[[], Any], fabrica)()
+        api = api_visivel(manager, acesso, spec.get("id"))
+        if api is None:
+            _print_erro(API_NOT_FOUND_TEMPLATE.format(api_id=spec.get("id")))
+            raise typer.Exit(code=1)
         numero = numero_alvo(settings)
         revisao = next(
             (r for r in (api.get("revisions") or []) if r.get("revisionNumber") == numero),

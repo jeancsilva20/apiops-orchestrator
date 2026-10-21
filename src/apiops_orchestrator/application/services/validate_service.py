@@ -3,6 +3,7 @@
 Recebe **ports**, nunca adapters concretos, espelhando o `CompletenessService`.
 
     E1   carregar o repositório                       sem rede
+         ── visibilidade da API (api-visibility) ──   aborta logo após o GET da API
          ── guarda 1: version e basePath (D-11) ──    aborta antes de escrever
     E2   régua + conformidade + Custom                GET
          ── pré-check de governança ──                aborta ANTES de escrever
@@ -19,9 +20,17 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
+    ApiInacessivelError,
     GovernanceBlockedError,
     TagInvalidaError,
     TemplateNaoConfiguradaError,
+)
+from apiops_orchestrator.application.enums.manager_failure_kind_enum import (
+    ManagerFailureKind,
+)
+from apiops_orchestrator.application.services.api_access_guard import ApiAccessGuard
+from apiops_orchestrator.application.services.manager_failure_translator import (
+    classify_manager_failure,
 )
 from apiops_orchestrator.application.services.governance_precheck_service import (
     GovernancePrecheckService,
@@ -50,8 +59,12 @@ from apiops_orchestrator.domain.models.validate_view import (
 from apiops_orchestrator.domain.ports.local_file_importer_port import (
     LocalFileImporterPort,
 )
-from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
+from apiops_orchestrator.domain.ports.manager_api_port import (
+    ManagerApiPort,
+    ManagerApiTransportRejectedError,
+)
 from apiops_orchestrator.domain.services import revision_payload
+from apiops_orchestrator.domain.services.api_visibility import from_api_payload
 from apiops_orchestrator.domain.services.interceptor_flow import (
     fluxo_efetivo,
     particionar,
@@ -62,6 +75,19 @@ logger = logging.getLogger(__name__)
 
 GATE_COMPLETENESS = 70.0
 REVISAO_DRAFT = 1
+
+
+def api_visivel(
+    manager_api: ManagerApiPort, acesso: ApiAccessGuard, api_id: Any
+) -> Optional[Dict[str, Any]]:
+    """`GET /apis/{id}` da API do repositório; `None` se ela não existe ou a sessão não a enxerga."""
+    try:
+        api = manager_api.get_api_by_id(api_id) or {}
+    except ManagerApiTransportRejectedError as exc:
+        if classify_manager_failure(exc) is not ManagerFailureKind.NOT_FOUND:
+            raise
+        return None
+    return api if acesso.can_see(from_api_payload(api)) else None
 
 
 def numero_alvo(settings: Settings) -> int:
@@ -111,7 +137,7 @@ class ValidateService:
         self._manager_api = manager_api
         self._importer = importer
         self._settings = settings
-        self._session = session
+        self._acesso = ApiAccessGuard(session)
         self._regua = ReguaService(manager_api, settings)
         self._governanca = GovernancePrecheckService(manager_api)
         self._escrita = RevisionWriter(manager_api, importer, comando="validate")
@@ -145,7 +171,9 @@ class ValidateService:
         spec = lido.basic_info.get("spec") or {}
 
         etapa("Consultando a API no Manager")
-        api = self._manager_api.get_api_by_id(spec.get("id")) or {}
+        api = api_visivel(self._manager_api, self._acesso, spec.get("id"))
+        if api is None:
+            raise ApiInacessivelError(spec.get("id"))
         self._escrita.guarda_identidade(spec, api)
 
         revisao = self._revisao_alvo(api)

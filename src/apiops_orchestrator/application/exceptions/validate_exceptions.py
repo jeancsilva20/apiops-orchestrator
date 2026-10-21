@@ -18,6 +18,7 @@ linha de comando, e o `sen completeness` já o ocupa com outra semântica.
 from typing import Any, Dict, List, Optional
 
 from apiops_orchestrator.application.exceptions.manager_failure_messages import (
+    API_NOT_FOUND_TEMPLATE,
     UNAVAILABLE_MESSAGE,
 )
 
@@ -30,6 +31,19 @@ class ValidateError(Exception):
     def __init__(self, message: str):
         self.message = message
         super().__init__(self.message)
+
+
+class ApiInacessivelError(ValidateError):
+    """A sessão não enxerga a API do repositório (api-visibility).
+
+    Responde igual à API inexistente, sem dizer qual dos dois é o caso.
+    """
+
+    def __init__(self, api_id: Any):
+        super().__init__(
+            f"{API_NOT_FOUND_TEMPLATE.format(api_id=api_id)}\n\nNada foi publicado."
+        )
+        self.api_id = api_id
 
 
 class IdentidadeDivergenteError(ValidateError):

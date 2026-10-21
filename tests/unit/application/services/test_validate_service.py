@@ -13,6 +13,7 @@ from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_import
     LocalFileImporterAdapter,
 )
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
+    ApiInacessivelError,
     CustomInexistenteError,
     GovernanceBlockedError,
     IdentidadeDivergenteError,
@@ -26,6 +27,7 @@ from apiops_orchestrator.application.exceptions.manager_failure_messages import 
     INTERNAL_ERROR_MESSAGE,
 )
 from apiops_orchestrator.application.services.validate_service import ValidateService
+from apiops_orchestrator.domain.models.login_session_model import LoginSession
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiGovernanceBlockedError,
     ManagerApiTransportRejectedError,
@@ -246,6 +248,110 @@ def test_spec_id_divergente_nao_aborta(tmp_path):
     """D-11: `spec.id` é o endereço do GET, não a identidade."""
     manager = ManagerFake(api=dict(API, id=999))
     _servico(manager).validate(_repo(tmp_path), confirmar=SIM)
+    assert "update_revision" in manager.chamadas
+
+
+# --- api-visibility ---------------------------------------------------------
+
+GRUPO_ALHEIO = {
+    "visibilityType": "GROUP",
+    "groupVisibility": {"name": "Lab-tech"},
+    "owner": "isaac.machado",
+    "users": [],
+}
+
+
+def _sessao(perfil="developer"):
+    dados = {
+        "accessToken": "x",
+        "tokenType": "Bearer",
+        "expiresIn": 3600,
+        "scope": "validate",
+        "profile": perfil,
+    }
+    if perfil == "developer":
+        dados.update(
+            userName="isaac.machado",
+            userEmail="isaac.machado@sensedia.com",
+            userGroups=["APIOps"],
+        )
+    return LoginSession.model_validate(dados)
+
+
+def _servico_da_sessao(manager, sessao):
+    return ValidateService(
+        manager_api=manager,
+        importer=LocalFileImporterAdapter(),
+        settings=_settings(),
+        session=sessao,
+    )
+
+
+def test_api_invisivel_aborta_logo_apos_ler_a_api(tmp_path):
+    manager = ManagerFake(api=dict(API, visibility=GRUPO_ALHEIO))
+
+    with pytest.raises(ApiInacessivelError) as capturado:
+        _servico_da_sessao(manager, _sessao()).validate(_repo(tmp_path), confirmar=SIM)
+
+    assert manager.chamadas == ["get_api_by_id"]
+    assert capturado.value.message.startswith(
+        "API 417 não encontrada ou sem permissão de acesso."
+    )
+    assert "Nada foi publicado." in capturado.value.message
+    assert capturado.value.exit_code == 1
+
+
+class _ManagerSemAApi(ManagerFake):
+    def get_api_by_id(self, api_id=None):
+        self.chamadas.append("get_api_by_id")
+        raise ManagerApiTransportRejectedError(status_code=404, title="Not Found")
+
+
+@pytest.mark.parametrize("perfil", ["developer", "super-admin"])
+def test_api_inexistente_responde_como_a_invisivel(tmp_path, perfil):
+    invisivel = ManagerFake(api=dict(API, visibility=GRUPO_ALHEIO))
+    with pytest.raises(ApiInacessivelError) as esperado:
+        _servico_da_sessao(invisivel, _sessao()).validate(_repo(tmp_path), confirmar=SIM)
+
+    manager = _ManagerSemAApi()
+    with pytest.raises(ApiInacessivelError) as capturado:
+        _servico_da_sessao(manager, _sessao(perfil)).validate(_repo(tmp_path), confirmar=SIM)
+
+    assert capturado.value.message == esperado.value.message
+    assert manager.chamadas == ["get_api_by_id"]
+
+
+def test_outra_recusa_do_get_da_api_nao_vira_api_inexistente(tmp_path):
+    class _ManagerQueNega(ManagerFake):
+        def get_api_by_id(self, api_id=None):
+            raise ManagerApiTransportRejectedError(status_code=403, title="Forbidden")
+
+    with pytest.raises(ManagerApiTransportRejectedError):
+        _servico_da_sessao(_ManagerQueNega(), _sessao()).validate(
+            _repo(tmp_path), confirmar=SIM
+        )
+
+
+def test_api_me_compartilhada_com_o_dev_segue_a_cascata(tmp_path):
+    compartilhada = {
+        "visibilityType": "ME",
+        "owner": "paulo.silva",
+        "users": [{"id": 7, "username": "isaac.machado"}],
+    }
+    manager = ManagerFake(api=dict(API, visibility=compartilhada))
+
+    _servico_da_sessao(manager, _sessao()).validate(_repo(tmp_path), confirmar=SIM)
+
+    assert "update_revision" in manager.chamadas
+
+
+def test_super_admin_valida_api_de_qualquer_grupo(tmp_path):
+    manager = ManagerFake(api=dict(API, visibility=GRUPO_ALHEIO))
+
+    _servico_da_sessao(manager, _sessao("super-admin")).validate(
+        _repo(tmp_path), confirmar=SIM
+    )
+
     assert "update_revision" in manager.chamadas
 
 
