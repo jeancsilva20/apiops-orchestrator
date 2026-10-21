@@ -1,11 +1,20 @@
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+import sys
 from pathlib import Path
 from typing import Any
 from dotenv import load_dotenv
 
+
+def _app_root() -> Path:
+    """Pasta que hospeda `.sen` e `.sen_session`: a do binário quando congelado, a do pacote fora dele."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[1]
+
+
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+PACKAGE_ROOT = _app_root()
 
 dotenv_path = PROJECT_ROOT / ".env"
 sen_path = PACKAGE_ROOT / ".sen"
@@ -26,7 +35,8 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    HOST: str
+    # Manager de produção: default para o executável do dev, que não recebe `.env`.
+    HOST: str = "https://platform-production.sensedia.com"
 
     # Auth da CLI (sen login) — obrigatórias, sem fallback/default
     SEN_CREDENTIALS: str | None = None

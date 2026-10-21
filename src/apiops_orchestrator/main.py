@@ -277,7 +277,9 @@ def main():
     """
     _mute_unconfigured_logging()
     try:
-        is_console_script = Path(sys.argv[0]).stem.lower() == "sen"
+        is_console_script = (
+            getattr(sys, "frozen", False) or Path(sys.argv[0]).stem.lower() == "sen"
+        )
         if len(sys.argv) <= 1:
             sys.argv[1:] = ["sen"]
         # O console-script `sen` chega com argv[0]="...sen(.cmd)" e o primeiro

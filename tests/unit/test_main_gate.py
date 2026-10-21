@@ -130,6 +130,16 @@ def test_console_script_help_usage_does_not_repeat_sen(monkeypatch, capsys):
     assert "sen sen" not in out
 
 
+def test_frozen_binary_is_console_script_even_when_renamed(recording_app, monkeypatch):
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "argv", [r"C:\ferramentas\sen-0.1.0.exe", "login"])
+
+    main_mod.main()
+
+    assert sys.argv == [r"C:\ferramentas\sen-0.1.0.exe", "sen", "login"]
+    assert recording_app.prog_name == ""
+
+
 def test_load_settings_translates_missing_config_into_educational_cli_error(monkeypatch):
     line_errors = [
         {"type": "missing", "loc": ("HOST",), "input": {}},

@@ -1,11 +1,12 @@
-﻿import pydantic
+﻿import sys
+
+import pydantic
 import pytest
 from pydantic_settings import SettingsConfigDict
 
 from apiops_orchestrator.config.settings import Settings
 
 REQUIRED_VARS = [
-    "HOST",
     "AUTH_HOST",
     "AUTH_LOGIN_PATH",
 ]
@@ -61,6 +62,19 @@ def test_every_required_setting_is_enforced(monkeypatch):
         assert raised, f"Expected error when {missing_var} is missing"
 
 
+def test_host_ausente_assume_o_manager_de_producao(monkeypatch):
+    _seed_required(monkeypatch)
+    monkeypatch.delenv("HOST", raising=False)
+
+    assert Settings().HOST == "https://platform-production.sensedia.com"
+
+
+def test_host_definido_sobrescreve_o_default(monkeypatch):
+    _seed_required(monkeypatch)
+
+    assert Settings().HOST == "https://plat.example.com"
+
+
 def test_sen_credentials_is_optional_at_settings_level(monkeypatch):
     _seed_required(monkeypatch)
     settings = Settings()
@@ -104,6 +118,24 @@ def test_package_root_points_to_module_directory():
 
     settings_module.PACKAGE_ROOT.joinpath("config", "settings.py").exists()
     assert settings_module.PACKAGE_ROOT.name == "apiops_orchestrator"
+
+
+def test_app_root_fora_do_binario_e_a_pasta_do_pacote(monkeypatch):
+    from apiops_orchestrator.config import settings as settings_module
+
+    monkeypatch.delattr(sys, "frozen", raising=False)
+
+    assert settings_module._app_root() == settings_module.PACKAGE_ROOT
+
+
+def test_app_root_no_binario_e_a_pasta_do_executavel(tmp_path, monkeypatch):
+    from apiops_orchestrator.config import settings as settings_module
+
+    executavel = tmp_path / "sen.exe"
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(executavel))
+
+    assert settings_module._app_root() == tmp_path.resolve()
 
 
 def test_sen_file_alone_provides_auth_block(tmp_path, monkeypatch):
