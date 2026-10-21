@@ -37,6 +37,10 @@ Valem para todos os comandos.
   arquivo de configuração próprio da CLI (`.sen`) e o `.env` do projeto. O
   desenvolvedor usa o `.sen`; a esteira monta o `.env` a partir dos seus
   secrets.
+- **Cada um vê só as APIs a que tem acesso.** A CLI aplica a visibilidade da
+  API (organização, grupo ou usuário) em todo comando que recebe o id de uma
+  API. Uma API que o usuário não enxerga responde como se não existisse. A
+  esteira enxerga todas.
 - **Validação antes de ir à rede (fail fast).** Combinações inválidas de
   parâmetros são recusadas localmente, com mensagem clara, sem gastar
   chamada à plataforma.
