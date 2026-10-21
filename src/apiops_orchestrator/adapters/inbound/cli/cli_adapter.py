@@ -256,8 +256,8 @@ def _exit_on_unexpected(exc: Exception, command: str, exit_code: int = 1) -> NoR
     raise typer.Exit(code=exit_code)
 
 
-def _authenticate_with_feedback(service_builder: Callable[[], Any], narrar: bool = True):
-    """Runs the login flow with a spinner only when stdout is a terminal.
+def _run_with_feedback(work: Callable[[], Any], label: str, narrar: bool = True):
+    """Runs `work` with a spinner only when stdout is a terminal.
 
     In non-interactive stdout (CI runner, redirected output, docker logs),
     Rich's Live turns each animation frame into plain new lines polluting
@@ -267,22 +267,29 @@ def _authenticate_with_feedback(service_builder: Callable[[], Any], narrar: bool
     carries only the document the pipeline will parse.
     """
     if not narrar:
-        return service_builder().login()
+        return work()
     if not get_console().is_terminal:
-        rprint("[dim]Autenticando...[/dim]")
-        return service_builder().login()
+        rprint(f"[dim]{label}[/dim]")
+        return work()
 
     live = Live(
-        Align.center(_LoadingBar()),
+        Align.center(_LoadingBar(label)),
         console=get_console(),
         refresh_per_second=10,
         transient=True,
     )
     live.start()
     try:
-        return service_builder().login()
+        return work()
     finally:
         live.stop()
+
+
+def _authenticate_with_feedback(service_builder: Callable[[], Any], narrar: bool = True):
+    """Runs the login flow with the shared waiting feedback."""
+    return _run_with_feedback(
+        lambda: service_builder().login(), label="Autenticando...", narrar=narrar
+    )
 
 
 SCHEMA_SEN_LOGIN_V1 = "apiops.sen-login/v1"
