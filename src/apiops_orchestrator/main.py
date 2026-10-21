@@ -5,6 +5,7 @@ from pathlib import Path
 import pydantic
 import typer
 from rich import print as rprint
+from rich.markup import escape
 
 from apiops_orchestrator.adapters.inbound.cli.cli_adapter import app, CliError
 from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_importer_adapter import (
@@ -265,7 +266,7 @@ def main():
         app(obj=ctx_obj, prog_name=prog_name)
 
     except CliError as e:
-        rprint(f"[bold red]Erro:[/bold red] {e.message}")
+        rprint(f"[bold red]Erro:[/bold red] {escape(e.message)}")
         sys.exit(e.exit_code)
     except pydantic.ValidationError as e:
         missing = ", ".join(

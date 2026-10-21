@@ -15,6 +15,7 @@ from rich import get_console
 from rich.align import Align
 from rich.console import Console, Group
 from rich.live import Live
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -209,6 +210,16 @@ class CliError(Exception):
         super().__init__(self.message)
 
 
+def _literal(valor: Any) -> str:
+    """Valor externo pronto para entrar numa string com marcação Rich: colchetes saem como texto."""
+    return escape(str(valor))
+
+
+def _print_erro(mensagem: Any, rotulo: str = "Erro:") -> None:
+    """Imprime o rótulo de erro em destaque seguido da mensagem, sem interpretar marcação nela."""
+    rprint(f"[bold red]{rotulo}[/bold red] {_literal(mensagem)}")
+
+
 def _exit_on_unexpected(exc: Exception, command: str, exit_code: int = 1) -> NoReturn:
     """Last-resort handler of a command: never shows raw exception text.
 
@@ -223,17 +234,17 @@ def _exit_on_unexpected(exc: Exception, command: str, exit_code: int = 1) -> NoR
     would leak to stderr).
     """
     if isinstance(exc, CliError):
-        rprint(f"[bold red]Erro:[/bold red] {exc.message}")
+        _print_erro(exc.message)
         raise typer.Exit(code=exc.exit_code)
     if isinstance(exc, LoginError):
-        rprint(f"[bold red]Erro:[/bold red] {exc.message}")
+        _print_erro(exc.message)
         raise typer.Exit(code=1)
     if isinstance(exc, ManagerApiError):
         message = manager_failure_message(classify_manager_failure(exc))
         logger.info(
             "cli.manager_failure command=%s type=%s", command, type(exc).__name__
         )
-        rprint(f"[bold red]Erro:[/bold red] {message or INTERNAL_ERROR_MESSAGE}")
+        _print_erro(message or INTERNAL_ERROR_MESSAGE)
         raise typer.Exit(code=exit_code)
     logger.info(
         "cli.unexpected_error command=%s type=%s",
@@ -326,7 +337,7 @@ def login(
             cast(Callable[[], Any], login_service_factory), narrar=not estruturado
         )
     except LoginError as e:
-        rprint(f"[bold red]Erro de login:[/bold red] {e.message}")
+        _print_erro(e.message, rotulo="Erro de login:")
         raise typer.Exit(code=e.exit_code)
     except typer.Exit as e:
         raise e
@@ -418,7 +429,7 @@ def _session_panel(field_rows: list, width: Optional[int] = None) -> Panel:
     for label, value in field_rows:
         grid.add_row(
             f"[bold white]{label}[/bold white]",
-            f"[white]{value}[/white]",
+            f"[white]{_literal(value)}[/white]",
         )
     body = Group(
         header,
@@ -483,6 +494,9 @@ def _render_grade(
     Cai para box ASCII em consoles sem glifos arredondados, coerente com o
     resto do CLI (`_stdout_supports_rounded_box`). Sem `cell_style` os valores
     não recebem marcação — conteúdos ordinários cruzam como str simples.
+    `show_lines` separa cada linha: em células que quebram (nome, sugestão)
+    é o que mostra onde um item termina e o próximo começa. Células `str`
+    viram `Text`: dado do Manager com colchetes sai literal, nunca como marcação.
     """
     table = Table(
         box=_GRADE_BOX,
@@ -490,6 +504,7 @@ def _render_grade(
         border_style="grey53",
         padding=(0, 1),
         pad_edge=False,
+        show_lines=True,
     )
     for index, column in enumerate(header):
         table.add_column(
@@ -505,7 +520,10 @@ def _render_grade(
                 if column_decorators and index < len(column_decorators)
                 else None
             )
-            decorated.append(decorator(value) if decorator else value)
+            if decorator:
+                decorated.append(decorator(value))
+            else:
+                decorated.append(Text(value) if isinstance(value, str) else value)
         table.add_row(*decorated)
     rprint(table)
 
@@ -636,7 +654,7 @@ def list_apis(
     except typer.Exit:
         raise
     except ApiCollectionError as e:
-        rprint(f"[bold red]Erro:[/bold red] {e}")
+        _print_erro(e)
         raise typer.Exit(code=1)
     except Exception as e:
         _exit_on_unexpected(e, command="list api")
@@ -867,7 +885,7 @@ def completeness(
     Show the completeness report of one API revision (Sensedia Manager).
     """
     if api_id is None or revision is None:
-        rprint(f"[bold red]Erro:[/bold red] {MISSING_TARGET_MESSAGE}")
+        _print_erro(MISSING_TARGET_MESSAGE)
         raise typer.Exit(code=1)
 
     try:
@@ -891,7 +909,7 @@ def completeness(
     except typer.Exit:
         raise
     except CompletenessError as e:
-        rprint(f"[bold red]Erro:[/bold red] {e.message}")
+        _print_erro(e.message)
         raise typer.Exit(code=e.exit_code)
     except Exception as e:
         _exit_on_unexpected(e, command="completeness", exit_code=CompletenessError.exit_code)
@@ -949,6 +967,7 @@ def _tabela_achados(achados, largura: Optional[int] = None) -> Table:
         border_style="grey53",
         padding=(0, 1),
         pad_edge=False,
+        show_lines=True,
         width=largura,
     )
     # ONDE quebra em vez de truncar: `POST /tarefas/{id}/atribuicao-responsavel`
@@ -993,12 +1012,12 @@ def _render_validate_text(view: ValidateView) -> None:
     width = _largura_validate()
 
     # --- identidade: quem está sendo validado, e onde ------------------------
-    identidade = [("API", f"[bold white]{view.api.name or '-'}[/bold white]")]
+    identidade = [("API", f"[bold white]{_literal(view.api.name or '-')}[/bold white]")]
     detalhe = f"id {view.api.manager_id}"
     if view.api.version:
-        detalhe += f"  ·  v{view.api.version}"
+        detalhe += f"  ·  v{_literal(view.api.version)}"
     if view.api.base_path:
-        detalhe += f"  ·  {view.api.base_path}"
+        detalhe += f"  ·  {_literal(view.api.base_path)}"
     identidade.append(("", f"[grey53]{detalhe}[/grey53]"))
 
     revisao = f"[white]#{view.revision.revision_number}[/white]" if (
@@ -1017,13 +1036,13 @@ def _render_validate_text(view: ValidateView) -> None:
             complemento.append(f"{view.regua.interceptors_count} interceptor(es)")
         if view.regua.flow_hash:
             # O snapshot é o que torna um achado reproduzível depois (D-4/P-3).
-            complemento.append(view.regua.flow_hash)
+            complemento.append(_literal(view.regua.flow_hash))
         if complemento:
             alvo += f"  [grey53]{'  ·  '.join(complemento)}[/grey53]"
     else:
         alvo = "[grey53]não vinculada — conformidade não executada[/grey53]"
     identidade.append(("Template", alvo))
-    identidade.append(("Modo", f"[grey53]{view.execution_mode}[/grey53]"))
+    identidade.append(("Modo", f"[grey53]{_literal(view.execution_mode)}[/grey53]"))
 
     rprint()
     rprint(_painel_validate("Validação", _grade_de_campos(identidade), width=width))
@@ -1066,7 +1085,7 @@ def _render_validate_text(view: ValidateView) -> None:
     if gov.stage_id is not None:
         if gov.missing:
             faltantes = ", ".join((m.name or str(m.attribute_id)) for m in gov.missing)
-            rprint(f"[bold red]Governança[/bold red]  falta: {faltantes}")
+            rprint(f"[bold red]Governança[/bold red]  falta: {_literal(faltantes)}")
         else:
             rprint(
                 f"[bold]Governança[/bold]  [green]liberada[/green] "
@@ -1093,7 +1112,7 @@ def _render_validate_text(view: ValidateView) -> None:
                 "ficou gravado não é o que foi enviado:"
             )
             for d in pub.divergences:
-                rprint(f"  [red]•[/red] {d}")
+                rprint(f"  [red]•[/red] {_literal(d)}")
         else:
             rprint("[bold red]Rascunho[/bold red]  recusado")
         rprint()
@@ -1116,7 +1135,7 @@ def _render_validate_text(view: ValidateView) -> None:
             sugestoes.add_column(justify="right", width=3, no_wrap=True)
             sugestoes.add_column(overflow="fold")
             for i, s in enumerate(comp.suggestions, start=1):
-                sugestoes.add_row(f"[grey53]{i}.[/grey53]", f"[white]{s}[/white]")
+                sugestoes.add_row(f"[grey53]{i}.[/grey53]", Text(s, style="white"))
             rprint(sugestoes)
         rprint()
 
@@ -1178,7 +1197,7 @@ class _ProgressoValidate:
         """Narra em que ponto a espera está — a `Live` relê o rótulo no refresh."""
         self._barra.label = f"{texto}..."
         if self._live is None and self._narrar:
-            _stderr_console().print(f"[dim]{texto}...[/dim]")
+            _stderr_console().print(f"[dim]{_literal(texto)}...[/dim]")
 
     @contextmanager
     def pausado(self):
@@ -1294,7 +1313,7 @@ def validate(
     except _OperacaoCancelada:
         _encerrar_sem_gravar("Validação", EXIT_CANCELADO)
     except ValidateError as e:
-        rprint(f"[bold red]Erro:[/bold red] {e.message}")
+        _print_erro(e.message)
         raise typer.Exit(code=e.exit_code)
     except Exception as e:
         _exit_on_unexpected(e, command="validate")
@@ -1304,12 +1323,12 @@ def _render_publish_text(view: PublishView) -> None:
     """Renderiza a resposta do `publish` — mesma árvore de `json`/`yaml`."""
     width = _largura_validate()
 
-    identidade = [("API", f"[bold white]{view.api.name or '-'}[/bold white]")]
+    identidade = [("API", f"[bold white]{_literal(view.api.name or '-')}[/bold white]")]
     detalhe = f"id {view.api.manager_id}"
     if view.api.version:
-        detalhe += f"  ·  v{view.api.version}"
+        detalhe += f"  ·  v{_literal(view.api.version)}"
     if view.api.base_path:
-        detalhe += f"  ·  {view.api.base_path}"
+        detalhe += f"  ·  {_literal(view.api.base_path)}"
     identidade.append(("", f"[grey53]{detalhe}[/grey53]"))
     identidade.append(
         (
@@ -1318,7 +1337,7 @@ def _render_publish_text(view: PublishView) -> None:
             f"[grey53](id {view.revision.manager_id})[/grey53]",
         )
     )
-    identidade.append(("Modo", f"[grey53]{view.execution_mode}[/grey53]"))
+    identidade.append(("Modo", f"[grey53]{_literal(view.execution_mode)}[/grey53]"))
 
     rprint()
     rprint(_painel_validate("Publicação", _grade_de_campos(identidade), width=width))
@@ -1359,10 +1378,10 @@ def _render_publish_text(view: PublishView) -> None:
     for d in view.deployments:
         linha = "  deployada em "
         if d.environment.name:
-            linha += f"[white]{d.environment.name}[/white] "
+            linha += f"[white]{_literal(d.environment.name)}[/white] "
         detalhe = f"(id {d.environment.manager_id})"
         if d.deployed_at:
-            detalhe += f" · deploy em {d.deployed_at}"
+            detalhe += f" · deploy em {_literal(d.deployed_at)}"
         rprint(f"{linha}[grey53]{detalhe}[/grey53]")
     rprint()
 
@@ -1415,7 +1434,7 @@ def publish(
     except _OperacaoCancelada:
         _encerrar_sem_gravar("Publicação", EXIT_CANCELADO)
     except ValidateError as e:
-        rprint(f"[bold red]Erro:[/bold red] {e.message}")
+        _print_erro(e.message)
         raise typer.Exit(code=e.exit_code)
     except Exception as e:
         _exit_on_unexpected(e, command="publish")
@@ -1427,7 +1446,7 @@ def _descrever_estado(estado: Optional[DeployState]) -> str:
     texto = f"[white]revisão #{estado.revision_number}[/white]"
     detalhe = f"deploy {estado.deployment_id}"
     if estado.deployed_at:
-        detalhe += f" · {estado.deployed_at}"
+        detalhe += f" · {_literal(estado.deployed_at)}"
     return f"{texto} [grey53]({detalhe})[/grey53]"
 
 
@@ -1435,12 +1454,12 @@ def _render_deploy_text(view: DeployView) -> None:
     """Renderiza a resposta do `deploy` — mesma árvore de `json`/`yaml`."""
     width = _largura_validate()
 
-    identidade = [("API", f"[bold white]{view.api.name or '-'}[/bold white]")]
+    identidade = [("API", f"[bold white]{_literal(view.api.name or '-')}[/bold white]")]
     detalhe = f"id {view.api.manager_id}"
     if view.api.version:
-        detalhe += f"  ·  v{view.api.version}"
+        detalhe += f"  ·  v{_literal(view.api.version)}"
     if view.api.base_path:
-        detalhe += f"  ·  {view.api.base_path}"
+        detalhe += f"  ·  {_literal(view.api.base_path)}"
     identidade.append(("", f"[grey53]{detalhe}[/grey53]"))
     identidade.append(
         (
@@ -1452,11 +1471,11 @@ def _render_deploy_text(view: DeployView) -> None:
     identidade.append(
         (
             "Ambiente",
-            f"[white]{view.environment.name or '-'}[/white] "
+            f"[white]{_literal(view.environment.name or '-')}[/white] "
             f"[grey53](id {view.environment.manager_id})[/grey53]",
         )
     )
-    identidade.append(("Modo", f"[grey53]{view.execution_mode}[/grey53]"))
+    identidade.append(("Modo", f"[grey53]{_literal(view.execution_mode)}[/grey53]"))
 
     rprint()
     rprint(_painel_validate("Deploy", _grade_de_campos(identidade), width=width))
@@ -1497,7 +1516,7 @@ def _render_deploy_text(view: DeployView) -> None:
     rprint()
     rprint(
         f"[bold]Revisão {view.revision.revision_number}[/bold]  "
-        f"[green]deployada no ambiente {view.environment.name or view.environment.manager_id}"
+        f"[green]deployada no ambiente {_literal(view.environment.name or view.environment.manager_id)}"
         "[/green]"
     )
     rprint()
@@ -1540,12 +1559,12 @@ def deploy(
         raise
     except DeployFalhouError as e:
         if output is OutputFormat.TEXT:
-            rprint(f"[bold red]Erro:[/bold red] {e.message}")
+            _print_erro(e.message)
         else:
             display_output(e.view.to_document(), output_format=output)
         raise typer.Exit(code=e.exit_code)
     except DeployError as e:
-        rprint(f"[bold red]Erro:[/bold red] {e.message}")
+        _print_erro(e.message)
         raise typer.Exit(code=e.exit_code)
     except Exception as e:
         _exit_on_unexpected(e, command="deploy")
@@ -1608,15 +1627,20 @@ def diag_structure(
 
     def _texto() -> None:
         marca = "[green]completo[/green]" if lido.completo else "[red]incompleto[/red]"
-        rprint(f"[bold]{alvo}[/bold]  {marca}")
+        rprint(f"[bold]{_literal(alvo)}[/bold]  {marca}")
         rprint(
             f"[grey53]{len(lido.recursos)} recurso(s) · "
             f"{lido.total_operacoes} operação(ões)[/grey53]\n"
         )
         for r in lido.recursos:
-            rprint(f"  [bold]{r.slug}[/bold]  [grey53]{r.nome or '-'}[/grey53]")
+            rprint(
+                f"  [bold]{_literal(r.slug)}[/bold]  [grey53]{_literal(r.nome or '-')}[/grey53]"
+            )
             for o in r.operacoes:
-                rprint(f"     {o.metodo:<7} {o.path or '-'}  [grey53]{o.arquivo}[/grey53]")
+                rprint(
+                    f"     {_literal(o.metodo):<7} {_literal(o.path or '-')}  "
+                    f"[grey53]{_literal(o.arquivo)}[/grey53]"
+                )
         for rotulo, itens, cor in (
             ("faltando", lido.faltando, "red"),
             ("ilegíveis", lido.ilegiveis, "red"),
@@ -1625,7 +1649,7 @@ def diag_structure(
             if itens:
                 rprint(f"\n[{cor}]{rotulo}:[/{cor}]")
                 for i in itens:
-                    rprint(f"  [{cor}]•[/{cor}] {i}")
+                    rprint(f"  [{cor}]•[/{cor}] {_literal(i)}")
 
     display_output(documento, output_format=output, text_callback=_texto)
 
@@ -1686,21 +1710,24 @@ def diag_template(
             rprint(
                 f"[bold]API-template {regua.template_id}[/bold]  "
                 f"[grey53]revisão #{regua.revision_number} · "
-                f"{regua.total} interceptor(es) · {regua.flow_hash}[/grey53]\n"
+                f"{regua.total} interceptor(es) · {_literal(regua.flow_hash)}[/grey53]\n"
             )
             for i in regua.interceptors:
                 cid = i.get("customInterceptorId")
                 rotulo = f"{i.get('type')}{'#' + str(cid) if cid else ''}"
-                rprint(f"  [grey53]{i.get('executionPoint'):<7}[/grey53] {rotulo}")
+                rprint(
+                    f"  [grey53]{_literal(i.get('executionPoint')):<7}[/grey53] "
+                    f"{_literal(rotulo)}"
+                )
             for aviso in regua.avisos:
-                rprint(f"\n[yellow]WARNING[/yellow] {aviso}")
+                rprint(f"\n[yellow]WARNING[/yellow] {_literal(aviso)}")
 
         display_output(documento, output_format=output, text_callback=_texto)
 
     except typer.Exit:
         raise
     except ValidateError as e:
-        rprint(f"[bold red]Erro:[/bold red] {e.message}")
+        _print_erro(e.message)
         raise typer.Exit(code=e.exit_code)
     except Exception as e:
         _exit_on_unexpected(e, command="diag template")
@@ -1777,7 +1804,7 @@ def diag_draft(
         def _texto() -> None:
             rev = documento["revision"]
             rprint(
-                f"[bold]{api.get('name')}[/bold]  [grey53]API {api.get('id')}[/grey53]\n"
+                f"[bold]{_literal(api.get('name'))}[/bold]  [grey53]API {api.get('id')}[/grey53]\n"
                 f"revisão {rev['managerId']} (#{rev['revisionNumber']})  "
                 f"[grey53]workflow {rev['workflowId']} · stage {rev['workflowStageId']} "
                 "— lidos da revisão, reenviados intactos[/grey53]\n"
@@ -1788,18 +1815,18 @@ def diag_draft(
             )
             for r in documento["resources"]:
                 rprint(
-                    f"  [bold]{r['name']}[/bold]  [grey53]{r['interceptors']} "
+                    f"  [bold]{_literal(r['name'])}[/bold]  [grey53]{r['interceptors']} "
                     f"interceptor(es)[/grey53]"
                 )
                 for o in r["operations"]:
-                    rprint(f"     {str(o['method']):<7} {o['path']}")
+                    rprint(f"     {_literal(o['method']):<7} {_literal(o['path'])}")
 
         display_output(documento, output_format=output, text_callback=_texto)
 
     except typer.Exit:
         raise
     except ValidateError as e:
-        rprint(f"[bold red]Erro:[/bold red] {e.message}")
+        _print_erro(e.message)
         raise typer.Exit(code=e.exit_code)
     except Exception as e:
         _exit_on_unexpected(e, command="diag draft")
