@@ -6,7 +6,7 @@ Recebe **ports**, nunca adapters concretos, espelhando o `CompletenessService`.
          ── guarda 1: version e basePath (D-11) ──    aborta antes de escrever
     E2   régua + conformidade + Custom                GET
          ── pré-check de governança ──                aborta ANTES de escrever
-         ── guarda 2: confirmação ──                  só em EXECUTION_MODE=local
+         ── guarda 2: confirmação ──                  só fora da esteira
     E3   PUT ÚNICO na revisão alvo                    ESCRITA
     E3.1 conferência pós-publicação                   GET — 200 não é prova
     E4   completeness                                 GET — informativo
@@ -22,7 +22,6 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
     GovernanceBlockedError,
     TagInvalidaError,
     TemplateNaoConfiguradaError,
-    ValidateError,
 )
 from apiops_orchestrator.application.services.governance_precheck_service import (
     GovernancePrecheckService,
@@ -62,6 +61,14 @@ from apiops_orchestrator.domain.services.template_conformance import comparar
 logger = logging.getLogger(__name__)
 
 GATE_COMPLETENESS = 70.0
+REVISAO_DRAFT = 1
+
+
+def numero_alvo(settings: Settings) -> int:
+    """Número da revisão gravada: o configurado na esteira, sempre a Draft fora dela."""
+    if not settings.modo_pipeline:
+        return REVISAO_DRAFT
+    return settings.TARGET_REVISION_NUMBER or REVISAO_DRAFT
 
 
 def _agora() -> str:
@@ -245,15 +252,8 @@ class ValidateService:
     # --- revisão alvo ---------------------------------------------------------
 
     def _revisao_alvo(self, api: Dict[str, Any]) -> Dict[str, Any]:
-        """Resolve a revisão pelo NÚMERO (V-24); ausente vale como Draft."""
-        numero = self._settings.TARGET_REVISION_NUMBER or 1
-        if not self._settings.modo_pipeline and numero != 1:
-            raise ValidateError(
-                f"Em modo local a única revisão publicável é a 1 (Draft), e "
-                f"TARGET_REVISION_NUMBER está em {numero}. A Draft não é ambiente "
-                "e não tem deploy: publicar nela é diagnóstico, não promoção."
-            )
-        return self._escrita.revisao_por_numero(api, numero)
+        """Resolve a revisão pelo NÚMERO (V-24); fora da esteira é sempre a Draft (V-24 §6)."""
+        return self._escrita.revisao_por_numero(api, numero_alvo(self._settings))
 
     # --- E2 ------------------------------------------------------------------
 

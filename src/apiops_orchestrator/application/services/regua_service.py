@@ -131,8 +131,8 @@ class ReguaService:
             return None
         return (
             f"O `api-basic-info.yaml` aponta a API-template {do_manifesto}, mas a "
-            f"esteira está usando a {do_cofre}, definida em variável de ambiente. "
-            "A variável tem prioridade de propósito: assim a template não pode ser "
+            f"esteira está usando a {do_cofre}, definida pela plataforma. "
+            "A da esteira tem prioridade, para que a template não possa ser "
             f"trocada por um commit. Seguindo com a {do_cofre}."
         )
 

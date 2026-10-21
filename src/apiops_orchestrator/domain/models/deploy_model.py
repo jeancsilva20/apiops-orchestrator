@@ -7,6 +7,7 @@ from apiops_orchestrator.domain.models.validate_view import (
     AtributoExigido,
     ValidateApi,
     ValidateRevision,
+    sem_modo_fora_da_esteira,
 )
 
 SCHEMA_SEN_DEPLOY_V1 = "apiops.sen-deploy/v1"
@@ -91,7 +92,7 @@ class DeployView:
     def to_document(self) -> Dict[str, Any]:
         """Árvore do contrato v1, na ordem declarada."""
         gov = self.governanca
-        return {
+        return sem_modo_fora_da_esteira({
             "schema": self.schema,
             "generatedAt": self.generated_at,
             "executionMode": self.execution_mode,
@@ -133,4 +134,4 @@ class DeployView:
                 "reason": self.deployment.reason,
             },
             "warnings": list(self.avisos),
-        }
+        })

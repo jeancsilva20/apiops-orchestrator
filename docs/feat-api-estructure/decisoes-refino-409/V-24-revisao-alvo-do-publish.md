@@ -2,7 +2,7 @@
 
 | Meta | Valor |
 |---|---|
-| Status | **FECHADO** — 2026-10-14 |
+| Status | **FECHADO** — 2026-10-14 · **revisado** em 2026-10-21 (§6: publish local removido) |
 | Depende de | [V-12 identidade](V-12-identidade-sem-ids.md) · [V-11 binding](V-11-binding-do-template.md) (mesmo arranjo de configuração) |
 | Fonte | `arquitetura-apiops-memory-bank/artifacts/prd-apiops-cicd.md` §3.3 · `context/domain-glossary.md` · sondagem de rotas (somente leitura) |
 
@@ -87,3 +87,21 @@ env:
 
 O passo 3 é a mesma chamada que já alimenta a hidratação e o estado não governado — nenhuma
 requisição é adicionada ao ciclo.
+
+## 6. Revisão de 21/10/2026 — publish só na esteira
+
+Change `hide-pipeline-settings-from-dev`. Substitui o item 2 da §1 e as linhas de modo local da §4.
+
+1. O `sen publish` **não roda na máquina do dev**: fora da esteira ele recusa antes de autenticar e
+   de qualquer chamada HTTP, como o `sen deploy`. A confirmação local do publish deixa de existir.
+   Fica mais perto da decisão de 17/08/2026 citada na §2 (*"o dev não publica nem deploya
+   diretamente via CLI"*).
+2. A gravação na Draft pela máquina do dev continua no **`sen validate`**, que nela usa **sempre a
+   revisão 1** e **não lê** `TARGET_REVISION_NUMBER`. A recusa "local com número ≠ 1" deixa de
+   existir: ela só servia para citar a variável.
+3. Na esteira, nada muda: `TARGET_REVISION_NUMBER` continua obrigatória no publish e resolvida pelo
+   número, como nas §3–§5.
+
+Motivo: as mensagens da máquina local citavam `EXECUTION_MODE` e `TARGET_REVISION_NUMBER`, dando ao
+dev o caminho para se passar pela esteira. Na máquina do dev, a configuração deixa de ter efeito
+sobre a revisão alvo, e nenhuma saída cita o modo ou as variáveis da esteira.

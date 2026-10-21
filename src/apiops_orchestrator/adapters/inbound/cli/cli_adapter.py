@@ -70,11 +70,11 @@ main_app = typer.Typer(
 
 sen_app = typer.Typer(
     name="sen",
-    help="APIOps CLI - Framework GitOps to automate, standardize and manage your APIs.",
+    help="CLI do APIOps: framework GitOps para automatizar, padronizar e gerenciar suas APIs.",
     no_args_is_help=True,
 )
 
-list_app = typer.Typer(name="list", help="List resources.")
+list_app = typer.Typer(name="list", help="Lista recursos.")
 
 
 @list_app.callback(invoke_without_command=True)
@@ -322,12 +322,12 @@ def _documento_login(session: Any) -> Dict[str, Any]:
 def login(
     ctx: typer.Context,
     output: OutputFormat = typer.Option(
-        OutputFormat.TEXT, "--output", "-o", help="Output format (text, json, yaml)."
+        OutputFormat.TEXT, "--output", "-o", help="Formato da saída (text, json, yaml)."
     ),
 ):
     """
-    Authenticate against the Orchestrator Auth API and store the local session.
-    Requires the SEN_CREDENTIALS environment variable (Base64 of client_id:secret).
+    Autentica na Orchestrator Auth API e guarda a sessão local.
+    Requer a variável SEN_CREDENTIALS (Base64 de client_id:secret).
     """
     estruturado = output is not OutputFormat.TEXT
     try:
@@ -555,24 +555,24 @@ def _window_footer(
 @list_app.command("api")
 def list_apis(
     ctx: typer.Context,
-    api_id: Optional[int] = typer.Option(None, "--id", help="Filter by API ID."),
+    api_id: Optional[int] = typer.Option(None, "--id", help="Filtra pelo ID da API."),
     query: Optional[str] = typer.Option(
-        None, "--query", help="Search on name/description, performed by the Manager."
+        None, "--query", help="Busca por nome ou descrição, feita pelo Manager."
     ),
-    limit: Optional[int] = typer.Option(None, "--limit", help="Page size."),
-    offset: Optional[int] = typer.Option(None, "--offset", help="Offset from start."),
+    limit: Optional[int] = typer.Option(None, "--limit", help="Quantidade de itens por página."),
+    offset: Optional[int] = typer.Option(None, "--offset", help="A partir de qual item exibir."),
     all_apis: bool = typer.Option(
-        False, "--all", help="List every visible API (not combinable with --limit/--offset/--id)."
+        False, "--all", help="Lista todas as APIs visíveis (não combina com --limit, --offset ou --id)."
     ),
     revisions: bool = typer.Option(
-        False, "--revisions", "-r", help="Show revisions drill-down (incoming slice)."
+        False, "--revisions", "-r", help="Mostra as revisões da API informada em --id."
     ),
     output: OutputFormat = typer.Option(
-        OutputFormat.TEXT, "--output", "-o", help="Output format (text, json, yaml)."
+        OutputFormat.TEXT, "--output", "-o", help="Formato da saída (text, json, yaml)."
     ),
 ):
     """
-    List APIs from Sensedia Manager.
+    Lista as APIs do Sensedia Manager.
     """
     try:
         service_factory = (ctx.obj or {}).get("api_listing_service_factory")
@@ -749,14 +749,14 @@ def version_callback(value: bool):
 @sen_app.callback()
 def main_callback(
     verbose: bool = typer.Option(
-        False, "--verbose", "-v", help="Increases verbosity in logs."
+        False, "--verbose", "-v", help="Aumenta o detalhamento dos logs."
     ),
     version: bool = typer.Option(
         None,
         "--version",
         callback=version_callback,
         is_eager=True,
-        help="Shows CLI version.",
+        help="Mostra a versão da CLI.",
     ),
 ):
     """
@@ -893,20 +893,20 @@ MISSING_TARGET_MESSAGE = (
 @sen_app.command("completeness")
 def completeness(
     ctx: typer.Context,
-    api_id: Optional[int] = typer.Option(None, "--id", help="Manager ID of the API."),
+    api_id: Optional[int] = typer.Option(None, "--id", help="ID da API no Manager."),
     revision: Optional[int] = typer.Option(
-        None, "--revision", help="Revision ID (REV ID from the revisions drill-down)."
+        None, "--revision", help="ID da revisão (REV ID do detalhe de revisões)."
     ),
     score_only: bool = typer.Option(
-        False, "--score-only", help="Show only headline and bar/gate."
+        False, "--score-only", help="Mostra só a nota e a barra com o mínimo exigido."
     ),
     output: OutputFormat = typer.Option(
-        OutputFormat.TEXT, "--output", "-o", help="Output format (text, json, yaml)."
+        OutputFormat.TEXT, "--output", "-o", help="Formato da saída (text, json, yaml)."
     ),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbosity only."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Aumenta o detalhamento da saída."),
 ):
     """
-    Show the completeness report of one API revision (Sensedia Manager).
+    Mostra o completeness de uma revisão de API (Sensedia Manager).
     """
     if api_id is None or revision is None:
         _print_erro(MISSING_TARGET_MESSAGE)
@@ -1066,7 +1066,6 @@ def _render_validate_text(view: ValidateView) -> None:
     else:
         alvo = "[grey53]não vinculada — conformidade não executada[/grey53]"
     identidade.append(("Template", alvo))
-    identidade.append(("Modo", f"[grey53]{_literal(view.execution_mode)}[/grey53]"))
 
     rprint()
     rprint(_painel_validate("Validação", _grade_de_campos(identidade), width=width))
@@ -1253,7 +1252,7 @@ def _encerrar_sem_gravar(comando: str, codigo: int = 0) -> NoReturn:
 def _confirmar_publicacao(
     mensagem: str, progresso: Optional["_ProgressoValidate"] = None
 ) -> bool:
-    """Guarda 2: confirmação interativa, só em EXECUTION_MODE=local.
+    """Guarda 2 do `validate`: confirmação interativa, só fora da esteira.
 
     Vive na CLI, não no service — o use-case recebe isto como callable e nunca
     lê `stdin`. O texto vem pronto do serviço; o que a borda acrescenta é a
@@ -1298,12 +1297,12 @@ def validate(
         None, "--repo", help="Repositório da API (default: diretório atual)."
     ),
     output: OutputFormat = typer.Option(
-        OutputFormat.TEXT, "--output", "-o", help="Output format (text, json, yaml)."
+        OutputFormat.TEXT, "--output", "-o", help="Formato da saída (text, json, yaml)."
     ),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbosity only."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Aumenta o detalhamento da saída."),
 ):
     """
-    Validate the API repository and publish to the Draft to get the governance verdict.
+    Valida o repositório da API e grava na Draft para obter o veredito da governança.
     """
     try:
         service_factory = (ctx.obj or {}).get("validate_service_factory")
@@ -1361,7 +1360,6 @@ def _render_publish_text(view: PublishView) -> None:
             f"[grey53](id {view.revision.manager_id})[/grey53]",
         )
     )
-    identidade.append(("Modo", f"[grey53]{_literal(view.execution_mode)}[/grey53]"))
 
     rprint()
     rprint(_painel_validate("Publicação", _grade_de_campos(identidade), width=width))
@@ -1417,12 +1415,12 @@ def publish(
         None, "--repo", help="Repositório da API (default: diretório atual)."
     ),
     output: OutputFormat = typer.Option(
-        OutputFormat.TEXT, "--output", "-o", help="Output format (text, json, yaml)."
+        OutputFormat.TEXT, "--output", "-o", help="Formato da saída (text, json, yaml)."
     ),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbosity only."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Aumenta o detalhamento da saída."),
 ):
     """
-    Publish the API repository to the revision set in TARGET_REVISION_NUMBER.
+    Publica o repositório da API na revisão do ambiente. Roda só na esteira.
     """
     try:
         service_factory = (ctx.obj or {}).get("publish_service_factory")
@@ -1438,14 +1436,7 @@ def publish(
             rotulo_inicial="Publicando", narrar=output is OutputFormat.TEXT
         )
         with progresso:
-            view = service.publish(
-                repo_path=repo or Path.cwd(),
-                confirmar=lambda m: _confirmar_publicacao(m, progresso),
-                progresso=progresso.etapa,
-            )
-
-        if not view.publicacao.attempted:
-            _encerrar_sem_gravar("Publicação")
+            view = service.publish(repo_path=repo or Path.cwd(), progresso=progresso.etapa)
 
         display_output(
             view.to_document(),
@@ -1455,8 +1446,6 @@ def publish(
 
     except typer.Exit:
         raise
-    except _OperacaoCancelada:
-        _encerrar_sem_gravar("Publicação", EXIT_CANCELADO)
     except ValidateError as e:
         _print_erro(e.message)
         raise typer.Exit(code=e.exit_code)
@@ -1499,7 +1488,6 @@ def _render_deploy_text(view: DeployView) -> None:
             f"[grey53](id {view.environment.manager_id})[/grey53]",
         )
     )
-    identidade.append(("Modo", f"[grey53]{_literal(view.execution_mode)}[/grey53]"))
 
     rprint()
     rprint(_painel_validate("Deploy", _grade_de_campos(identidade), width=width))
@@ -1553,12 +1541,12 @@ def deploy(
         None, "--repo", help="Repositório da API (default: diretório atual)."
     ),
     output: OutputFormat = typer.Option(
-        OutputFormat.TEXT, "--output", "-o", help="Output format (text, json, yaml)."
+        OutputFormat.TEXT, "--output", "-o", help="Formato da saída (text, json, yaml)."
     ),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbosity only."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Aumenta o detalhamento da saída."),
 ):
     """
-    Deploy the revision set in TARGET_REVISION_NUMBER to TARGET_ENVIRONMENT_ID (pipeline only).
+    Faz o deploy da revisão da API no ambiente. Roda só na esteira.
     """
     try:
         service_factory = (ctx.obj or {}).get("deploy_service_factory")
@@ -1616,7 +1604,7 @@ def diag_structure(
         None, "--repo", help="Repositório da API (default: diretório atual)."
     ),
     output: OutputFormat = typer.Option(
-        OutputFormat.TEXT, "--output", "-o", help="Output format (text, json, yaml)."
+        OutputFormat.TEXT, "--output", "-o", help="Formato da saída (text, json, yaml)."
     ),
 ):
     """Mostra a estrutura que a E1 descobre no repositório, sem tocar a rede."""
@@ -1688,7 +1676,7 @@ def diag_template(
         None, "--repo", help="Repositório da API (default: diretório atual)."
     ),
     output: OutputFormat = typer.Option(
-        OutputFormat.TEXT, "--output", "-o", help="Output format (text, json, yaml)."
+        OutputFormat.TEXT, "--output", "-o", help="Formato da saída (text, json, yaml)."
     ),
 ):
     """Mostra a régua resolvida, o fluxo que ela exige e o snapshot."""
@@ -1764,7 +1752,7 @@ def diag_draft(
         None, "--repo", help="Repositório da API (default: diretório atual)."
     ),
     output: OutputFormat = typer.Option(
-        OutputFormat.TEXT, "--output", "-o", help="Output format (text, json, yaml)."
+        OutputFormat.TEXT, "--output", "-o", help="Formato da saída (text, json, yaml)."
     ),
 ):
     """Mostra o estado da revisão alvo — somente leitura, nada é publicado."""
@@ -1774,6 +1762,7 @@ def diag_draft(
     from apiops_orchestrator.application.services.repo_importer_service import (
         RepoCanonicalReader,
     )
+    from apiops_orchestrator.application.services.validate_service import numero_alvo
     from apiops_orchestrator.domain.services.interceptor_flow import particionar
 
     try:
@@ -1788,7 +1777,7 @@ def diag_draft(
 
         manager, settings = cast(Callable[[], Any], fabrica)()
         api = manager.get_api_by_id(spec.get("id")) or {}
-        numero = settings.TARGET_REVISION_NUMBER or 1
+        numero = numero_alvo(settings)
         revisao = next(
             (r for r in (api.get("revisions") or []) if r.get("revisionNumber") == numero),
             None,

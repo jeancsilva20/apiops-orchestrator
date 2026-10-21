@@ -17,6 +17,7 @@ from apiops_orchestrator.domain.models.validate_view import (
     PublicacaoResultado,
     ValidateApi,
     ValidateRevision,
+    sem_modo_fora_da_esteira,
 )
 
 SCHEMA_SEN_PUBLISH_V1 = "apiops.sen-publish/v1"
@@ -64,7 +65,7 @@ class PublishView:
 
     def to_document(self) -> Dict[str, Any]:
         """Árvore do contrato v1, na ordem declarada — sem token e sem wire cru."""
-        return {
+        return sem_modo_fora_da_esteira({
             "schema": self.schema,
             "generatedAt": self.generated_at,
             "executionMode": self.execution_mode,
@@ -93,4 +94,4 @@ class PublishView:
                 "divergences": list(self.publicacao.divergences),
             },
             "warnings": list(self.avisos),
-        }
+        })

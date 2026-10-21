@@ -2,15 +2,16 @@
 
 É a escrita do `validate` apontada para a revisão de `TARGET_REVISION_NUMBER`,
 sem o diagnóstico em volta: não compara com a API-template nem lê completeness
-(plano dos comandos §7). Roda só o que impede uma escrita errada.
+(plano dos comandos §7). Roda só o que impede uma escrita errada, e só na
+esteira (V-24 §6).
 
-         revisão alvo pelo número               sem rede — P-1 / P-2
+         só na esteira                          sem rede, antes de autenticar
+         revisão alvo pelo número               sem rede — P-1
     E1   carregar o repositório                 sem rede — P-8
     E2   API + guarda de identidade             GET      — P-3 / P-4 / P-10
          ambientes com a revisão no ar          do mesmo GET, só informativo
          Custom referenciados existem           GET
          pré-check de tags e governança         GET      — aborta ANTES de escrever
-         ── confirmação ──                      só em EXECUTION_MODE=local
     E3   PUT ÚNICO na revisão alvo              ESCRITA
     E3.1 conferência pós-publicação             GET      — 200 não é prova
 """
@@ -40,7 +41,6 @@ from apiops_orchestrator.domain.models.publish_view import (
 from apiops_orchestrator.domain.models.validate_view import (
     AtributoExigido,
     GovernancaResultado,
-    PublicacaoResultado,
     ValidateApi,
     ValidateRevision,
 )
@@ -52,7 +52,17 @@ from apiops_orchestrator.domain.services import deployments, revision_payload
 
 logger = logging.getLogger(__name__)
 
-REVISAO_DRAFT = 1
+PUBLISH_SO_NA_ESTEIRA = (
+    "A publicação é feita só pela esteira: o comando não roda na sua máquina. "
+    "Para conferir o repositório contra a governança, use `sen validate`, que "
+    "grava na revisão Draft.\n\nNada foi publicado."
+)
+
+
+def exigir_esteira(settings: Settings) -> None:
+    """Recusa a publicação fora da esteira."""
+    if not settings.modo_pipeline:
+        raise ValidateError(PUBLISH_SO_NA_ESTEIRA)
 
 
 def _agora() -> str:
@@ -96,7 +106,6 @@ class PublishService:
         self,
         repo_path: Path,
         *,
-        confirmar: Callable[[str], bool],
         progresso: Optional[Callable[[str], None]] = None,
     ) -> PublishView:
         """Grava o repositório na revisão alvo e confere o que ficou gravado."""
@@ -104,6 +113,7 @@ class PublishService:
 
         # Configuração primeiro: uma esteira mal configurada não deve gastar
         # autenticação nem rede para descobrir isso.
+        exigir_esteira(self._settings)
         numero = self._numero_alvo()
 
         etapa("Lendo o repositório")
@@ -131,9 +141,7 @@ class PublishService:
 
         etapa("Verificando a governança")
         precheck = self._governanca.avaliar(alvo, spec.get("apiTags"))
-        # Em local, o que vai sair do Manager é mostrado na confirmação, antes
-        # da gravação, e não se repete no resultado. Na esteira não há pergunta.
-        avisos = list(montado.avisos) if self._settings.modo_pipeline else []
+        avisos = list(montado.avisos)
         avisos += [f"Governança: {aviso}" for aviso in precheck.avisos]
         # Antes do bloqueio: com tag inválida o Manager aceitaria e apagaria
         # todas as `apiTags` — é o erro mais destrutivo, e é do repositório.
@@ -149,7 +157,13 @@ class PublishService:
                 ],
             )
 
-        publicacao = self._gravar(revisao, numero, montado, confirmar, etapa)
+        publicacao = self._escrita.gravar_e_conferir(
+            revisao,
+            montado,
+            etapa=etapa,
+            rotulo_gravacao=f"Gravando a revisão {numero} no Manager",
+            alvo_recusa=f"da revisão {numero}",
+        )
 
         return PublishView(
             schema=SCHEMA_SEN_PUBLISH_V1,
@@ -180,51 +194,14 @@ class PublishService:
         )
 
     def _numero_alvo(self) -> int:
-        """Número da revisão alvo (V-24) — P-1 na esteira, P-2 na máquina local."""
+        """Número da revisão alvo (V-24 P-1), obrigatório na esteira."""
         numero = self._settings.TARGET_REVISION_NUMBER
-        if self._settings.modo_pipeline:
-            if numero is None:
-                raise ValidateError(
-                    "TARGET_REVISION_NUMBER não está definida. Na esteira ela é "
-                    "obrigatória: diz em qual revisão o repositório será gravado "
-                    "(2 = DEV, 3 = HML, 4 = PRD).\n\n"
-                    "Defina a variável na configuração da esteira e rode o comando "
-                    "novamente.\n\nNada foi publicado."
-                )
-            return numero
-        if numero is not None and numero != REVISAO_DRAFT:
+        if numero is None:
             raise ValidateError(
-                "Na máquina local só é possível publicar na revisão 1 (Draft), e "
-                f"TARGET_REVISION_NUMBER está em {numero}. A publicação nas "
-                "revisões de ambiente é feita pela esteira.\n\nNada foi publicado."
+                "TARGET_REVISION_NUMBER não está definida. Na esteira ela é "
+                "obrigatória: diz em qual revisão o repositório será gravado "
+                "(2 = DEV, 3 = HML, 4 = PRD).\n\n"
+                "Defina a variável na configuração da esteira e rode o comando "
+                "novamente.\n\nNada foi publicado."
             )
-        return REVISAO_DRAFT
-
-    def _gravar(
-        self,
-        revisao,
-        numero: int,
-        montado: "revision_payload.PayloadMontado",
-        confirmar: Callable[[str], bool],
-        etapa: Callable[[str], None],
-    ) -> PublicacaoResultado:
-        # Na máquina local a escrita é ato deliberado do dev (D-9); na esteira
-        # não há quem responda.
-        if not self._settings.modo_pipeline:
-            pergunta = self._escrita.texto_de_confirmacao(
-                "O conteúdo deste repositório será gravado no API Manager, na "
-                f"revisão {numero} (id {revisao['id']}), substituindo o que está "
-                "nela.\nNenhum ambiente recebe deploy.",
-                montado.avisos,
-            )
-            if not confirmar(pergunta):
-                logger.info("publish.publicacao.nao_confirmada revisao=%s", numero)
-                return PublicacaoResultado(attempted=False)
-
-        return self._escrita.gravar_e_conferir(
-            revisao,
-            montado,
-            etapa=etapa,
-            rotulo_gravacao=f"Gravando a revisão {numero} no Manager",
-            alvo_recusa=f"da revisão {numero}",
-        )
+        return numero

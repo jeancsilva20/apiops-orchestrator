@@ -15,6 +15,9 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
     IdentidadeDivergenteError,
     ValidateError,
 )
+from apiops_orchestrator.application.services.publish_service import (
+    PUBLISH_SO_NA_ESTEIRA,
+)
 from apiops_orchestrator.domain.models.deploy_model import DeployEnvironment
 from apiops_orchestrator.domain.models.publish_view import (
     SCHEMA_SEN_PUBLISH_V1,
@@ -59,12 +62,8 @@ class _ServicoFake:
         self._erro = erro
         self.chamado_com = None
 
-    def publish(self, repo_path, *, confirmar, progresso=None):
-        self.chamado_com = {
-            "repo_path": repo_path,
-            "confirmar": confirmar,
-            "progresso": progresso,
-        }
+    def publish(self, repo_path, *, progresso=None):
+        self.chamado_com = {"repo_path": repo_path, "progresso": progresso}
         if self._erro is not None:
             raise self._erro
         if progresso is not None:
@@ -97,10 +96,10 @@ def test_servico_ausente_no_contexto_encerra_com_1():
     assert "indisponível" in resultado.output
 
 
-def test_confirmacao_e_progresso_sao_injetados_pela_cli():
+def test_progresso_e_injetado_pela_cli_sem_confirmacao():
     servico = _ServicoFake(resultado=_view())
     runner.invoke(app, ["sen", "publish", "-o", "json"], obj=_ctx(servico))
-    assert callable(servico.chamado_com["confirmar"])
+    assert set(servico.chamado_com) == {"repo_path", "progresso"}
     assert callable(servico.chamado_com["progresso"])
     assert servico.chamado_com["repo_path"] is not None
 
@@ -115,6 +114,7 @@ def test_json_conforme_ao_contrato_v1():
 
     doc = json.loads(resultado.output)
     assert doc["schema"] == "apiops.sen-publish/v1"
+    assert doc["executionMode"] == "pipeline"
     assert doc["revision"] == {"managerId": 9175, "revisionNumber": 2, "deployments": []}
     assert doc["publication"]["verified"] is True
     assert doc["warnings"] == ["O `timeout` da raiz passa a 30000 ms."]
@@ -142,6 +142,7 @@ def test_texto_mostra_a_revisao_alvo_e_o_resultado():
     assert "#2" in saida and "9175" in saida
     assert "Revisão 2 gravada" in saida
     assert "30000 ms" in saida
+    assert "Modo" not in saida and "pipeline" not in saida
 
 
 
@@ -191,30 +192,15 @@ def test_texto_revisao_fora_do_ar_avisa():
 
     assert "não está deployada em nenhum ambiente" in saida
 
-def test_responder_n_encerra_sem_relatorio():
-    """Recusa não produz relatório — só o desfecho."""
-    view = _view(execution_mode="local", publicacao=PublicacaoResultado(attempted=False))
-    resultado = runner.invoke(app, ["sen", "publish"], obj=_ctx(_ServicoFake(resultado=view)))
+
+def test_recusa_fora_da_esteira_encerra_com_1():
+    erro = ValidateError(PUBLISH_SO_NA_ESTEIRA)
+    resultado = runner.invoke(app, ["sen", "publish"], obj=_ctx(_ServicoFake(erro=erro)))
     saida = " ".join(resultado.output.split())
 
-    assert resultado.exit_code == 0
-    assert "Publicação cancelada. Nada foi gravado." in saida
-    assert "#2" not in saida and "30000 ms" not in saida
-
-
-@pytest.mark.parametrize("entrada", ["", "﻿y\n"])
-def test_ctrl_c_no_prompt_interrompe_com_130(entrada):
-    class _ServicoQuePergunta(_ServicoFake):
-        def publish(self, repo_path, *, confirmar, progresso=None):
-            confirmar("O conteúdo deste repositório será gravado.")
-            raise AssertionError("o comando deveria ter sido interrompido no prompt")
-
-    resultado = runner.invoke(
-        app, ["sen", "publish"], obj=_ctx(_ServicoQuePergunta()), input=entrada
-    )
-
-    assert resultado.exit_code == 130
-    assert "Publicação cancelada. Nada foi gravado." in " ".join(resultado.output.split())
+    assert resultado.exit_code == 1
+    assert "A publicação é feita só pela esteira" in saida
+    assert "Deseja prosseguir?" not in saida
 
 
 # --- exit codes ----------------------------------------------------------------

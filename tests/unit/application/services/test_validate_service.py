@@ -284,14 +284,6 @@ def test_pipeline_nao_pergunta(tmp_path):
     assert "update_revision" in manager.chamadas
 
 
-def test_local_so_publica_na_revisao_1(tmp_path):
-    """V-24: a Draft não é ambiente e não tem deploy."""
-    manager = ManagerFake()
-    with pytest.raises(Exception, match="Draft"):
-        _servico(manager, revisao=2).validate(_repo(tmp_path), confirmar=SIM)
-    assert "update_revision" not in manager.chamadas
-
-
 _API_TRES_REVISOES = {
     **API,
     "revisions": [
@@ -315,6 +307,19 @@ class _ManagerQueAnotaIds(ManagerFake):
     def update_revision(self, revision_id, payload):
         self.id_gravado = revision_id
         return super().update_revision(revision_id, payload)
+
+
+@pytest.mark.parametrize("numero", [None, 1, 2, 3])
+def test_local_grava_sempre_na_draft_e_ignora_a_variavel(tmp_path, numero):
+    """V-24 §6: fora da esteira a revisão alvo não depende da configuração."""
+    manager = _ManagerQueAnotaIds(api=_API_TRES_REVISOES)
+    view = _servico(manager, modo="local", revisao=numero).validate(
+        _repo(tmp_path), confirmar=SIM
+    )
+
+    assert manager.id_gravado == 9161
+    assert view.revision.revision_number == 1
+    assert "executionMode" not in view.to_document()
 
 
 @pytest.mark.parametrize("numero,revision_id", [(1, 9161), (2, 9162), (3, 9163)])

@@ -21,6 +21,15 @@ ESCOPO_REPOSITORIO = "repositório"
 SEVERIDADE_INFO = "INFO"
 SEVERIDADE_WARNING = "WARNING"
 
+MODO_ESTEIRA = "pipeline"
+
+
+def sem_modo_fora_da_esteira(documento: Dict[str, Any]) -> Dict[str, Any]:
+    """Tira `executionMode` do documento quando ele não vem da esteira."""
+    if documento.get("executionMode") != MODO_ESTEIRA:
+        documento.pop("executionMode", None)
+    return documento
+
 
 @dataclass(frozen=True)
 class ValidateApi:
@@ -137,7 +146,7 @@ class ValidateView:
         Nenhum campo pode carregar token, cookie ou material de credencial, e não
         há dump cru de wire: o consumidor recebe só o que foi decidido expor.
         """
-        return {
+        return sem_modo_fora_da_esteira({
             "schema": self.schema,
             "generatedAt": self.generated_at,
             "executionMode": self.execution_mode,
@@ -199,4 +208,4 @@ class ValidateView:
                 "gatePercent": self.completeness.gate_percent,
                 "suggestions": list(self.completeness.suggestions),
             },
-        }
+        })

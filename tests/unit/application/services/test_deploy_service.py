@@ -257,9 +257,17 @@ def test_modo_local_recusa_antes_de_qualquer_chamada(tmp_path):
     with pytest.raises(DeployError) as capturado:
         _servico(manager, modo="local").deploy(_repo(tmp_path))
 
-    assert "esteira" in capturado.value.message
+    mensagem = capturado.value.message
+    assert "não roda na sua máquina" in mensagem
+    for nome in ("EXECUTION_MODE", "local", "pipeline", "TARGET_"):
+        assert nome not in mensagem
     assert capturado.value.exit_code == 1
     assert manager.chamadas == []
+
+
+def test_documento_da_esteira_traz_o_modo(tmp_path):
+    doc = _servico(ManagerFake()).deploy(_repo(tmp_path)).to_document()
+    assert doc["executionMode"] == "pipeline"
 
 
 @pytest.mark.parametrize(

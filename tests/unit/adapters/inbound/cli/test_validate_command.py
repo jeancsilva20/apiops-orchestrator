@@ -145,7 +145,6 @@ def test_json_conforme_ao_contrato_v1():
     assert list(doc) == [
         "schema",
         "generatedAt",
-        "executionMode",
         "api",
         "revision",
         "ruler",
@@ -154,6 +153,15 @@ def test_json_conforme_ao_contrato_v1():
         "publication",
         "completeness",
     ]
+
+
+def test_json_da_esteira_traz_o_modo():
+    servico = _ServicoFake(resultado=_view(execution_mode="pipeline"))
+    resultado = runner.invoke(app, ["sen", "validate", "-o", "json"], obj=_ctx(servico))
+
+    doc = json.loads(resultado.output)
+    assert list(doc)[:3] == ["schema", "generatedAt", "executionMode"]
+    assert doc["executionMode"] == "pipeline"
 
 
 def test_json_carrega_o_snapshot_da_regua_para_a_esteira():

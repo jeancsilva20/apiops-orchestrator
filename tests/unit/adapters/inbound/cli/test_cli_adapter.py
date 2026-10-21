@@ -31,7 +31,7 @@ def test_help():
     """Test the --help flag to ensure the CLI is registered correctly."""
     result = runner.invoke(app, ["sen", "--help"])
     assert result.exit_code == 0
-    assert "APIOps CLI" in result.output
+    assert "CLI do APIOps" in result.output
     assert "--version" in result.output
 
 def test_version_flag():
@@ -47,7 +47,7 @@ def test_verbose_flag():
     # Since we moved the callback to sen_app, options must come after 'sen'
     result = runner.invoke(app, ["sen", "--verbose", "--help"])
     assert result.exit_code == 0
-    assert "APIOps CLI" in result.output
+    assert "CLI do APIOps" in result.output
 
 def test_list_without_subcommand_orientates_instead_of_engine_speak():
     """`sen list` pelado não mostra 'Missing command.': orienta para 'sen list api' (exit 2)."""
@@ -681,7 +681,7 @@ def test_api_list_query_help_says_search_runs_on_the_manager():
     result = runner.invoke(app, ["sen", "list", "api", "--help"])
 
     help_text = " ".join(result.output.split())
-    assert "performed by the Manager" in help_text
+    assert "Busca por nome ou descrição, feita" in help_text
     assert "--all" in help_text
 
 

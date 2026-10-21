@@ -228,7 +228,7 @@ class _PublishFake:
     def __init__(self, resultado):
         self._resultado = resultado
 
-    def publish(self, repo_path, *, confirmar, progresso=None):
+    def publish(self, repo_path, *, progresso=None):
         return self._resultado
 
 

@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -26,8 +27,14 @@ from apiops_orchestrator.application.services.admin_token_provider import (
 from apiops_orchestrator.application.services.api_listing_service import (
     ApiListingService,
 )
-from apiops_orchestrator.application.services.deploy_service import DeployService
-from apiops_orchestrator.application.services.publish_service import PublishService
+from apiops_orchestrator.application.services.deploy_service import (
+    DeployService,
+    exigir_esteira as exigir_esteira_no_deploy,
+)
+from apiops_orchestrator.application.services.publish_service import (
+    PublishService,
+    exigir_esteira as exigir_esteira_no_publish,
+)
 from apiops_orchestrator.application.services.regua_service import ReguaService
 from apiops_orchestrator.application.services.validate_service import (
     ValidateService,
@@ -52,25 +59,48 @@ def _mute_unconfigured_logging() -> None:
         package_logger.addHandler(logging.NullHandler())
 
 
+# Chaves que só a esteira configura: fora dela nenhuma saída as nomeia, e o modo
+# não é nomeado nem na esteira.
+_CHAVES_DA_ESTEIRA = frozenset(
+    {"TEMPLATE_API_ID", "TARGET_REVISION_NUMBER", "TARGET_ENVIRONMENT_ID"}
+)
+_CHAVE_DO_MODO = "EXECUTION_MODE"
+
+CONFIGURACAO_INVALIDA = "A configuração do sen é inválida. Fale com o time da plataforma."
+OUTRA_CONFIGURACAO_INVALIDA = (
+    "Há outra configuração inválida. Fale com o time da plataforma."
+)
+
+
+def _na_esteira() -> bool:
+    """Modo lido do ambiente bruto, já com `.sen` e `.env` carregados: as settings não carregaram."""
+    return (os.environ.get(_CHAVE_DO_MODO) or "").strip().lower() == "pipeline"
+
+
 def _load_settings() -> Settings:
     """Carregamento lazy de configuração (ADR 0006).
 
     ValidationError é traduzido em CliError educativa (D1-b): curta, lista as
-    chaves ausentes, aponta .env/.sen e o sub-help — sem stacktrace/segredos.
+    chaves ausentes que o modo permite nomear, aponta .env/.sen e o sub-help —
+    sem stacktrace/segredos.
     """
     try:
         return Settings()  # type: ignore[call-arg]
     except pydantic.ValidationError as e:
-        missing = ", ".join(
-            str(err.get("loc", ("<unknown>",))[0]).upper() for err in e.errors()
-        )
-        raise CliError(
-            f"Configuração incompleta (ausente/inválida): {missing}. "
+        chaves = [str(err.get("loc", ("<unknown>",))[0]).upper() for err in e.errors()]
+        ocultas = {_CHAVE_DO_MODO} if _na_esteira() else _CHAVES_DA_ESTEIRA | {_CHAVE_DO_MODO}
+        nomeaveis = [c for c in chaves if c not in ocultas]
+        if not nomeaveis:
+            raise CliError(CONFIGURACAO_INVALIDA, exit_code=1) from e
+        mensagem = (
+            f"Configuração incompleta (ausente/inválida): {', '.join(nomeaveis)}. "
             "Defina as variáveis no .env do repositório ou no .sen do diretório "
             "do pacote. Detalhes: consulte o sub-help do comando "
-            "(ex.: sen list api --help).",
-            exit_code=1,
-        ) from e
+            "(ex.: sen list api --help)."
+        )
+        if len(nomeaveis) < len(chaves):
+            mensagem += f" {OUTRA_CONFIGURACAO_INVALIDA}"
+        raise CliError(mensagem, exit_code=1) from e
 
 
 def _build_session_store(settings: Settings) -> SessionStore:
@@ -165,6 +195,7 @@ def build_publish_service_factory():
 
     def factory() -> PublishService:
         settings = _load_settings()
+        exigir_esteira_no_publish(settings)
         manager_adapter = ManagerApiAdapter(
             token=_build_admin_token(settings),
             base_path="/api-manager/api/v3/",
@@ -185,6 +216,7 @@ def build_deploy_service_factory():
 
     def factory() -> DeployService:
         settings = _load_settings()
+        exigir_esteira_no_deploy(settings)
         manager_adapter = ManagerApiAdapter(
             token=_build_admin_token(settings),
             base_path="/api-manager/api/v3/",

@@ -1,6 +1,6 @@
 """Use-case do `sen deploy` — coloca no ar a revisão do ambiente.
 
-    E0  configuração      modo pipeline · revisão ≠ 1 · ambiente       sem rede
+    E0  configuração      só na esteira · revisão ≠ 1 · ambiente       sem rede, antes de autenticar
     E1  manifesto         spec.id, version, basePath                   sem rede
     E2  GET /apis/{id}    identidade · revisão · ambiente ligado · estado anterior
     E3  governança        ambiente permitido · completeness · atributos
@@ -69,6 +69,16 @@ REVISAO_DRAFT = 1
 
 # Recusas em que o motivo da plataforma diz o que corrigir.
 _STATUS_COM_MOTIVO = frozenset({400, 404, 409, 412, 422})
+
+
+def exigir_esteira(settings: Settings) -> None:
+    """Recusa o deploy fora da esteira."""
+    if not settings.modo_pipeline:
+        raise DeployError(
+            "O deploy é feito só pela esteira: o comando não roda na sua máquina. "
+            "A promoção para DEV, HML e PRD acontece no merge da branch "
+            f"correspondente.\n\n{NENHUM_DEPLOY}"
+        )
 
 
 def _agora() -> str:
@@ -171,12 +181,7 @@ class DeployService:
 
     def _alvo(self) -> Tuple[int, int]:
         """Modo, número da revisão e id do ambiente alvo, lidos da configuração."""
-        if not self._settings.modo_pipeline:
-            raise DeployError(
-                "O deploy é feito só pela esteira: o comando não roda na máquina "
-                "local (EXECUTION_MODE=local). A promoção para DEV, HML e PRD "
-                f"acontece no merge da branch correspondente.\n\n{NENHUM_DEPLOY}"
-            )
+        exigir_esteira(self._settings)
         numero = self._settings.TARGET_REVISION_NUMBER
         if numero is None:
             raise DeployError(

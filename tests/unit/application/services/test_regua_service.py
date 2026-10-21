@@ -97,6 +97,8 @@ def test_pipeline_avisa_a_divergencia_de_binding():
     servico = ReguaService(ManagerFake(), _settings("pipeline", template_id=414))
     aviso = servico.divergencia_de_binding(_basic_info(template=999))
     assert aviso and "999" in aviso and "414" in aviso
+    assert "definida pela plataforma" in aviso
+    assert "variável" not in aviso and "EXECUTION_MODE" not in aviso
 
 
 def test_pipeline_sem_id_configurado_aborta():

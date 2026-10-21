@@ -51,12 +51,12 @@ class Settings(BaseSettings):
     # (exit 1): validar contra nada numa esteira é pior do que parar (V-11 §4).
     TEMPLATE_API_ID: int | None = None
 
-    # Revisão alvo do publish, pelo NÚMERO que o humano vê na UI — nunca pelo id,
-    # que é detalhe de transporte resolvido no último instante (V-24). Em modo
-    # `local` o único valor aceito é 1 (Draft), que não é ambiente e não tem
-    # deploy: publicar nela é diagnóstico, não promoção. Sem default: em
-    # `pipeline` o `sen publish` precisa distinguir "ausente" de "1" (P-1), e
-    # cada comando decide o que a ausência significa.
+    # Revisão alvo, pelo NÚMERO que o humano vê na UI — nunca pelo id, que é
+    # detalhe de transporte resolvido no último instante (V-24). Só é lida na
+    # esteira: fora dela o `sen validate` grava sempre na 1 (Draft) e o
+    # `sen publish` não roda (V-24 §6). Sem default: na esteira o `sen publish`
+    # precisa distinguir "ausente" de "1" (P-1), e cada comando decide o que a
+    # ausência significa.
     TARGET_REVISION_NUMBER: int | None = None
 
     # Id, no Manager, do ambiente que recebe o `sen deploy`.

@@ -22,7 +22,11 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
     TagInvalidaError,
     ValidateError,
 )
-from apiops_orchestrator.application.services.publish_service import PublishService
+from apiops_orchestrator.application.services.publish_service import (
+    PUBLISH_SO_NA_ESTEIRA,
+    PublishService,
+    exigir_esteira,
+)
 from apiops_orchestrator.domain.models.publish_view import SCHEMA_SEN_PUBLISH_V1
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiGovernanceBlockedError,
@@ -167,12 +171,34 @@ def _servico(manager, modo="pipeline", revisao=2):
     )
 
 
-SIM = lambda _: True   # noqa: E731
-NAO = lambda _: False  # noqa: E731
+NOMES_DA_ESTEIRA = (
+    "EXECUTION_MODE",
+    "TARGET_REVISION_NUMBER",
+    "TARGET_ENVIRONMENT_ID",
+    "TEMPLATE_API_ID",
+    "pipeline",
+)
 
 
-def _explode(_):
-    raise AssertionError("a esteira não pode pedir confirmação (D-17)")
+# --- só na esteira (V-24 §6) -------------------------------------------------
+
+
+@pytest.mark.parametrize("numero", [None, 1, 2])
+def test_fora_da_esteira_recusa_antes_de_qualquer_chamada(tmp_path, numero):
+    manager = ManagerFake()
+    with pytest.raises(ValidateError) as capturado:
+        _servico(manager, modo="local", revisao=numero).publish(_repo(tmp_path))
+
+    mensagem = capturado.value.message
+    assert mensagem == PUBLISH_SO_NA_ESTEIRA
+    assert "sen validate" in mensagem
+    assert not any(nome in mensagem for nome in NOMES_DA_ESTEIRA)
+    assert capturado.value.exit_code == 1
+    assert manager.chamadas == []
+
+
+def test_exigir_esteira_aceita_a_esteira():
+    exigir_esteira(_settings())
 
 
 # --- revisão alvo (V-24) ------------------------------------------------------
@@ -181,7 +207,7 @@ def _explode(_):
 @pytest.mark.parametrize("numero,revision_id", [(1, 9161), (2, 9175), (3, 9180)])
 def test_esteira_grava_na_revisao_de_target_revision_number(tmp_path, numero, revision_id):
     manager = ManagerFake()
-    view = _servico(manager, revisao=numero).publish(_repo(tmp_path), confirmar=_explode)
+    view = _servico(manager, revisao=numero).publish(_repo(tmp_path))
 
     assert set(manager.ids_lidos) == {revision_id}
     assert manager.id_gravado == revision_id
@@ -193,42 +219,18 @@ def test_esteira_sem_a_variavel_falha_antes_de_qualquer_chamada(tmp_path):
     """P-1: na esteira, ausente não é 1."""
     manager = ManagerFake()
     with pytest.raises(ValidateError) as capturado:
-        _servico(manager, revisao=None).publish(_repo(tmp_path), confirmar=_explode)
+        _servico(manager, revisao=None).publish(_repo(tmp_path))
 
     assert "TARGET_REVISION_NUMBER" in capturado.value.message
     assert capturado.value.exit_code == 1
     assert manager.chamadas == []
 
 
-@pytest.mark.parametrize("numero", [2, 3, 4])
-def test_local_fora_da_draft_recusa_antes_de_qualquer_chamada(tmp_path, numero):
-    """P-2: na máquina local só a Draft."""
-    manager = ManagerFake()
-    with pytest.raises(ValidateError) as capturado:
-        _servico(manager, modo="local", revisao=numero).publish(
-            _repo(tmp_path), confirmar=SIM
-        )
-
-    assert "revisão 1 (Draft)" in capturado.value.message
-    assert manager.chamadas == []
-
-
-@pytest.mark.parametrize("numero", [None, 1])
-def test_local_sem_a_variavel_ou_com_1_grava_na_draft(tmp_path, numero):
-    manager = ManagerFake()
-    view = _servico(manager, modo="local", revisao=numero).publish(
-        _repo(tmp_path), confirmar=SIM
-    )
-
-    assert manager.id_gravado == 9161
-    assert view.revision.revision_number == 1
-
-
 def test_revisao_inexistente_nomeia_as_disponiveis_e_nao_escreve(tmp_path):
     """P-3: criar revisão é ato humano."""
     manager = ManagerFake()
     with pytest.raises(ValidateError) as capturado:
-        _servico(manager, revisao=4).publish(_repo(tmp_path), confirmar=_explode)
+        _servico(manager, revisao=4).publish(_repo(tmp_path))
 
     assert "número 4" in capturado.value.message
     assert "1, 2, 3" in capturado.value.message
@@ -239,7 +241,7 @@ def test_api_sem_revisoes_falha_sem_escrever(tmp_path):
     """P-10."""
     manager = ManagerFake(api=dict(API, revisions=[]))
     with pytest.raises(ValidateError) as capturado:
-        _servico(manager).publish(_repo(tmp_path), confirmar=_explode)
+        _servico(manager).publish(_repo(tmp_path))
 
     assert "nenhuma revisão" in capturado.value.message
     assert "update_revision" not in manager.chamadas
@@ -253,7 +255,7 @@ def test_layout_invalido_aborta_sem_tocar_a_rede(tmp_path):
     (tmp_path / "api-basic-info.yaml").write_text(BASIC_INFO, encoding="utf-8")
     manager = ManagerFake()
     with pytest.raises(LayoutInvalidoError):
-        _servico(manager).publish(tmp_path, confirmar=_explode)
+        _servico(manager).publish(tmp_path)
 
     assert manager.chamadas == []
 
@@ -263,7 +265,7 @@ def test_identidade_divergente_aborta_antes_de_escrever(tmp_path):
     divergente = BASIC_INFO.replace('basePath: "/letras/v2"', 'basePath: "/letras/v9"')
     manager = ManagerFake()
     with pytest.raises(IdentidadeDivergenteError):
-        _servico(manager).publish(_repo(tmp_path, divergente), confirmar=_explode)
+        _servico(manager).publish(_repo(tmp_path, divergente))
 
     assert "update_revision" not in manager.chamadas
 
@@ -277,7 +279,7 @@ def test_custom_inexistente_aborta_antes_de_escrever(tmp_path):
     }
     manager = ManagerFake(customs={})
     with pytest.raises(CustomInexistenteError) as capturado:
-        _servico(manager).publish(_repo(tmp_path, extras=extras), confirmar=_explode)
+        _servico(manager).publish(_repo(tmp_path, extras=extras))
 
     assert "178" in capturado.value.message
     assert "update_revision" not in manager.chamadas
@@ -295,7 +297,7 @@ def test_tag_fora_do_atributo_aborta_antes_de_escrever(tmp_path):
     manager = ManagerFake()
     repo = _repo(tmp_path, basic_info=BASIC_INFO_COM_TAGS.format(tag="TagInexistente"))
     with pytest.raises(TagInvalidaError):
-        _servico(manager).publish(repo, confirmar=_explode)
+        _servico(manager).publish(repo)
 
     assert "update_revision" not in manager.chamadas
 
@@ -312,7 +314,7 @@ def test_atributo_exigido_faltando_bloqueia_com_exit_3_antes_de_escrever(tmp_pat
     }
     manager = ManagerFake(workflow=workflow)
     with pytest.raises(GovernanceBlockedError) as capturado:
-        _servico(manager).publish(_repo(tmp_path), confirmar=_explode)
+        _servico(manager).publish(_repo(tmp_path))
 
     assert capturado.value.exit_code == 3
     assert "My new" in capturado.value.message
@@ -324,37 +326,11 @@ def test_atributo_exigido_faltando_bloqueia_com_exit_3_antes_de_escrever(tmp_pat
 
 def test_nao_le_a_api_template_nem_o_completeness(tmp_path):
     manager = ManagerFake()
-    _servico(manager).publish(_repo(tmp_path), confirmar=_explode)
+    _servico(manager).publish(_repo(tmp_path))
 
     assert "get_api_by_id:414" not in manager.chamadas
     assert "get_revision_completeness" not in manager.chamadas
     assert manager.chamadas.count("get_api_by_id:417") == 1
-
-
-# --- confirmação (D-9 / D-17) ------------------------------------------------
-
-
-def test_local_pede_confirmacao_e_recusa_nao_escreve(tmp_path):
-    perguntas = []
-
-    def _recusa(texto):
-        perguntas.append(texto)
-        return False
-
-    manager = ManagerFake()
-    view = _servico(manager, modo="local", revisao=1).publish(
-        _repo(tmp_path), confirmar=_recusa
-    )
-
-    assert view.publicacao.attempted is False
-    assert "update_revision" not in manager.chamadas
-    assert "revisão 1 (id 9161)" in perguntas[0]
-
-
-def test_esteira_nao_pergunta(tmp_path):
-    manager = ManagerFake()
-    _servico(manager).publish(_repo(tmp_path), confirmar=_explode)
-    assert "update_revision" in manager.chamadas
 
 
 # --- escrita (W-7, W-8, D-020) -----------------------------------------------
@@ -362,7 +338,7 @@ def test_esteira_nao_pergunta(tmp_path):
 
 def test_um_unico_put_depois_de_todas_as_leituras_e_nenhum_post(tmp_path):
     manager = ManagerFake()
-    _servico(manager).publish(_repo(tmp_path), confirmar=_explode)
+    _servico(manager).publish(_repo(tmp_path))
 
     assert manager.chamadas.count("update_revision") == 1
     assert "publish_api_changes" not in manager.chamadas
@@ -376,7 +352,7 @@ def test_um_unico_put_depois_de_todas_as_leituras_e_nenhum_post(tmp_path):
 def test_workflow_e_stage_da_revisao_alvo_viajam_intactos(tmp_path):
     """D-020: lidos em runtime, nunca configurados nem avançados."""
     manager = ManagerFake()
-    _servico(manager, revisao=3).publish(_repo(tmp_path), confirmar=_explode)
+    _servico(manager, revisao=3).publish(_repo(tmp_path))
 
     assert manager.payload_enviado["workflowId"] == 500
     assert manager.payload_enviado["workflowStageId"] == 1402
@@ -389,7 +365,7 @@ def test_200_com_perda_e_falha(tmp_path):
     manager = ManagerFake(publicado=publicado)
 
     with pytest.raises(PublicacaoDivergenteError) as capturado:
-        _servico(manager).publish(_repo(tmp_path), confirmar=_explode)
+        _servico(manager).publish(_repo(tmp_path))
 
     assert capturado.value.exit_code == 1
 
@@ -403,7 +379,7 @@ def test_412_no_put_e_exit_3_com_o_motivo_literal(tmp_path):
     manager = ManagerFake(erro_put=erro)
 
     with pytest.raises(GovernanceBlockedError) as capturado:
-        _servico(manager).publish(_repo(tmp_path), confirmar=_explode)
+        _servico(manager).publish(_repo(tmp_path))
 
     assert capturado.value.exit_code == 3
     assert motivo in capturado.value.message
@@ -417,7 +393,7 @@ def test_recusa_do_put_nomeia_a_revisao_alvo(tmp_path):
     manager = ManagerFake(erro_put=erro)
 
     with pytest.raises(PublicacaoRecusadaError) as capturado:
-        _servico(manager).publish(_repo(tmp_path), confirmar=_explode)
+        _servico(manager).publish(_repo(tmp_path))
 
     mensagem = capturado.value.message
     assert "gravação da revisão 2" in mensagem
@@ -433,7 +409,7 @@ def test_sessao_ou_acesso_negado_no_put_orienta_sen_login(tmp_path, status):
     manager = ManagerFake(erro_put=erro)
 
     with pytest.raises(PublicacaoRecusadaError) as capturado:
-        _servico(manager).publish(_repo(tmp_path), confirmar=_explode)
+        _servico(manager).publish(_repo(tmp_path))
 
     assert "sen login" in capturado.value.message
 
@@ -443,7 +419,7 @@ def test_sessao_ou_acesso_negado_no_put_orienta_sen_login(tmp_path, status):
 
 def test_documento_segue_o_contrato_v1(tmp_path):
     manager = ManagerFake()
-    view = _servico(manager).publish(_repo(tmp_path), confirmar=_explode)
+    view = _servico(manager).publish(_repo(tmp_path))
     doc = view.to_document()
 
     assert doc["schema"] == SCHEMA_SEN_PUBLISH_V1
@@ -461,7 +437,7 @@ def test_documento_segue_o_contrato_v1(tmp_path):
 def test_etapas_narradas_na_ordem(tmp_path):
     etapas = []
     _servico(ManagerFake()).publish(
-        _repo(tmp_path), confirmar=_explode, progresso=etapas.append
+        _repo(tmp_path), progresso=etapas.append
     )
 
     assert etapas == [
@@ -494,7 +470,7 @@ def test_alterar_content_de_interceptor_existente_chega_ao_put(tmp_path, monkeyp
     (repo / "all.yaml").write_text(all_yaml, encoding="utf-8")
 
     manager = ManagerFake()
-    view = _servico(manager).publish(repo, confirmar=_explode)
+    view = _servico(manager).publish(repo)
 
     enviado = manager.payload_enviado["interceptors"][0]
     assert enviado["id"] == 11
@@ -520,12 +496,12 @@ def test_content_perdido_pela_plataforma_falha_a_conferencia(tmp_path):
     (repo / "all.yaml").write_text(all_yaml, encoding="utf-8")
 
     with pytest.raises(PublicacaoDivergenteError) as capturado:
-        _servico(ManagerFake(publicado=publicado)).publish(repo, confirmar=_explode)
+        _servico(ManagerFake(publicado=publicado)).publish(repo)
 
     assert "`quota` declarado" in capturado.value.message
 
 
-# --- avisos de remoção: na confirmação em local, no resultado na esteira -----
+# --- avisos de remoção: sempre no resultado -----------------------------------
 
 def _revisao_com_recurso_extra(monkeypatch, numero_id):
     revisao = dict(
@@ -535,40 +511,11 @@ def _revisao_com_recurso_extra(monkeypatch, numero_id):
     monkeypatch.setitem(REVISOES, numero_id, revisao)
 
 
-def test_local_mostra_a_remocao_na_confirmacao_e_nao_no_resultado(tmp_path, monkeypatch):
-    _revisao_com_recurso_extra(monkeypatch, 9161)
-    perguntas = []
-    view = _servico(ManagerFake(), modo="local", revisao=1).publish(
-        _repo(tmp_path), confirmar=lambda texto: perguntas.append(texto) or True
-    )
-
-    assert "Atenção:" in perguntas[0]
-    assert "serão apagados do Manager" in perguntas[0] and "  - Saude" in perguntas[0]
-    assert not any("apagados do Manager" in a for a in view.avisos)
-
-
-def test_local_recusa_depois_de_ver_a_remocao_nao_grava(tmp_path, monkeypatch):
-    _revisao_com_recurso_extra(monkeypatch, 9161)
-    manager = ManagerFake()
-    view = _servico(manager, modo="local", revisao=1).publish(_repo(tmp_path), confirmar=NAO)
-
-    assert view.publicacao.attempted is False
-    assert "update_revision" not in manager.chamadas
-
-
 def test_esteira_mostra_a_remocao_no_resultado(tmp_path, monkeypatch):
     _revisao_com_recurso_extra(monkeypatch, 9175)
-    view = _servico(ManagerFake()).publish(_repo(tmp_path), confirmar=_explode)
+    view = _servico(ManagerFake()).publish(_repo(tmp_path))
 
     assert any("serão apagados do Manager" in a and "Saude" in a for a in view.avisos)
-
-
-def test_sem_remocao_a_confirmacao_nao_tem_atencao(tmp_path):
-    perguntas = []
-    _servico(ManagerFake(), modo="local", revisao=1).publish(
-        _repo(tmp_path), confirmar=lambda texto: perguntas.append(texto) or True
-    )
-    assert "Atenção:" not in perguntas[0]
 
 
 # --- ambientes com a revisão alvo no ar (só informativo) ---------------------
@@ -603,7 +550,7 @@ def _deploy(deployment_id, ambiente, status="DEPLOYED", data=_DIA_19):
 
 def test_revisao_no_ar_traz_ambiente_deploy_e_data(tmp_path):
     manager = ManagerFake(api=_api_com_deploys([_deploy(269, 7)]))
-    view = _servico(manager).publish(_repo(tmp_path), confirmar=_explode)
+    view = _servico(manager).publish(_repo(tmp_path))
 
     assert view.to_document()["revision"]["deployments"] == [
         {
@@ -624,7 +571,7 @@ def test_undeployed_e_ignorado_e_cada_ambiente_aparece_uma_vez(tmp_path):
             ]
         )
     )
-    view = _servico(manager).publish(_repo(tmp_path), confirmar=_explode)
+    view = _servico(manager).publish(_repo(tmp_path))
 
     assert [(d.environment.manager_id, d.deployment_id) for d in view.deployments] == [
         (7, 269),
@@ -635,7 +582,7 @@ def test_undeployed_e_ignorado_e_cada_ambiente_aparece_uma_vez(tmp_path):
 def test_ambiente_nao_ligado_a_api_vem_sem_nome(tmp_path):
     """A plataforma aceita deploy em ambiente fora de `environments[]` (E-3)."""
     manager = ManagerFake(api=_api_com_deploys([_deploy(271, 9)]))
-    view = _servico(manager).publish(_repo(tmp_path), confirmar=_explode)
+    view = _servico(manager).publish(_repo(tmp_path))
 
     assert view.deployments[0].environment.manager_id == 9
     assert view.deployments[0].environment.name is None
@@ -643,7 +590,7 @@ def test_ambiente_nao_ligado_a_api_vem_sem_nome(tmp_path):
 
 def test_revisao_fora_do_ar_vem_como_lista_vazia(tmp_path):
     manager = ManagerFake(api=_api_com_deploys([_deploy(266, 7, status="UNDEPLOYED")]))
-    view = _servico(manager).publish(_repo(tmp_path), confirmar=_explode)
+    view = _servico(manager).publish(_repo(tmp_path))
 
     assert view.to_document()["revision"]["deployments"] == []
 
@@ -652,6 +599,6 @@ def test_deploy_de_outra_revisao_nao_conta(tmp_path):
     revisoes = [dict(r) for r in API["revisions"]]
     revisoes[2]["deployments"] = [dict(_deploy(270, 7), revisionId=9180, revisionNumber=3)]
     manager = ManagerFake(api=dict(API, revisions=revisoes))
-    view = _servico(manager).publish(_repo(tmp_path), confirmar=_explode)
+    view = _servico(manager).publish(_repo(tmp_path))
 
     assert view.deployments == []
