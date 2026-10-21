@@ -77,16 +77,11 @@ def test_context_type_maps_case_insensitive_and_unknown_denies():
     assert stranger.contextType is None
 
 
-def test_merge_attaches_environments_completeness_and_workflow():
+def test_merge_attaches_environments_and_workflow():
     raw = {
         "revisions": [
             {"id": 5513, "revisionNumber": 3},
             {"id": 5514, "revisionNumber": 4},
-        ],
-        "completeness": [
-            {"score": "70.5", "apiRevision": "5513"},
-            {"score": 85.0, "apiRevision": 5514},
-            {"score": "not-a-number", "apiRevision": 5514},
         ],
         "environments": [
             {"name": "Development", "apiRevision": 5514},
@@ -103,28 +98,22 @@ def test_merge_attaches_environments_completeness_and_workflow():
 
     assert revisions[5514].environments == ["Development"]
     assert revisions[5513].environments == ["Homologação"]
-    assert revisions[5513].completeness is not None
-    assert revisions[5513].completeness.score == 70.5
-    assert revisions[5513].completeness.suggestions == []
-    assert revisions[5514].completeness is not None
-    assert revisions[5514].completeness.score == 85.0
     assert revisions[5514].workflowStageId is None
     assert revisions[5513].workflowStageId == 12
 
 
-def test_merge_first_score_wins_and_later_is_ignored():
+def test_merge_ignores_the_frame_completeness_block():
     raw = {
-        "revisions": [{"id": 9}],
+        "revisions": [{"id": 10461, "revisionNumber": 2}],
         "completeness": [
-            {"score": 10.0, "apiRevision": 9},
-            {"score": 99.0, "apiRevision": 9},
+            {"score": 68.5, "apiRevision": 10461},
+            {"score": 70.0, "apiRevision": 10461},
         ],
     }
 
     (rev,) = _merge_wire_blocks(raw)
 
-    assert rev.completeness is not None
-    assert rev.completeness.score == 10.0
+    assert "completeness" not in rev.model_dump()
 
 
 def test_merge_last_workflow_ref_wins():

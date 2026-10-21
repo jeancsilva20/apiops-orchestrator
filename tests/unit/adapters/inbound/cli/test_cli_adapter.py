@@ -275,8 +275,71 @@ def test_revisions_drill_down_renders_canonical_grade():
         assert col in result.output
     assert "Stage One" in result.output
     assert "85%" in result.output
+    assert "sem completeness" not in result.output
     mock_service.api_revisions.assert_called_once_with(400)
     mock_service.list_apis.assert_not_called()
+
+
+def _revisions_with_one_failure():
+    mock_service = MagicMock()
+    mock_service.api_revisions.return_value = [
+        CatalogRevisionInfo(
+            revision_id=5976, revision_number=1, stage_name="Production",
+            environments="Default", completeness_score=74.3,
+        ),
+        CatalogRevisionInfo(
+            revision_id=23625, revision_number=3, stage_name="Production",
+            environments="", completeness_score=None,
+        ),
+    ]
+    return mock_service
+
+
+def test_revisions_note_explains_missing_completeness():
+    mock_service = _revisions_with_one_failure()
+
+    result = runner.invoke(
+        app,
+        ["sen", "list", "api", "--id", "68", "--revisions"],
+        obj={"api_listing_service_factory": lambda: mock_service},
+    )
+
+    assert result.exit_code == 0
+    output = " ".join(result.output.split())
+    assert "1 revisão sem completeness: o Manager não respondeu." in output
+    assert "sen completeness --id 68 --revision <REV ID>" in output
+
+
+def test_revisions_note_counts_in_plural():
+    mock_service = _revisions_with_one_failure()
+    mock_service.api_revisions.return_value[0] = CatalogRevisionInfo(
+        revision_id=5976, revision_number=1, stage_name="Production",
+        environments="Default", completeness_score=None,
+    )
+
+    result = runner.invoke(
+        app,
+        ["sen", "list", "api", "--id", "68", "--revisions"],
+        obj={"api_listing_service_factory": lambda: mock_service},
+    )
+
+    assert "2 revisões sem completeness" in " ".join(result.output.split())
+
+
+def test_revisions_json_has_null_score_and_nothing_but_the_document():
+    import json
+
+    mock_service = _revisions_with_one_failure()
+
+    result = runner.invoke(
+        app,
+        ["sen", "list", "api", "--id", "68", "--revisions", "-o", "json"],
+        obj={"api_listing_service_factory": lambda: mock_service},
+    )
+
+    assert result.exit_code == 0
+    document = json.loads(result.output)
+    assert [row["completeness_score"] for row in document] == [74.3, None]
 
 
 def test_revisions_requires_id_pre_network():

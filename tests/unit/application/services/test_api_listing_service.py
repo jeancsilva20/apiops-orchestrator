@@ -18,6 +18,9 @@ from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter 
     _translate_row,
 )
 from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
+from apiops_orchestrator.domain.models.catalog_revision_model import (
+    CatalogRevisionCompleteness,
+)
 from apiops_orchestrator.domain.models.workflow_stage_model import WorkflowStage
 from apiops_orchestrator.application.exceptions.listing_exceptions import (
     ApiCollectionError,
@@ -294,8 +297,15 @@ class TestVisibilityOnListing:
         assert [entry.id for entry in result] == [9]
 
 
+MANAGER_SCORES = {8862: 74.3, 8876: 75.8, 8882: 88.8}
+
+
+def _manager_completeness(revision_id):
+    return CatalogRevisionCompleteness(score=MANAGER_SCORES[revision_id])
+
+
 class TestApiRevisionsOrchestration:
-    """Task 6 - drill-down de revisoes, opcao A (fonte unica = frame do catalogo)."""
+    """Drill-down de revisões: frame do catálogo + completeness lido no Manager."""
 
     @pytest.fixture
     def mock_manager_api(self):
@@ -304,13 +314,13 @@ class TestApiRevisionsOrchestration:
             "apiId": 400,
             "apiName": "Orchestrator Auth API",
             "revisions": [
+                {"id": 8882, "revisionNumber": 3},
                 {"id": 8862, "revisionNumber": 1},
                 {"id": 8876, "revisionNumber": 2},
-                {"id": 8882, "revisionNumber": 3},
             ],
             "completeness": [
-                {"score": 85.0, "apiRevision": 8862},
-                {"score": 85.0, "apiRevision": 8876},
+                {"score": 68.5, "apiRevision": 8862},
+                {"score": 66.8, "apiRevision": 8876},
             ],
             "environments": [
                 {"id": 1, "name": "Default", "isDeployed": True, "apiRevision": 8862},
@@ -322,6 +332,7 @@ class TestApiRevisionsOrchestration:
                 {"workflowId": 139, "workflowStageId": 420, "apiRevision": 8882},
             ],
         })
+        mock.get_revision_completeness.side_effect = _manager_completeness
         return mock
 
     def test_one_catalog_call_rows_ordered_stage_names_complete(
@@ -339,12 +350,56 @@ class TestApiRevisionsOrchestration:
         assert [row.revision_number for row in rows] == [1, 2, 3]
         assert rows[0].stage_name == "Stage One"
         assert rows[1].stage_name == "Teste"
-        assert rows[0].completeness_score == 85.0
-        assert rows[2].completeness_score is None
 
         # economia: 1 chamada de frame + 1 de stages (workflow 139 unico)
         mock_manager_api.list_api_detail.assert_called_once_with(400)
         mock_manager_api.get_workflow_stages.assert_called_once_with(139)
+
+    def test_complete_comes_from_manager_not_from_the_frame(self, mock_manager_api):
+        service = ApiListingService(manager_api=mock_manager_api)
+
+        rows = service.api_revisions(400)
+
+        assert [row.completeness_score for row in rows] == [74.3, 75.8, 88.8]
+        assert sorted(
+            c.args[0] for c in mock_manager_api.get_revision_completeness.call_args_list
+        ) == [8862, 8876, 8882]
+
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            ManagerApiTransportRejectedError(status_code=404, title="Not Found"),
+            ManagerApiTransportUnavailableError("timeout"),
+        ],
+    )
+    def test_completeness_failure_degrades_only_that_row(self, mock_manager_api, failure):
+        def completeness(revision_id):
+            if revision_id == 8876:
+                raise failure
+            return _manager_completeness(revision_id)
+
+        mock_manager_api.get_revision_completeness.side_effect = completeness
+        service = ApiListingService(manager_api=mock_manager_api)
+
+        rows = service.api_revisions(400)
+
+        assert [row.completeness_score for row in rows] == [74.3, None, 88.8]
+
+    def test_unexpected_completeness_error_is_not_swallowed(self, mock_manager_api):
+        mock_manager_api.get_revision_completeness.side_effect = RuntimeError("bug")
+        service = ApiListingService(manager_api=mock_manager_api)
+
+        with pytest.raises(RuntimeError):
+            service.api_revisions(400)
+
+    def test_not_found_does_not_read_completeness(self, mock_manager_api):
+        mock_manager_api.list_api_detail.return_value = None
+        service = ApiListingService(manager_api=mock_manager_api)
+
+        with pytest.raises(ApiNotFound):
+            service.api_revisions(999)
+
+        mock_manager_api.get_revision_completeness.assert_not_called()
 
     def test_stage_failure_degrades_to_workflow_id(self, mock_manager_api):
         mock_manager_api.get_workflow_stages.return_value = []

@@ -90,14 +90,6 @@ def _merge_wire_blocks(raw: Dict[str, Any]) -> List[CatalogRevision]:
         if rev is not None and name is not None:
             rev.environments.append(name)
 
-    for scored in raw.get("completeness") or []:
-        if not isinstance(scored, dict):
-            continue
-        rev = by_id.get(_wire_int(scored.get("apiRevision")))
-        score = _wire_float(scored.get("score"))
-        if rev is not None and rev.completeness is None and score is not None:
-            rev.completeness = CatalogRevisionCompleteness(score=score)
-
     for wf in raw.get("wokflow") or raw.get("workflow") or []:
         if not isinstance(wf, dict):
             continue

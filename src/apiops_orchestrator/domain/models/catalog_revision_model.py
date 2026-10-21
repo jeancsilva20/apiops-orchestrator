@@ -22,8 +22,6 @@ class CatalogRevision(BaseModel):
     workflowId: Optional[int] = None
     workflowStageId: Optional[int] = None
 
-    completeness: Optional[CatalogRevisionCompleteness] = None
-
 
 @dataclass(frozen=True)
 class CatalogRevisionInfo:

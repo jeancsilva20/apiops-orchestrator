@@ -1,4 +1,5 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, Set
 
 from apiops_orchestrator.application.enums.manager_failure_kind_enum import (
@@ -34,6 +35,9 @@ logger = logging.getLogger(__name__)
 # (~7,9 MB) é recusada com 413. O peso por API varia muito (revisões inline),
 # por isso a redução adaptativa em `_scan_catalog`.
 _CATALOG_PAGE_SIZE = 25
+
+# Leituras simultâneas de `/revisions/{id}/completeness` no drill-down.
+_COMPLETENESS_WORKERS = 8
 
 
 def _catalog_access_error(
@@ -127,11 +131,15 @@ class ApiListingService:
         )
         stage_names = self._resolve_stage_names(workflow_ids)
 
+        listed = [
+            revision
+            for revision in entry.revisions
+            if revision.id is not None and revision.revisionNumber
+        ]
+        scores = self._read_completeness_scores([revision.id for revision in listed])
+
         rows: List[CatalogRevisionInfo] = []
-        for revision in entry.revisions:
-            revision_id = revision.id
-            if revision_id is None or not revision.revisionNumber:
-                continue
+        for revision in listed:
             stage_name = (
                 stage_names.get(revision.workflowStageId)
                 if revision.workflowStageId is not None
@@ -139,21 +147,36 @@ class ApiListingService:
             )
             rows.append(
                 CatalogRevisionInfo(
-                    revision_id=revision_id,
+                    revision_id=revision.id,
                     revision_number=int(revision.revisionNumber),
                     stage_name=(
                         stage_name if stage_name else revision.workflowId
                     ),
                     environments=", ".join(revision.environments),
-                    completeness_score=(
-                        revision.completeness.score
-                        if revision.completeness is not None
-                        else None
-                    ),
+                    completeness_score=scores.get(revision.id),
                 )
             )
         rows.sort(key=lambda row: row.revision_number)
         return rows
+
+    def _read_completeness_scores(
+        self, revision_ids: List[int]
+    ) -> Dict[int, Optional[float]]:
+        """Lê no Manager o completeness de cada revisão, em paralelo; falha vira None."""
+        with ThreadPoolExecutor(max_workers=_COMPLETENESS_WORKERS) as pool:
+            scores = pool.map(self._read_completeness_score, revision_ids)
+            return dict(zip(revision_ids, scores))
+
+    def _read_completeness_score(self, revision_id: int) -> Optional[float]:
+        try:
+            return self.manager_api.get_revision_completeness(revision_id).score
+        except (ManagerApiTransportRejectedError, ManagerApiTransportUnavailableError) as exc:
+            logger.info(
+                "catalog.revisions.completeness_unavailable revision_id=%s type=%s",
+                revision_id,
+                type(exc).__name__,
+            )
+            return None
 
     @staticmethod
     def _validate_window(

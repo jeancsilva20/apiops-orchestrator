@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import typer
-from typing import Any, Callable, Dict, NoReturn, Optional, cast
+from typing import Any, Callable, Dict, List, NoReturn, Optional, cast
 from rich import print as rprint
 from rich import box
 from rich import get_console
@@ -690,10 +690,26 @@ def _revision_cells(row: CatalogRevisionInfo) -> tuple:
     )
 
 
+def _missing_completeness_note(api_id: int, rows: List[CatalogRevisionInfo]) -> None:
+    """Explica as células COMPLETE vazias: o Manager não respondeu por aquelas revisões."""
+    missing = sum(1 for row in rows if row.completeness_score is None)
+    if not missing:
+        return
+    subject = "1 revisão" if missing == 1 else f"{missing} revisões"
+    rprint(
+        f"[yellow]{subject} sem completeness: o Manager não respondeu. Consulte com "
+        f"sen completeness --id {api_id} --revision <REV ID>.[/yellow]"
+    )
+
+
 def _render_revisions_grade(
     service: ApiListingService, api_id: int, output: OutputFormat
 ) -> None:
-    rows = service.api_revisions(api_id)
+    rows = _run_with_feedback(
+        lambda: service.api_revisions(api_id),
+        label="Consultando completeness das revisões...",
+        narrar=output is OutputFormat.TEXT,
+    )
     if not rows:
         rprint(f"[yellow]Nenhuma revisão encontrada para a API {api_id}.[/yellow]")
         return
@@ -711,6 +727,7 @@ def _render_revisions_grade(
                 _score_cell,
             ),
         )
+        _missing_completeness_note(api_id, rows)
 
     display_output(
         [row.to_dict() for row in rows], output_format=output, text_callback=print_text
