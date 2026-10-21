@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from apiops_orchestrator.application.exceptions.completeness_exceptions import (
+    CompletenessApiNotFound,
     CompletenessDenied,
     CompletenessError,
     CompletenessNotFound,
@@ -11,6 +12,7 @@ from apiops_orchestrator.application.exceptions.completeness_exceptions import (
 from apiops_orchestrator.application.enums.manager_failure_kind_enum import (
     ManagerFailureKind,
 )
+from apiops_orchestrator.application.services.api_access_guard import ApiAccessGuard
 from apiops_orchestrator.application.services.manager_failure_translator import (
     classify_manager_failure,
     manager_failure_message,
@@ -26,7 +28,6 @@ from apiops_orchestrator.domain.models.completeness_view import (
     CompletenessView,
 )
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
-from apiops_orchestrator.domain.services.catalog_visibility import finder_row_visible_to
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiPort,
     ManagerApiTransportRejectedError,
@@ -53,10 +54,18 @@ class CompletenessService:
     def __init__(self, manager_api: ManagerApiPort, session: Optional[LoginSession] = None):
         self.manager_api = manager_api
         self.session = session
+        self._guard = ApiAccessGuard(session)
 
     def get_completeness(self, api_id: int, revision_id: int) -> CompletenessView:
-        reading = self._fetch_reading(revision_id)
-        entry = self._soft_lookup_identity(api_id)
+        entry: Optional[ApiCatalogEntry]
+        if self._guard.sees_everything():
+            reading = self._fetch_reading(revision_id)
+            entry = self._soft_lookup_identity(api_id)
+        else:
+            # A leitura é pelo id da revisão: sem conferir a API antes, o
+            # `--id` de uma API visível abriria a revisão de outra.
+            entry = self._required_identity(api_id, revision_id)
+            reading = self._fetch_reading(revision_id)
         revision_number = self._resolve_revision_number(entry, revision_id)
         return self._build_view(api_id, revision_id, revision_number, reading, entry)
 
@@ -94,28 +103,36 @@ class CompletenessService:
         return CompletenessPlatformError(manager_failure_message(kind))
 
     def _soft_lookup_identity(self, api_id: int) -> Optional[ApiCatalogEntry]:
+        """Identidade da API para quem vê tudo; falha degrada para identidade cega."""
+        try:
+            return self.manager_api.list_api_detail(api_id)
+        except Exception:
+            return None
+
+    def _required_identity(self, api_id: int, revision_id: int) -> ApiCatalogEntry:
+        """Identidade da API para sessão de dev: existe, é visível e tem a revisão."""
         try:
             entry = self.manager_api.list_api_detail(api_id)
-        except Exception:
-            # Satélite de identidade é degradável: falha nunca derruba o comando.
-            return None
-        return self._visible(entry)
+        except (ManagerApiTransportRejectedError, ManagerApiTransportUnavailableError) as exc:
+            raise self._translate_lookup_failure(api_id, exc) from exc
+        if entry is None or not self._guard.can_see(entry.visibility()):
+            raise CompletenessApiNotFound(api_id)
+        if not any(revision.id == revision_id for revision in entry.revisions):
+            raise CompletenessNotFound(revision_id)
+        return entry
 
-    def _visible(self, entry: Optional[ApiCatalogEntry]) -> Optional[ApiCatalogEntry]:
-        """Matriz de visibilidade r5 (regra do domínio, idêntica à `sen list`).
-
-        Entry invisível degrada igual lookup falho (identidade cega) — nunca
-        erro sintético: a autorização de fato da consulta é do servidor (403).
-        """
-        if entry is None or self.session is None:
-            return entry
-        visible = finder_row_visible_to(
-            entry,
-            self.session.userName,
-            list(self.session.userGroups or []),
-            self.session.is_super_admin,
-        )
-        return entry if visible else None
+    @staticmethod
+    def _translate_lookup_failure(
+        api_id: int,
+        exc: ManagerApiTransportRejectedError | ManagerApiTransportUnavailableError,
+    ) -> CompletenessError:
+        """Classificação compartilhada; 404 do catálogo é API inexistente."""
+        kind = classify_manager_failure(exc)
+        if kind is ManagerFailureKind.NOT_FOUND:
+            return CompletenessApiNotFound(api_id)
+        if kind is ManagerFailureKind.UNAUTHORIZED:
+            return CompletenessUnauthorized()
+        return CompletenessPlatformError(manager_failure_message(kind))
 
     def _build_api_block(
         self, api_id: int, entry: Optional[ApiCatalogEntry]

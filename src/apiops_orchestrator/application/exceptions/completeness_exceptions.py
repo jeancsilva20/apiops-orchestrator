@@ -1,4 +1,5 @@
 from apiops_orchestrator.application.exceptions.manager_failure_messages import (
+    API_NOT_FOUND_TEMPLATE,
     UNAUTHORIZED_MESSAGE,
 )
 
@@ -22,6 +23,11 @@ _NOT_FOUND_TEMPLATE = (
 class CompletenessNotFound(CompletenessError):
     def __init__(self, revision_id: int):
         super().__init__(_NOT_FOUND_TEMPLATE.format(revision_id=revision_id))
+
+
+class CompletenessApiNotFound(CompletenessError):
+    def __init__(self, api_id: int):
+        super().__init__(API_NOT_FOUND_TEMPLATE.format(api_id=api_id))
 
 
 class CompletenessUnauthorized(CompletenessError):

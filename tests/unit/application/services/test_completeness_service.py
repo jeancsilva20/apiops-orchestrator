@@ -6,6 +6,7 @@ from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter 
     _translate_row,
 )
 from apiops_orchestrator.application.exceptions.completeness_exceptions import (
+    CompletenessApiNotFound,
     CompletenessDenied,
     CompletenessError,
     CompletenessNotFound,
@@ -186,31 +187,50 @@ class TestVisibilityMatrix:
         })
 
     @classmethod
-    def _view_with_identity(cls, port, identity_override: dict, profile: str = "developer") -> CompletenessView:
+    def _completeness(
+        cls, port, identity_override: dict, profile: str = "developer", revision_id=5513
+    ) -> CompletenessView:
         port.get_revision_completeness.return_value = READING
         port.list_api_detail.return_value = _translate_row({**IDENTITY_ROW, **identity_override})
         service = CompletenessService(port, session=cls._session(profile=profile))
-        return service.get_completeness(375, 5513)
+        return service.get_completeness(375, revision_id)
 
-    def test_group_owned_api_hidden_without_matching_group_degrades_identity(self, port):
-        view = self._view_with_identity(port, {"contextType": "GROUP", "contextGroupName": "AnotherTeam"})
+    def test_dev_reads_the_api_before_the_completeness(self, port):
+        view = self._completeness(port, {"contextType": "GROUP", "contextGroupName": "APIOps"})
 
-        assert view.api.name is None
-        assert view.api.context is None
-        assert view.score == 85.0
+        assert view.api.name == "Manager Training 1.0"
+        assert port.method_calls == [
+            call.list_api_detail(375),
+            call.get_revision_completeness(5513),
+        ]
+
+    def test_group_owned_api_hidden_without_matching_group_is_not_found(self, port):
+        with pytest.raises(CompletenessApiNotFound) as excinfo:
+            self._completeness(port, {"contextType": "GROUP", "contextGroupName": "AnotherTeam"})
+
+        assert str(excinfo.value) == "API 375 não encontrada ou sem permissão de acesso."
+        port.get_revision_completeness.assert_not_called()
+
+    def test_invisible_api_answers_like_a_missing_one(self, port):
+        port.list_api_detail.return_value = None
+        service = CompletenessService(port, session=self._session())
+
+        with pytest.raises(CompletenessApiNotFound) as missing:
+            service.get_completeness(375, 5513)
+        with pytest.raises(CompletenessApiNotFound) as invisible:
+            self._completeness(port, {"contextType": "GROUP", "contextGroupName": "AnotherTeam"})
+
+        assert str(invisible.value) == str(missing.value)
+        port.get_revision_completeness.assert_not_called()
 
     def test_me_owned_api_visible_to_owner_session(self, port):
-        view = self._view_with_identity(
-            port,
-            {"contextType": "ME", "owner": "isaac.machado"},
-            profile="developer",
-        )
+        view = self._completeness(port, {"contextType": "ME", "owner": "isaac.machado"})
 
         assert view.api.name == "Manager Training 1.0"
         assert view.api.context is not None and view.api.context.type == "me"
 
     def test_super_admin_sees_regardless_of_context(self, port):
-        view = self._view_with_identity(
+        view = self._completeness(
             port,
             {"contextType": "GROUP", "contextGroupName": "AnotherTeam"},
             profile="super-admin",
@@ -218,11 +238,50 @@ class TestVisibilityMatrix:
 
         assert view.api.name == "Manager Training 1.0"
 
-    def test_unknown_context_degrades_like_lookup_failure_never_error(self, port):
-        view = self._view_with_identity(port, {"contextType": "UNKNOWN_CONTEXT"})
+    def test_unknown_context_is_not_found(self, port):
+        with pytest.raises(CompletenessApiNotFound):
+            self._completeness(port, {"contextType": "UNKNOWN_CONTEXT"})
 
-        assert view.api.name is None
+    def test_revision_of_another_api_is_not_found(self, port):
+        with pytest.raises(CompletenessNotFound) as excinfo:
+            self._completeness(port, {}, revision_id=9175)
+
+        assert str(excinfo.value) == str(CompletenessNotFound(9175))
+        port.get_revision_completeness.assert_not_called()
+
+    def test_super_admin_keeps_reading_a_revision_outside_the_frame(self, port):
+        view = self._completeness(port, {}, profile="super-admin", revision_id=9175)
+
+        assert view.revision_number is None
         assert view.score == 85.0
+
+    @pytest.mark.parametrize(
+        "failure, expected",
+        [
+            (ManagerApiTransportUnavailableError("timeout"), CompletenessPlatformError),
+            (ManagerApiTransportRejectedError(status_code=401, title="x"), CompletenessUnauthorized),
+            (ManagerApiTransportRejectedError(status_code=404, title="x"), CompletenessApiNotFound),
+            (ManagerApiTransportRejectedError(status_code=409, title="x"), CompletenessPlatformError),
+        ],
+    )
+    def test_lookup_failure_stops_dev_without_completeness(self, port, failure, expected):
+        port.list_api_detail.side_effect = failure
+        service = CompletenessService(port, session=self._session())
+
+        with pytest.raises(expected) as excinfo:
+            service.get_completeness(375, 5513)
+
+        assert excinfo.value.exit_code == 2
+        port.get_revision_completeness.assert_not_called()
+
+    def test_lookup_unavailable_shows_the_family_message(self, port):
+        port.list_api_detail.side_effect = ManagerApiTransportUnavailableError("timeout")
+        service = CompletenessService(port, session=self._session())
+
+        with pytest.raises(CompletenessPlatformError) as excinfo:
+            service.get_completeness(375, 5513)
+
+        assert excinfo.value.message == UNAVAILABLE_MESSAGE
 
 
 class TestRefusalMapping:
@@ -287,6 +346,7 @@ class TestRefusalMapping:
 
 def test_all_errors_share_exit_code_two_bucket():
     assert CompletenessError("x").exit_code == 2
+    assert CompletenessApiNotFound(1).exit_code == 2
     assert CompletenessNotFound(1).exit_code == 2
     assert CompletenessUnauthorized().exit_code == 2
     assert CompletenessDenied(1).exit_code == 2
