@@ -4,10 +4,11 @@ Reproduz os cenários do
 [caderno de testes](../../docs/feat-api-estructure/prova-fluxo-validate/CADERNO-DE-TESTES.md),
 agora através do comando implementado em vez do protótipo.
 
-O **T11 teve o oráculo corrigido** e o **T12 é novo**: ambos cobrem a
-[V-27](../../docs/feat-api-estructure/decisoes-refino-409/V-27-fluxo-resolvido-no-repositorio.md),
-que tirou a resolução da herança da plataforma. O T11 original passava verde com
-a rota executando só o item acrescentado — o append apagava o herdado.
+Os oráculos de T06, T07, T08, T11 e T12 seguem a
+[V-28](../../docs/feat-api-estructure/decisoes-refino-409/V-28-heranca-composta-pela-plataforma.md):
+cada escopo guarda só os itens próprios e as marcações `REMOVED` do que deixa de
+herdar. Esta bateria confere o que cada escopo guarda; o que ele executa é
+provado pela `test_bateria_heranca_425.py`.
 
 **Não roda por padrão.** Exige `APIOPS_BATERIA_417=1` e sessão válida
 (`sen login`): escreve na revisão Draft da API 417.
@@ -191,8 +192,24 @@ def _governados(no):
     return particionar((no or {}).get("interceptors"))[0]
 
 
+def _vivos(no):
+    return [i for i in _governados(no) if i.get("status") != "REMOVED"]
+
+
+def _marcacoes(no):
+    return [i for i in _governados(no) if i.get("status") == "REMOVED"]
+
+
 def _escrever(caminho: pathlib.Path, texto: str):
     caminho.write_text(texto, encoding="utf-8")
+
+
+def _arquivo_da_rota(repo: pathlib.Path, path: str) -> pathlib.Path:
+    """Arquivo de operação que declara `path`, onde quer que esteja a pasta."""
+    for arquivo in repo.joinpath("resources").rglob("*.yaml"):
+        if f"path: {path}\n" in arquivo.read_text(encoding="utf-8"):
+            return arquivo
+    raise AssertionError(f"nenhum arquivo declara a rota {path}")
 
 
 # --------------------------------------------------------------------- T01..T11
@@ -279,8 +296,10 @@ def test_T05_rota_nova_nasce_sem_id_e_herda_por_lista_vazia(repo, validar, manag
     assert len(_governados(depois)) > 0, "a raiz mantém o fluxo"
 
 
-def test_T06_lista_vazia_herda_nao_zera(repo, validar, manager, draft_id):
-    """O achado mais valioso do caderno: 'rota sem fluxo' não existe."""
+def test_T06_inherit_false_sem_itens_e_escopo_sem_interceptors(
+    repo, validar, manager, draft_id
+):
+    """Marcar todo o herdado sem itens próprios dá escopo sem fluxo (V-28)."""
     recurso = repo / "resources" / "letras" / "resource.yaml"
     _escrever(
         recurso,
@@ -294,15 +313,17 @@ def test_T06_lista_vazia_herda_nao_zera(repo, validar, manager, draft_id):
     validar(repo)
 
     depois = _reler(manager, draft_id)
-    assert len(_governados(_recurso(depois, "Letras"))) == 0
-    assert len(_governados(_operacao(depois, "POST", "/tarefas/{id}/letras"))) == 0
-    assert len(_governados(depois)) > 0, "a raiz continua com o fluxo que as rotas herdam"
+    letras = _recurso(depois, "Letras")
+    assert _vivos(letras) == []
+    assert len(_marcacoes(letras)) == len(_vivos(depois)), "uma marcação por item da raiz"
+    # O recurso não executa nada: a rota não tem o que marcar.
+    assert _governados(_operacao(depois, "POST", "/tarefas/{id}/letras")) == []
 
 
 def test_T07_interceptors_no_recurso_nao_sao_copiados_para_as_rotas(
     repo, validar, manager, draft_id
 ):
-    recurso = repo / "resources" / "tarefas" / "resource.yaml"
+    recurso = _arquivo_da_rota(repo, "/tarefas").parent / "resource.yaml"
     _escrever(
         recurso,
         'name: "Tarefas"\ninherit: false\n\ninterceptors_request:\n'
@@ -313,12 +334,17 @@ def test_T07_interceptors_no_recurso_nao_sao_copiados_para_as_rotas(
     validar(repo)
 
     depois = _reler(manager, draft_id)
-    assert len(_governados(_recurso(depois, "Tarefas"))) == 2
-    assert len(_governados(_operacao(depois, "GET", "/tarefas"))) == 0
+    dono = next(
+        r for r in depois.get("resources") or []
+        if any(o.get("path") == "/tarefas" for o in r.get("operations") or [])
+    )
+    assert len(_vivos(dono)) == 2
+    assert len(_marcacoes(dono)) == len(_vivos(depois))
+    assert _governados(_operacao(depois, "GET", "/tarefas")) == []
 
 
 def test_T08_interceptors_declarados_na_rota_sobem(repo, validar, manager, draft_id):
-    rota = repo / "resources" / "tarefas" / "get_tarefas_{id}.yaml"
+    rota = _arquivo_da_rota(repo, "/tarefas/{id}")
     _escrever(
         rota,
         "path: /tarefas/{id}\ninherit: false\n\ninterceptors_request:\n"
@@ -328,8 +354,11 @@ def test_T08_interceptors_declarados_na_rota_sobem(repo, validar, manager, draft
 
     validar(repo)
 
-    itens = _governados(_operacao(_reler(manager, draft_id), "GET", "/tarefas/{id}"))
-    assert {i.get("type") for i in itens} == {"Custom", "Log"}
+    depois = _reler(manager, draft_id)
+    operacao = _operacao(depois, "GET", "/tarefas/{id}")
+    assert {i.get("type") for i in _vivos(operacao)} == {"Custom", "Log"}
+    # O recurso dela só herda: a rota marca cada item da raiz.
+    assert len(_marcacoes(operacao)) == len(_vivos(depois))
 
 
 def test_T10_arquivo_removido_remove_a_rota(repo, validar, manager, draft_id):
@@ -348,46 +377,24 @@ _APPEND = (
 _ROTA_LETRAS = ("resources", "letras", "post_tarefas_{id}_letras.yaml")
 
 
-def test_T11_append_soma_ao_herdado_em_vez_de_substitui_lo(
-    repo, validar, manager, draft_id
-):
-    """O oráculo que faltava — e que deixou o defeito da V-27 passar verde.
-
-    A versão anterior perguntava "a rota ganhou o item?" e passava com a rota
-    executando **só** ele: pela W-4 a lista própria não vazia É o fluxo inteiro,
-    então o append apagava o herdado sob HTTP 200. A pergunta certa é "a rota
-    continua executando o que herdava?".
-    """
-    herdado = [i.get("type") for i in _governados(_reler(manager, draft_id))]
-    assert len(herdado) > 1, "o cenário só vale se a raiz tiver fluxo para herdar"
-
+def test_T11_append_guarda_so_o_item_declarado(repo, validar, manager, draft_id):
+    """A plataforma soma o herdado sozinha: copiá-lo na rota o executaria duas
+    vezes (V-28). O ✅ original do caderno estava certo."""
     rota = repo.joinpath(*_ROTA_LETRAS)
     _escrever(rota, rota.read_text(encoding="utf-8").rstrip() + _APPEND)
 
     validar(repo)
 
-    tipos = [
-        i.get("type")
-        for i in _governados(
-            _operacao(_reler(manager, draft_id), "POST", "/tarefas/{id}/letras")
-        )
-    ]
-    assert "Payload size" in tipos
-    assert len(tipos) == len(herdado) + 1, (
-        f"o append tem de PRESERVAR o herdado: esperado {len(herdado)} + 1, veio {tipos}"
-    )
+    operacao = _operacao(_reler(manager, draft_id), "POST", "/tarefas/{id}/letras")
+    assert [i.get("type") for i in _vivos(operacao)] == ["Payload size"]
+    assert _marcacoes(operacao) == []
 
 
 def test_T12_restaurar_heranca_e_acrescentar_na_mesma_declaracao(
     repo, validar, manager, draft_id
 ):
-    """O pedido que a V-26 não expressava (V-27 §4).
-
-    Primeiro quebra a herança da rota, deixando-a com lista própria obsoleta.
-    Depois declara `inherit: true` **com** um item — que sob a V-26 somaria à
-    lista obsoleta, e sob a V-27 significa "o fluxo do pai, mais este item".
-    """
-    herdado = [i.get("type") for i in _governados(_reler(manager, draft_id))]
+    """Primeiro quebra a herança da rota; depois declara `inherit: true` com um
+    item. As marcações e o item obsoleto saem, e só o item novo fica guardado."""
     rota = repo.joinpath(*_ROTA_LETRAS)
     cabecalho = "path: /tarefas/{id}/letras\n"
 
@@ -398,22 +405,18 @@ def test_T12_restaurar_heranca_e_acrescentar_na_mesma_declaracao(
         "  - type: XSS threat protection\n    content: {}\n",
     )
     validar(repo)
-    antes = _governados(_operacao(_reler(manager, draft_id), "POST", "/tarefas/{id}/letras"))
-    assert [i.get("type") for i in antes] == ["XSS threat protection"]
+    depois = _reler(manager, draft_id)
+    antes = _operacao(depois, "POST", "/tarefas/{id}/letras")
+    assert [i.get("type") for i in _vivos(antes)] == ["XSS threat protection"]
+    assert len(_marcacoes(antes)) == len(_vivos(depois))
 
     # 2. restaura a herança E acrescenta, numa só declaração.
     _escrever(rota, cabecalho + "inherit: true" + _APPEND)
     validar(repo)
 
-    tipos = [
-        i.get("type")
-        for i in _governados(
-            _operacao(_reler(manager, draft_id), "POST", "/tarefas/{id}/letras")
-        )
-    ]
-    assert tipos == herdado + ["Payload size"], (
-        "a herança tinha de voltar do repositório, sem o XSS obsoleto: " f"{tipos}"
-    )
+    operacao = _operacao(_reler(manager, draft_id), "POST", "/tarefas/{id}/letras")
+    assert [i.get("type") for i in _vivos(operacao)] == ["Payload size"]
+    assert _marcacoes(operacao) == []
 
 
 # --------------------------------------------------------------------- baseline
