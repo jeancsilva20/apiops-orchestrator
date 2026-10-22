@@ -13,6 +13,12 @@
 > O que este caderno responde não é "o script funciona", e sim **como a plataforma
 > se comporta** — cada linha é contrato observado, não inferido.
 
+> ⚠️ **Revisto pela [V-28](../decisoes-refino-409/V-28-heranca-composta-pela-plataforma.md) em
+> 2026-10-22.** Este caderno conferiu o estado gravado, não o que executa. Medido em runtime, o
+> Manager compõe a herança: T06 mediu certo e concluiu errado ("não representável"); T07 e T08 só
+> provaram que os itens subiram — sem marcação, o escopo seguia executando o herdado; o ✅ original
+> do T11 estava certo, e a revisão de 15/10 o inverteu com base na W-4.
+
 ---
 
 ## 1. Resultado

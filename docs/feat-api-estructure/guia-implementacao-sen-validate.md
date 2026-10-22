@@ -24,9 +24,9 @@ falha **silenciosa** — HTTP 200 com perda — ou 500 sem mensagem.
 |---|---|---|
 | **W-1** | `idTemp` é **obrigatório** em interceptor novo | HTTP **500** com `errors: []` |
 | **W-9** | `idTemp` é único no **payload inteiro**, não no escopo | o Manager deduplica e **descarta** um item, com 200 |
-| **W-3** | `position` é contínua **entre escopos** (resource 2..8, operation 9..15) | ordem de execução corrompida |
-| **W-5** | Lista vazia de interceptors significa **herdar** | não existe "rota sem fluxo"; quebrar herança exige **reproduzir a lista** |
-| **W-4** | O Manager guarda o fluxo **resolvido**; o repositório guarda o **delta** | publicar o delta cru **apaga** o herdado |
+| **W-3** | ~~`position` é contínua **entre escopos**~~ — revista pela [V-28](decisoes-refino-409/V-28-heranca-composta-pela-plataforma.md): a execução é por escopo e a `position` ordena só dentro dele | — |
+| **W-5** | Lista vazia de interceptors significa **herdar** | quebrar herança exige marcar `REMOVED` cada item herdado; marcar tudo sem itens próprios dá rota sem interceptors ([V-28](decisoes-refino-409/V-28-heranca-composta-pela-plataforma.md)) |
+| **W-4** | ~~O Manager guarda o fluxo **resolvido**~~ — **errada** ([V-28](decisoes-refino-409/V-28-heranca-composta-pela-plataforma.md)): o Manager compõe o pai, menos o marcado, mais o próprio | copiar o herdado no escopo o faz **executar duas vezes** |
 | **W-6** | A operação **pertence ao recurso**; `id` de operação não é global | operação que muda de recurso é **descartada**, com 200 |
 | **W-7** | O gate do AG está no `PUT /revisions`, **não** no `PUT /apis` | escrever nos dois deixa estado meio-aplicado |
 | **W-2** | O repositório pode referenciar um `Custom` que não existe mais | falha só na publicação — **decidido em 2026-10-15:** passa a abortar na validação, nomeando o id |

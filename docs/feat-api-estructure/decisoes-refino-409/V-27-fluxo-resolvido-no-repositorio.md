@@ -1,5 +1,12 @@
 # V-27 · O fluxo efetivo é resolvido no repositório, não na plataforma
 
+> ⚠️ **Premissa revista pela [V-28](V-28-heranca-composta-pela-plataforma.md) em 2026-10-22.** A W-4
+> estava errada: o Manager compõe o fluxo de cada escopo (o do pai, menos o marcado, mais o próprio).
+> O defeito da §3 não existia — o T11 original estava certo —, e publicar o herdado copiado dentro do
+> escopo o faz executar duas vezes. Continua valendo que o repositório decide o que cada escopo
+> executa; o que vai no wire passa a ser o delta e as marcações. A E-1 e a E-2 da §8 foram respondidas
+> na V-28 §3.
+
 | Meta | Valor |
 |---|---|
 | Status | **FECHADO** — 2026-10-15 |

@@ -1,5 +1,10 @@
 # V-26 · `inherit` substitui `override` — a herança passa a ser declarada
 
+> ⚠️ **Revisada de novo pela [V-28](V-28-heranca-composta-pela-plataforma.md) em 2026-10-22.** A
+> gramática segue. No wire, `inherit: true` com itens leva só os itens declarados, e `inherit: false`
+> leva os declarados mais uma marcação para cada item herdado. `inherit: false` sem itens passa a ser
+> rota sem interceptors.
+>
 > ⚠️ **Revisada na publicação pela [V-27](V-27-fluxo-resolvido-no-repositorio.md) em 2026-10-15.**
 > A gramática do YAML segue valendo por inteiro. O que mudou foi o que `inherit: true` **produz no
 > wire**: o fluxo efetivo passou a ser computado a partir do repositório (`all.yaml` → `resource.yaml`

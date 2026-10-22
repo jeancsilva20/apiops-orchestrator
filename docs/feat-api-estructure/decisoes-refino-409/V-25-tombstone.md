@@ -1,5 +1,10 @@
 # V-25 · Tombstone — a lista completa explícita é a única forma expressável
 
+> ⚠️ **Revisada pela [V-28](V-28-heranca-composta-pela-plataforma.md) em 2026-10-22.** A lista
+> completa explícita continua sendo a gramática do YAML. "Única forma expressável" cai: o wire expressa
+> remoção por marcação `REMOVED`, e marcar todo o herdado sem itens próprios dá uma rota sem
+> interceptors — o que o T06 não testou.
+
 | Meta | Valor |
 |---|---|
 | Status | **FECHADO** — 2026-10-15 |

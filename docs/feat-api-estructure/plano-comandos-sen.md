@@ -659,6 +659,11 @@ tenant.
 
 ### W-3 · `position` é contínua entre escopos
 
+> ⚠️ **Revista pela [V-28](decisoes-refino-409/V-28-heranca-composta-pela-plataforma.md) em
+> 2026-10-22.** A numeração observada é só a que quem gravou escolheu: a execução é por escopo (bloco
+> herdado primeiro, depois os próprios), e a `position` ordena só dentro do escopo. A UI numera a
+> partir de 0 em cada escopo.
+
 Leitura da revision 9161:
 
 ```
@@ -673,6 +678,11 @@ registrava (FIRST e SECOND compartilham a numeração; `THIRD` tem espaço próp
 
 ### W-4 · O Manager materializa a herança; o repositório guarda o delta
 
+> ⚠️ **Errada — ver [V-28](decisoes-refino-409/V-28-heranca-composta-pela-plataforma.md), medida em
+> runtime em 2026-10-21.** O Manager compõe o fluxo de cada escopo: o do pai, menos os itens marcados
+> `REMOVED`, mais os próprios. Os 9 itens do `Atribuicao Responsavel` eram cópias próprias, e o
+> recurso executava o herdado duas vezes. Publicar o delta é o correto.
+
 | | |
 |---|---|
 | wire, resource `Atribuicao Responsavel` | **9 itens** — o fluxo herdado inteiro, materializado |
@@ -683,6 +693,10 @@ Publicar o delta cru **apaga** os 8 herdados. A tradução YAML → wire precisa
 como declarativa quando o armazenamento é resolvido.
 
 ### W-5 · Lista vazia significa "herda", não "fluxo vazio"
+
+> ⚠️ **Revista pela [V-28](decisoes-refino-409/V-28-heranca-composta-pela-plataforma.md) em
+> 2026-10-22.** Lista vazia herda, sim. Mas "rota que não executa nada" existe: basta marcar `REMOVED`
+> todo item herdado, sem itens próprios.
 
 Um recurso publicado com `interceptors: []` **herda** o fluxo do escopo acima.
 Não existe representação para "esta rota não executa nada".

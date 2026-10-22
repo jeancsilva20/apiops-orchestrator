@@ -5,9 +5,8 @@ description: >-
   Retorna o status de saúde da aplicação. Endpoint público utilizado para readiness probes em
   ambientes Kubernetes e monitoramento do API Gateway.
 
-inherit: false
-# o fluxo abaixo substitui o herdado, e é o que este ponto executa
-# não executa, do herdado: Custom#178, Custom#32
+inherit: true
+# os interceptors abaixo executam depois do fluxo herdado
 
 interceptors_request:
   - type: Custom

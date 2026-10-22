@@ -3,9 +3,8 @@ destination:
   url: ''            # vazio = herda do escopo acima
 description: Validação de token
 
-inherit: false
-# o fluxo abaixo substitui o herdado, e é o que este ponto executa
-# não executa, do herdado: nada
+inherit: true
+# os interceptors abaixo executam depois do fluxo herdado
 
 interceptors_request:
   - type: Log

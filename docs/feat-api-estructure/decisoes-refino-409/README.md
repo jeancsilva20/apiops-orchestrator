@@ -52,3 +52,4 @@ escrita na plataforma.
 | V-18 | Arquivo do escopo raiz: `all.yaml`, gramática e ausência aborta | [V-18-arquivo-do-escopo-raiz.md](V-18-arquivo-do-escopo-raiz.md) | 2026-10-15 | D-003 §4, importer, `sen validate` |
 | V-25 | Tombstone: a lista completa explícita é a única forma expressável (T06) | [V-25-tombstone.md](V-25-tombstone.md) | 2026-10-15 | D-2/P-4, importer, conformidade |
 | V-27 | **O fluxo efetivo é resolvido no repositório, não na plataforma** | [V-27-fluxo-resolvido-no-repositorio.md](V-27-fluxo-resolvido-no-repositorio.md) | 2026-10-15 | **V-26** (publicação), V-25 (generalizada), publisher |
+| V-28 | **A plataforma compõe a herança; o escopo guarda só o que é dele** (medido em runtime) | [V-28-heranca-composta-pela-plataforma.md](V-28-heranca-composta-pela-plataforma.md) | 2026-10-22 | **W-3, W-4, W-5**, V-25 §2, V-26 §3, V-27 (premissa), T06/T07/T08/T11 |

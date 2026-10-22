@@ -2,9 +2,8 @@ path: /oauth2/token
 destination:
   url: "https://api-consulting.sensedia.com/oauth/v1/access-token"
 
-inherit: false
-# o fluxo abaixo substitui o herdado, e é o que este ponto executa
-# não executa, do herdado: nada
+inherit: true
+# os interceptors abaixo executam depois do fluxo herdado
 
 interceptors_request:
   - type: Log obfuscation

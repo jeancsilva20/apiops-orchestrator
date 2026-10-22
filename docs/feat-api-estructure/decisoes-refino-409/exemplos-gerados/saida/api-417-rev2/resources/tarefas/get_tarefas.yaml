@@ -7,9 +7,8 @@ description: >-
   criação decrescente.
 
 inherit: false
-# este ponto executa o fluxo herdado, menos: XSS threat protection
-# a lista abaixo é completa de propósito: o Manager não tem como
-# dizer "herde tudo, exceto um" — lista vazia sempre significa herdar
+# este ponto deixa de executar, do herdado: XSS threat protection
+# a lista abaixo é o fluxo completo que vale aqui
 
 interceptors_request:
   - type: Custom
