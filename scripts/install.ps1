@@ -108,10 +108,12 @@ else {
 
 New-Item -ItemType Directory -Force -Path $Destino | Out-Null
 if ((Resolve-Path $origem).Path -ne (Resolve-Path $Destino).Path) {
-    foreach ($arquivo in "sen.exe", "install.ps1", ".sen.example", "README.md") {
+    foreach ($arquivo in "sen.exe", "install.ps1", ".sen.example") {
         Copy-Item -Force (Join-Path $origem $arquivo) $Destino
     }
 }
+# O README passou a acompanhar os pacotes, fora deles: o de versões antigas sai.
+Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Destino "README.md")
 Get-ChildItem -Force $Destino | Unblock-File
 
 # O .sen nasce sempre do gabarito da versão instalada, levando só a credencial.

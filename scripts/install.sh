@@ -78,8 +78,9 @@ if [[ "$ORIGEM" != "$DESTINO" ]]; then
     install -m 755 "${ORIGEM}/sen" "${DESTINO}/sen"
     install -m 755 "${ORIGEM}/install.sh" "${DESTINO}/install.sh"
     install -m 644 "${ORIGEM}/.sen.example" "${DESTINO}/.sen.example"
-    install -m 644 "${ORIGEM}/README.md" "${DESTINO}/README.md"
 fi
+# O README passou a acompanhar os pacotes, fora deles: o de versões antigas sai.
+rm -f "${DESTINO}/README.md"
 
 # O .sen nasce sempre do gabarito da versão instalada, levando só a credencial.
 (

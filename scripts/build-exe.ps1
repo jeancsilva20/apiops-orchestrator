@@ -5,9 +5,10 @@
 .DESCRIPTION
     Monta um venv limpo em build/exe (só dependências de runtime do
     requirements.txt + o pacote), empacota com PyInstaller em arquivo único,
-    confere que nenhum .sen/.sen_session/.env entrou no binário e gera
-    dist/sen-<versão>-windows-x64.zip com o `sen.exe`, o instalador, o
-    `.sen.example` e o README do dev (scripts/README-executavel-windows.md).
+    confere que nenhum .sen/.sen_session/.env entrou no binário e gera, em
+    dist/sen-<versão>/, o sen-<versão>-windows-x64.zip (o `sen.exe`, o
+    instalador e o `.sen.example`) e, ao lado dele, o README do dev
+    (scripts/README-executavel.md), o mesmo do pacote Linux.
 
 .EXAMPLE
     .\scripts\build-exe.ps1
@@ -87,10 +88,12 @@ try {
     New-Item -ItemType Directory -Path $pacote | Out-Null
     Copy-Item $exe $pacote
     Copy-Item "src\apiops_orchestrator\.sen.example" $pacote
-    Copy-Item "scripts\README-executavel-windows.md" (Join-Path $pacote "README.md")
     Copy-Item "scripts\install.ps1" $pacote
-    New-Item -ItemType Directory -Force -Path $dist | Out-Null
-    $zip = Join-Path $dist "$nome.zip"
+    # O README fica fora do zip: quem baixa precisa lê-lo antes de extrair.
+    $entrega = Join-Path $dist "sen-$versao"
+    New-Item -ItemType Directory -Force -Path $entrega | Out-Null
+    Copy-Item -Force "scripts\README-executavel.md" (Join-Path $entrega "README.md")
+    $zip = Join-Path $entrega "$nome.zip"
     if (Test-Path $zip) { Remove-Item -Force $zip }
     Compress-Archive -Path $pacote -DestinationPath $zip
 

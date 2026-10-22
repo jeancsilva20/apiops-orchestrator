@@ -7,8 +7,9 @@
 #
 # Copia só o necessário do repo para uma pasta do Linux (sem .sen/.sen_session/.env),
 # monta um venv limpo, empacota com PyInstaller em arquivo único, confere que nenhum
-# segredo entrou no binário e gera dist/sen-<versão>-linux-x64.tar.gz com o `sen`,
-# o instalador, o `.sen.example` e o README do dev (scripts/README-executavel-linux.md).
+# segredo entrou no binário e gera, em dist/sen-<versão>/, o sen-<versão>-linux-x64.tar.gz
+# (o `sen`, o instalador e o `.sen.example`) e, ao lado dele, o README do dev
+# (scripts/README-executavel.md), o mesmo do pacote Windows.
 set -euo pipefail
 
 PYINSTALLER_VERSAO="6.22.3"
@@ -84,15 +85,17 @@ fi
 
 echo "[5/5] Pacote"
 PACOTE="${BUILD}/${NOME}"
-mkdir -p "$PACOTE" "${RAIZ}/dist"
+ENTREGA="${RAIZ}/dist/sen-${VERSAO}"
+mkdir -p "$PACOTE" "$ENTREGA"
 install -m 755 "$EXE" "${PACOTE}/sen"
 # Arquivos de texto saem em LF: o checkout no Windows pode tê-los em CRLF.
 tr -d '\r' <"${RAIZ}/scripts/install.sh" >"${PACOTE}/install.sh"
 tr -d '\r' <"${RAIZ}/src/apiops_orchestrator/.sen.example" >"${PACOTE}/.sen.example"
-tr -d '\r' <"${RAIZ}/scripts/README-executavel-linux.md" >"${PACOTE}/README.md"
 chmod 755 "${PACOTE}/install.sh"
-chmod 644 "${PACOTE}/.sen.example" "${PACOTE}/README.md"
-TARBALL="${RAIZ}/dist/${NOME}.tar.gz"
+chmod 644 "${PACOTE}/.sen.example"
+# O README fica fora do tar.gz: quem baixa precisa lê-lo antes de extrair.
+tr -d '\r' <"${RAIZ}/scripts/README-executavel.md" >"${ENTREGA}/README.md"
+TARBALL="${ENTREGA}/${NOME}.tar.gz"
 tar -C "$BUILD" --owner=0 --group=0 -czf "$TARBALL" "$NOME"
 
 echo "Pronto: ${TARBALL}"
