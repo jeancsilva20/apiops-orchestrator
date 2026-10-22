@@ -1,6 +1,0 @@
-path: /tarefas/{id}/atribuicao-responsavel
-destination:
-  url: ''            # vazio = herda do escopo acima
-
-inherit: true
-# apenas herda o fluxo do nível acima: nenhum interceptor próprio

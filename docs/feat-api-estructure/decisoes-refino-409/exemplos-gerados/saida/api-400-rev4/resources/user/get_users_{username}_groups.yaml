@@ -1,6 +1,0 @@
-path: /users/{username}/groups
-destination:
-  url: "https://platform-production.sensedia.com/user-management/v1/users/{username}/groups"
-
-inherit: true
-# apenas herda o fluxo do nível acima: nenhum interceptor próprio

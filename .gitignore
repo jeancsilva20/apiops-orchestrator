@@ -221,3 +221,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 /apiops_newstruct/
+
+# Documentação e OpenSpec ficam fora do repositório (../apiops-docs)
+/docs/
+/openspec/

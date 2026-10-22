@@ -1,8 +1,0 @@
-name: Tarefas
-description: Gerenciamento de tarefas de busca de letra de obras musicais
-destination:
-  url: "https://google.com"
-  timeout: "30"
-
-inherit: true
-# apenas herda o fluxo do nível acima: nenhum interceptor próprio

@@ -1,9 +1,0 @@
-path: /letras/{id}
-destination:
-  url: "https://dev-backend.ecad.org.br/app-demo/servico-letras/v1/letras/{id}"
-description: >-
-  Remove uma letra de obra musical do catálogo. A remoção da letra também atualiza o status da
-  obra associada. Requer perfil ADMIN.
-
-inherit: true
-# apenas herda o fluxo do nível acima: nenhum interceptor próprio
