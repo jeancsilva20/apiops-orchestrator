@@ -7,8 +7,8 @@
     requirements.txt + o pacote), empacota com PyInstaller em arquivo único,
     confere que nenhum .sen/.sen_session/.env entrou no binário e gera, em
     dist/sen-<versão>/, o sen-<versão>-windows-x64.zip (o `sen.exe`, o
-    instalador e o `.sen.example`) e, ao lado dele, o README do dev
-    (scripts/README-executavel.md), o mesmo do pacote Linux.
+    instalador, o `install.cmd` e o `.sen.example`) e, ao lado dele, o README
+    do dev (scripts/README-executavel.md), o mesmo do pacote Linux.
 
 .EXAMPLE
     .\scripts\build-exe.ps1
@@ -89,6 +89,7 @@ try {
     Copy-Item $exe $pacote
     Copy-Item "src\apiops_orchestrator\.sen.example" $pacote
     Copy-Item "scripts\install.ps1" $pacote
+    Copy-Item "scripts\install.cmd" $pacote
     # O README fica fora do zip: quem baixa precisa lê-lo antes de extrair.
     $entrega = Join-Path $dist "sen-$versao"
     New-Item -ItemType Directory -Force -Path $entrega | Out-Null

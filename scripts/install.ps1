@@ -2,6 +2,9 @@
 .SYNOPSIS
     Instala (ou atualiza) o `sen` em %LOCALAPPDATA%\sen, coloca no PATH do usuário e configura a credencial.
 
+.DESCRIPTION
+    No fim, apaga da pasta extraída os arquivos do pacote, para o único sen.exe ser o instalado.
+
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File install.ps1
 #>
@@ -14,6 +17,7 @@ $ErrorActionPreference = "Stop"
 $origem = $PSScriptRoot
 $senFile = Join-Path $Destino ".sen"
 $utf8SemBom = New-Object Text.UTF8Encoding $false
+$arquivosDoPacote = "sen.exe", "install.ps1", "install.cmd", ".sen.example"
 
 function Get-CredencialAtual {
     if (-not (Test-Path $senFile)) { return "" }
@@ -93,6 +97,19 @@ function Add-PathUsuario([string]$Pasta) {
     return $true
 }
 
+# Apaga da pasta extraída os arquivos do pacote e a pasta, se ficar vazia. Nunca
+# derruba a instalação: o que estiver em uso fica. Devolve se a pasta saiu.
+function Remove-PastaExtraida {
+    foreach ($arquivo in $arquivosDoPacote) {
+        try { Remove-Item -Force -ErrorAction Stop (Join-Path $origem $arquivo) } catch { }
+    }
+    try {
+        if (-not (Get-ChildItem -Force $origem)) { Remove-Item -Force -ErrorAction Stop $origem }
+    }
+    catch { }
+    return -not (Test-Path $origem)
+}
+
 if (-not (Test-Path (Join-Path $origem "sen.exe")) -or -not (Test-Path (Join-Path $origem ".sen.example"))) {
     throw "Rode o install.ps1 de dentro da pasta extraída do pacote do sen."
 }
@@ -107,8 +124,9 @@ else {
 }
 
 New-Item -ItemType Directory -Force -Path $Destino | Out-Null
-if ((Resolve-Path $origem).Path -ne (Resolve-Path $Destino).Path) {
-    foreach ($arquivo in "sen.exe", "install.ps1", ".sen.example") {
+$daPastaExtraida = (Resolve-Path $origem).Path -ne (Resolve-Path $Destino).Path
+if ($daPastaExtraida) {
+    foreach ($arquivo in $arquivosDoPacote) {
         Copy-Item -Force (Join-Path $origem $arquivo) $Destino
     }
 }
@@ -127,6 +145,14 @@ $pathNovo = Add-PathUsuario $Destino
 $versao = (& (Join-Path $Destino "sen.exe") --version | Select-Object -First 1)
 Write-Host ""
 Write-Host "Instalado: $versao em $Destino" -ForegroundColor Green
+if ($daPastaExtraida) {
+    if (Remove-PastaExtraida) {
+        Write-Host "A pasta extraída foi apagada: o sen agora roda de $Destino."
+    }
+    else {
+        Write-Host "A pasta extraída ($origem) não foi apagada (está em uso ou tem outros arquivos); pode apagá-la." -ForegroundColor Yellow
+    }
+}
 if ($pathNovo) {
     Write-Host "Abra um terminal novo e rode: sen login"
 }

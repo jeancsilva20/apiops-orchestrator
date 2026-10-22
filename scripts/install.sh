@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Instala (ou atualiza) o `sen` em ~/.local/share/sen, coloca no PATH e configura a credencial.
-# Uso, de dentro da pasta extraída do pacote:  ./install.sh
+# No fim, apaga da pasta extraída os arquivos do pacote, para o único `sen` ser o instalado.
+# Uso, de fora da pasta extraída:  ./sen-<versão>-linux-x64/install.sh
 set -euo pipefail
 
 ORIGEM="$(cd "$(dirname "$0")" && pwd)"
 DESTINO="${HOME}/.local/share/sen"
 BIN="${HOME}/.local/bin"
 SEN_FILE="${DESTINO}/.sen"
+ARQUIVOS_DO_PACOTE=(sen install.sh .sen.example)
 
 credencial_atual() {
     [[ -f "$SEN_FILE" ]] || return 0
@@ -56,6 +58,19 @@ pedir_credencial() {
         fi
         echo "Credencial inválida: o Basic deve ser o Base64 de client_id:client_secret." >&2
     done
+}
+
+# Apaga da pasta extraída os arquivos do pacote e a pasta, se ficar vazia e não for o
+# diretório atual de quem rodou o instalador. Devolve se a pasta saiu.
+apagar_pasta_extraida() {
+    local arquivo
+    for arquivo in "${ARQUIVOS_DO_PACOTE[@]}"; do
+        rm -f "${ORIGEM}/${arquivo}"
+    done
+    if [[ "$ORIGEM" != "$PWD" ]]; then
+        rmdir "$ORIGEM" 2>/dev/null || true
+    fi
+    [[ ! -d "$ORIGEM" ]]
 }
 
 if [[ ! -f "${ORIGEM}/sen" || ! -f "${ORIGEM}/.sen.example" ]]; then
@@ -109,6 +124,13 @@ esac
 
 echo
 echo "Instalado: $("${DESTINO}/sen" --version | head -1) em ${DESTINO}"
+if [[ "$ORIGEM" != "$DESTINO" ]]; then
+    if apagar_pasta_extraida; then
+        echo "A pasta extraída foi apagada: o sen agora roda de ${DESTINO}."
+    else
+        echo "A pasta extraída (${ORIGEM}) não foi apagada (é a pasta atual do terminal ou tem outros arquivos); pode apagá-la."
+    fi
+fi
 if [[ -n "$ABRIR_TERMINAL" ]]; then
     echo "Abra um terminal novo e rode: sen login"
 else

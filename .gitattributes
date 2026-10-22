@@ -1,2 +1,4 @@
 # Scripts shell rodam no Linux/WSL: quebra de linha LF mesmo em checkout no Windows.
 *.sh text eol=lf
+# O cmd lê o .cmd linha a linha: CRLF mesmo em checkout no Linux.
+*.cmd text eol=crlf
