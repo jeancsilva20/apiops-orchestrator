@@ -1,20 +1,15 @@
-"""Aritmética de identidade e partição dos fluxos de interceptors.
+"""Identidade, partição e composição dos fluxos de interceptors.
 
-Lógica pura, sem rede: recebe dados já lidos e devolve dados. É aqui que moram
-as nove regras de wire (W-1 a W-9) observadas contra a plataforma, porque todas
-são determinísticas.
+Lógica pura, sem rede: recebe dados já lidos e devolve dados.
 
-A regra de identidade, condensada:
-
-    position  ->  do ESCOPO    (por escopo e execution point; contínua entre
-                                escopos no wire; nunca renumerada 1..N — os
-                                números do escopo seguem a ordem do YAML)
+    position  ->  do ESCOPO    (ordena só dentro do escopo; os números do escopo
+                                seguem a ordem do YAML)
     idTemp    ->  do PAYLOAD   (único em toda a chamada; contador global)
     id        ->  null em item novo; preservado em item existente
 
-A **resolução da herança** mora aqui desde a V-27: o fluxo efetivo de um escopo é
-computado a partir do repositório (`all.yaml` → `resource.yaml` → operação) e
-publicado resolvido. A plataforma guarda; não decide.
+Cada escopo guarda os itens próprios e as marcações `REMOVED` do que deixa de
+herdar; o Manager executa o que o pai executa, menos o marcado, mais o próprio
+(V-28).
 """
 
 import copy
@@ -33,7 +28,8 @@ __all__ = [
     "particionar",
     "chave_interceptor",
     "maior_identificador",
-    "fluxo_efetivo",
+    "identidade",
+    "alvo_da_marcacao",
     "fluxo_composto",
     "preparar_contador_idtemp",
     "construir_item_novo",
@@ -114,84 +110,53 @@ def maior_identificador(no: Any) -> int:
     return maior
 
 
-def fluxo_efetivo(
-    proprios: Optional[Sequence[Dict[str, Any]]],
-    herdado: Optional[Sequence[Dict[str, Any]]],
-) -> List[Dict[str, Any]]:
-    """Fluxo que um escopo realmente executa.
+def identidade(item: Dict[str, Any]) -> Any:
+    """`id` do item ou, no item que ainda não existe no Manager, o `idTemp`."""
+    return item["id"] if item.get("id") is not None else item.get("idTemp")
 
-    Combina duas regras observadas que, juntas, dão uma conta simples:
 
-    * **W-4** — o Manager guarda o fluxo **resolvido**, não o delta. A lista de um
-      escopo já é o que ele executa por inteiro.
-    * **W-5** — lista **vazia** significa HERDAR. "Escopo sem fluxo" não existe na
-      plataforma.
-
-    Logo: lista própria não vazia **é** o efetivo; vazia, o efetivo é o do pai.
-    Somar as duas conta em dobro — erro fácil, porque a intuição de "override
-    soma ao herdado" é exatamente o contrário do que a plataforma faz.
-
-    O **tombstone** é o terceiro caso, e o mais fácil de perder: um escopo que
-    só carrega itens `status: REMOVED` tem lista de presentes vazia, mas NÃO
-    herda o fluxo do pai inteiro — herda o fluxo do pai **menos** os itens que
-    o tombstone aponta por `parent.id` (V-25 §2.1). Ignorar isso faria a
-    supressão desaparecer da conformidade: o comparador veria o item como
-    executado quando ele não é.
-    """
-    governados, _ = particionar(proprios)
-    presentes = [i for i in governados if i.get("status") != "REMOVED"]
-    if presentes:
-        return presentes
-
-    herdados_governados, _ = particionar(herdado)
-    efetivo_do_pai = [
-        i for i in herdados_governados if i.get("status") != "REMOVED"
-    ]
-
-    suprimidos = {
-        (t.get("parent") or {}).get("id")
-        for t in governados
-        if t.get("status") == "REMOVED" and (t.get("parent") or {}).get("id") is not None
-    }
-    if not suprimidos:
-        return efetivo_do_pai
-    return [i for i in efetivo_do_pai if i.get("id") not in suprimidos]
+def alvo_da_marcacao(marcacao: Dict[str, Any]) -> Any:
+    """Identidade do item herdado que a marcação `REMOVED` aponta."""
+    return identidade(marcacao.get("parent") or {})
 
 
 def fluxo_composto(
     proprios: Optional[Sequence[Dict[str, Any]]],
     herdado: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
-    """Fluxo que o Manager compõe para um escopo: o herdado, menos os itens
-    marcados como removidos no escopo, mais os itens próprios."""
+    """Fluxo governado que o escopo executa: o herdado, menos os itens marcados
+    como removidos no escopo, mais os itens próprios em ordem de `position`."""
     governados, _ = particionar(proprios)
     removidos = {
-        (i.get("parent") or {}).get("id")
-        for i in governados
-        if i.get("status") == "REMOVED"
+        alvo_da_marcacao(i) for i in governados if i.get("status") == "REMOVED"
     }
-    mantidos = [
-        i for i in herdado or []
-        if i.get("id") is None or i.get("id") not in removidos
-    ]
-    return mantidos + [i for i in governados if i.get("status") != "REMOVED"]
+    removidos.discard(None)
+    mantidos = [i for i in herdado or [] if identidade(i) not in removidos]
+    proprios_vivos = sorted(
+        (i for i in governados if i.get("status") != "REMOVED"),
+        key=lambda i: i.get("position") or 0,
+    )
+    return mantidos + proprios_vivos
 
 
 # --------------------------------------------------------------------------- publish
 
 
+# Piso dos `idTemp`, acima de qualquer id que o Manager gere. O item novo vai com
+# `id` igual ao `idTemp` (ver `construir_item_novo`), então o número temporário
+# não pode coincidir com o id de um item existente nem com os ids que o Manager
+# gera no mesmo PUT. A UI usa números dessa ordem (o relógio em milissegundos).
+PISO_IDTEMP = 1_000_000_000_000
+
+
 def preparar_contador_idtemp(payload: Any) -> "Iterator[int]":
-    """Contador GLOBAL de `idTemp`, começando acima de tudo que já existe.
+    """Contador GLOBAL de `idTemp`, acima de tudo que já existe e do piso.
 
     **W-9**: o `idTemp` é único no **payload inteiro**, não no escopo. Dois itens
     novos em escopos diferentes que compartilhem o valor fazem o Manager
-    **descartar um deles**, devolvendo HTTP 200 — foi assim que um `Custom` da
-    raiz sumiu sem erro.
-
-    O contador é um só, compartilhado por todos os escopos. Calcular "a próxima
-    posição livre" por escopo é exatamente o bug.
+    **descartar um deles**, devolvendo HTTP 200.
     """
-    proximo = maior_identificador(payload) + 1
+    proximo = max(maior_identificador(payload) + 1, PISO_IDTEMP)
     while True:
         yield proximo
         proximo += 1
@@ -213,8 +178,10 @@ def construir_item_novo(
 
     * **W-1** — `idTemp` é **obrigatório**. Sem ele, ou com `None`, o Manager
       devolve **500** com `errors: []`;
-    * `id` vai **nulo**: o item ainda não existe, e inventar um id o faria
-      colidir com outro;
+    * `id` vai igual ao `idTemp`, como a UI faz. Com `id` nulo, a marcação de
+      uma rota para item novo do recurso some quando o recurso também marca um
+      item novo da raiz no mesmo PUT (bateria da 425). O `idTemp` vem acima de
+      `PISO_IDTEMP`, então não coincide com o id de um item existente;
     * `customInterceptorId` é **preservado** — é a referência ao script no tenant.
     """
     if idtemp is None:
@@ -228,7 +195,7 @@ def construir_item_novo(
     if isinstance(content, (dict, list)):
         content = json.dumps(content, ensure_ascii=False)
     return {
-        "id": None,
+        "id": idtemp,
         "idTemp": idtemp,
         "position": position,
         "type": tipo,
@@ -246,26 +213,21 @@ def construir_item_novo(
 
 @dataclass(frozen=True)
 class FluxoDoEscopo:
-    """Fluxo que um escopo deve executar, computado a partir do REPOSITÓRIO.
+    """O que um escopo guarda e o que executa, decidido pelo repositório.
 
-    A V-27 tirou a resolução da herança da plataforma e a trouxe para cá: o
-    efetivo de um escopo é o do seu pai **no repositório** combinado com o que
-    ele declara, e não o que a plataforma guardava no escopo.
-
-    * `efetivo` — a lista resolvida, que é o que a conformidade compara;
-    * `heranca_pura` — o efetivo é **exatamente** o do pai. A lista vai VAZIA no
-      wire: é a codificação compacta da mesma resposta (V-27 §2), e mantém a
-      propagação viva quando o `all.yaml` muda;
-    * `contraditorio` — `inherit: false` sem itens. A plataforma não sabe
-      representar "escopo que não executa nada" (T06), então isso vira aviso;
-    * `substitui` — `inherit: false` com itens: o herdado vai marcado como
-      removido no escopo.
+    * `proprios` — itens declarados, que o escopo guarda;
+    * `quebra` — o escopo marca como removido todo item que o pai executa;
+    * `efetivo` — o que o escopo executa.
     """
 
+    proprios: List[Dict[str, Any]] = field(default_factory=list)
     efetivo: List[Dict[str, Any]] = field(default_factory=list)
-    heranca_pura: bool = False
-    contraditorio: bool = False
-    substitui: bool = False
+    quebra: bool = False
+
+    @property
+    def heranca_pura(self) -> bool:
+        """Sem itens próprios e sem quebra: a lista vai vazia e o escopo herda."""
+        return not self.proprios and not self.quebra
 
 
 def resolver_fluxo_declarado(
@@ -275,38 +237,24 @@ def resolver_fluxo_declarado(
     inherit: bool = True,
     raiz: bool = False,
 ) -> FluxoDoEscopo:
-    """Resolve o fluxo de UM escopo a partir do repositório (V-27 §2).
+    """Decide o que UM escopo guarda e executa.
 
-    `herdado` é o `efetivo` do escopo acima — também computado daqui, de modo
-    que a resolução desce `all.yaml` → `resource.yaml` → arquivo de operação.
+    `herdado` é o `efetivo` do escopo acima. A raiz guarda e executa o que o
+    `all.yaml` declara.
 
-    | declarado | `inherit` | efetivo | no wire |
-    |---|---|---|---|
-    | vazio | `true` | o do pai | `[]` |
-    | com itens | `true` | o do pai **+** os declarados | lista completa |
-    | com itens | `false` | exatamente os declarados | declarados + herdado marcado como removido |
-    | vazio | `false` | o do pai (contraditório) | `[]` + aviso |
-
-    A raiz não herda de ninguém: seu efetivo é o que o `all.yaml` declara, e
-    `inherit` ali é informativo.
+    | `inherit` | guarda | executa |
+    |---|---|---|
+    | `true` | os declarados | o herdado + os declarados |
+    | `false` | os declarados + marcação de todo o herdado | os declarados |
     """
     declarados = list(declarados or [])
     herdado = list(herdado or [])
 
     if raiz:
-        return FluxoDoEscopo(efetivo=declarados)
-
-    if not declarados:
-        # Nos dois casos a plataforma recebe `[]` e volta a herdar; o que muda é
-        # se o repositório pediu isso (`inherit: true`) ou se escreveu algo que
-        # ela não sabe representar (`inherit: false`).
-        return FluxoDoEscopo(
-            efetivo=herdado, heranca_pura=True, contraditorio=not inherit
-        )
-
+        return FluxoDoEscopo(proprios=declarados, efetivo=declarados)
     if inherit:
-        return FluxoDoEscopo(efetivo=herdado + declarados)
-    return FluxoDoEscopo(efetivo=declarados, substitui=True)
+        return FluxoDoEscopo(proprios=declarados, efetivo=herdado + declarados)
+    return FluxoDoEscopo(proprios=declarados, efetivo=declarados, quebra=True)
 
 
 def montar_fluxo_do_escopo(
@@ -317,31 +265,19 @@ def montar_fluxo_do_escopo(
     resolver_content: Optional[Any] = None,
     herdado: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
-    """Traduz um `FluxoDoEscopo` já resolvido para a lista do wire.
+    """Escreve no formato do PUT de revisão o que o escopo guarda.
 
-    `herdado` é o fluxo que o Manager compõe para o pai (`fluxo_composto`); é
-    marcado como removido quando o escopo o substitui.
-
-    Aqui não se decide mais **o que** o escopo executa — isso saiu para
-    `resolver_fluxo_declarado` (V-27). O que resta é casar o resolvido com o que
-    a plataforma já tem, para reaproveitar **identidade técnica**: `id`,
-    `idTemp`, `status`, `parentType`. Configuração e ordem vêm do repositório,
-    que prevalece em tudo o que declara (V-22 §3, D14):
-
-    * `content` de tipo nativo vem do YAML — nele, o `content` **é** a
-      configuração (V-11 §4). Só o `Custom` mantém o do Manager: mesmo id é o
-      mesmo objeto no tenant;
-    * a ordem de cada execution point é a do YAML. Os números de `position` não
-      são renumerados 1..N (W-3) — o escopo reusa os que já ocupa, e os itens
-      novos estendem a faixa com `max + 1`; o conjunto é redistribuído na ordem
-      declarada. O que não existe nasce com `idTemp`.
+    Os itens próprios reaproveitam a identidade técnica do remoto (`id`,
+    `idTemp`, `status`, `parentType`) e levam o `content` e a ordem do YAML; só
+    o `Custom` mantém o `content` do Manager (V-11 §4). O escopo reusa as
+    posições que já ocupa, os novos estendem a faixa e o conjunto segue a ordem
+    declarada. Com `quebra`, cada item de `herdado` — o fluxo que o pai executa
+    neste payload (`fluxo_composto`) — ganha uma marcação de remoção.
     """
     gerar_idtemp = gerar_idtemp or preparar_contador_idtemp({})
     governados, preservados = particionar(remotos)
 
     if fluxo.heranca_pura:
-        # Lista governada vazia: a plataforma resolve para o pai, que neste
-        # mesmo PUT já recebeu o fluxo que o repositório computou (V-27 §2).
         # V-22: o não governado continua voltando intacto.
         return list(preservados)
 
@@ -371,7 +307,7 @@ def montar_fluxo_do_escopo(
     saida: List[Dict[str, Any]] = []
     posicao = max([i.get("position") or 0 for i in governados] or [0])
 
-    for declarado in fluxo.efetivo:
+    for declarado in fluxo.proprios:
         existente = consumir(chave_interceptor(declarado))
         if existente is not None:
             # Cópia: o remoto pertence a quem chamou e não pode ser alterado.
@@ -395,25 +331,11 @@ def montar_fluxo_do_escopo(
 
     _ordenar_posicoes_como_declarado(saida)
 
-    if fluxo.substitui:
-        herdado = list(herdado or [])
-        _posicionar_depois_do_herdado(saida, herdado)
-        saida += _marcar_como_removido(herdado, governados, gerar_idtemp)
+    if fluxo.quebra:
+        saida += _marcar_como_removido(herdado or [], governados, gerar_idtemp)
 
     # V-22: o não governado volta intacto, sempre.
     return saida + list(preservados)
-
-
-def _posicionar_depois_do_herdado(
-    proprios: List[Dict[str, Any]], herdado: Sequence[Dict[str, Any]]
-) -> None:
-    """Renumera os itens próprios a partir da maior posição herdada quando
-    algum deles colidiria com ela."""
-    teto = max((i.get("position") or 0 for i in herdado), default=-1)
-    if all((i.get("position") or 0) > teto for i in proprios):
-        return
-    for numero, item in enumerate(proprios, start=teto + 1):
-        item["position"] = numero
 
 
 def _marcar_como_removido(
@@ -421,18 +343,18 @@ def _marcar_como_removido(
     remotos: Sequence[Dict[str, Any]],
     gerar_idtemp: "Iterator[int]",
 ) -> List[Dict[str, Any]]:
-    """Uma marcação de remoção para cada item herdado que já existe no Manager,
-    reaproveitando a que o escopo já tiver para o mesmo item."""
+    """Uma marcação de remoção para cada item herdado, reaproveitando a que o
+    escopo já tiver para o mesmo item. Item que entra no pai neste payload é
+    apontado pelo `idTemp`."""
     existentes = {
-        (i.get("parent") or {}).get("id"): i
-        for i in remotos
-        if i.get("status") == "REMOVED"
+        alvo_da_marcacao(i): i for i in remotos if i.get("status") == "REMOVED"
     }
     marcacoes: List[Dict[str, Any]] = []
     for item in herdado:
-        if item.get("id") is None:
+        alvo = identidade(item)
+        if alvo is None:
             continue
-        existente = existentes.pop(item["id"], None)
+        existente = existentes.pop(alvo, None)
         if existente is not None:
             marcacao = copy.deepcopy(existente)
         else:
@@ -446,7 +368,10 @@ def _marcar_como_removido(
                 parent_type=item.get("parentType") or "REVISION",
             )
             marcacao["status"] = "REMOVED"
-            marcacao["parent"] = {"id": item["id"], "idTemp": item["id"]}
+            if item.get("id") is not None:
+                marcacao["parent"] = {"id": item["id"], "idTemp": item["id"]}
+            else:
+                marcacao["parent"] = {"id": None, "idTemp": item.get("idTemp")}
         marcacao["position"] = item.get("position")
         marcacoes.append(marcacao)
     return marcacoes

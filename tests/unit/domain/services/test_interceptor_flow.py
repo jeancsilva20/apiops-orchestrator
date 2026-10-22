@@ -5,9 +5,12 @@ import json
 import pytest
 
 from apiops_orchestrator.domain.services.interceptor_flow import (
+    PISO_IDTEMP,
+    alvo_da_marcacao,
     chave_interceptor,
     construir_item_novo,
     fluxo_composto,
+    identidade,
     maior_identificador,
     FluxoDoEscopo,
     montar_fluxo_do_escopo,
@@ -116,11 +119,18 @@ def test_maior_identificador_de_arvore_vazia():
 # --- contador global de idTemp (W-1, W-9) ----------------------------------
 
 
-def test_contador_comeca_acima_de_tudo_que_existe():
+def test_contador_comeca_no_piso_longe_dos_ids_que_o_manager_gera():
+    """Logo acima do maior id, o `idTemp` coincidia com ids gerados no mesmo PUT,
+    e o Manager descartou uma marcação (bateria da 425)."""
     payload = {"interceptors": [{"id": 19504, "idTemp": 19504, "position": 8}]}
     contador = preparar_contador_idtemp(payload)
-    assert next(contador) == 19505
-    assert next(contador) == 19506
+    assert next(contador) == PISO_IDTEMP
+    assert next(contador) == PISO_IDTEMP + 1
+
+
+def test_contador_comeca_acima_de_tudo_que_existe():
+    payload = {"interceptors": [{"id": PISO_IDTEMP + 7, "position": 8}]}
+    assert next(preparar_contador_idtemp(payload)) == PISO_IDTEMP + 8
 
 
 def test_contador_e_unico_entre_escopos():
@@ -131,11 +141,13 @@ def test_contador_e_unico_entre_escopos():
     assert len(set(raiz + recurso)) == 4
 
 
-def test_item_novo_vai_com_id_nulo_e_idtemp_preenchido():
+def test_item_novo_vai_com_id_igual_ao_idtemp():
+    """Formato da UI: com `id` nulo, a marcação de rota para item novo do recurso
+    some quando o recurso também marca item novo da raiz (bateria da 425)."""
     item = construir_item_novo(
         tipo="Log", execution_point="FIRST", idtemp=42, position=3, content={"a": 1}
     )
-    assert item["id"] is None
+    assert item["id"] == 42
     assert item["idTemp"] == 42
     assert item["status"] == "REFERENCE"
 
@@ -159,7 +171,7 @@ def test_item_novo_preserva_o_custom_interceptor_id():
     assert item["customInterceptorId"] == 32
 
 
-# --- resolucao do fluxo a partir do repositorio (V-27) ---------------------
+# --- o que cada escopo guarda e executa (V-28) -----------------------------
 
 
 HERDADO = [{"type": "Log", "executionPoint": "FIRST"},
@@ -168,44 +180,47 @@ PROPRIO = [{"type": "Payload size", "executionPoint": "FIRST"}]
 
 
 def test_raiz_nao_herda_de_ninguem():
-    """O efetivo da raiz e exatamente o que o `all.yaml` declara."""
+    """A raiz guarda e executa exatamente o que o `all.yaml` declara."""
     fluxo = resolver_fluxo_declarado(PROPRIO, HERDADO, raiz=True)
+    assert [i["type"] for i in fluxo.proprios] == ["Payload size"]
     assert [i["type"] for i in fluxo.efetivo] == ["Payload size"]
-    assert not fluxo.heranca_pura and not fluxo.contraditorio
+    assert not fluxo.heranca_pura and not fluxo.quebra
 
 
 def test_inherit_true_sem_itens_e_heranca_pura():
     fluxo = resolver_fluxo_declarado([], HERDADO, inherit=True)
     assert [i["type"] for i in fluxo.efetivo] == ["Log", "Rate limit"]
-    assert fluxo.heranca_pura and not fluxo.contraditorio
+    assert fluxo.heranca_pura and not fluxo.quebra
 
 
-def test_inherit_true_com_itens_soma_ao_fluxo_do_pai():
-    """O caso que a V-26 nao expressava: restaurar heranca E acrescentar."""
+def test_inherit_true_com_itens_guarda_so_o_declarado():
+    """A plataforma soma o herdado sozinha: copiá-lo no escopo o executaria
+    duas vezes (V-28, rota `s3`)."""
     fluxo = resolver_fluxo_declarado(PROPRIO, HERDADO, inherit=True)
+    assert [i["type"] for i in fluxo.proprios] == ["Payload size"]
     assert [i["type"] for i in fluxo.efetivo] == ["Log", "Rate limit", "Payload size"]
-    assert not fluxo.heranca_pura
+    assert not fluxo.heranca_pura and not fluxo.quebra
 
 
-def test_inherit_false_com_itens_substitui():
+def test_inherit_false_com_itens_quebra():
     fluxo = resolver_fluxo_declarado(PROPRIO, HERDADO, inherit=False)
+    assert [i["type"] for i in fluxo.proprios] == ["Payload size"]
     assert [i["type"] for i in fluxo.efetivo] == ["Payload size"]
-    assert not fluxo.heranca_pura
+    assert fluxo.quebra and not fluxo.heranca_pura
 
 
-def test_so_inherit_false_com_itens_substitui_o_herdado():
-    assert resolver_fluxo_declarado(PROPRIO, HERDADO, inherit=False).substitui
-    assert not resolver_fluxo_declarado(PROPRIO, HERDADO, inherit=True).substitui
-    assert not resolver_fluxo_declarado([], HERDADO, inherit=False).substitui
-    assert not resolver_fluxo_declarado(PROPRIO, HERDADO, raiz=True).substitui
+def test_so_inherit_false_quebra_o_herdado():
+    assert resolver_fluxo_declarado(PROPRIO, HERDADO, inherit=False).quebra
+    assert resolver_fluxo_declarado([], HERDADO, inherit=False).quebra
+    assert not resolver_fluxo_declarado(PROPRIO, HERDADO, inherit=True).quebra
+    assert not resolver_fluxo_declarado(PROPRIO, HERDADO, raiz=True).quebra
 
 
-def test_inherit_false_sem_itens_e_contraditorio():
-    """T06: a plataforma nao representa escopo sem fluxo. O efetivo real e o do
-    pai, porque e isso que vai acontecer — mas a declaracao fica marcada."""
+def test_inherit_false_sem_itens_nao_executa_nada():
+    """Marcar todo o herdado sem itens próprios dá rota sem interceptors (V-28, `s7`)."""
     fluxo = resolver_fluxo_declarado([], HERDADO, inherit=False)
-    assert [i["type"] for i in fluxo.efetivo] == ["Log", "Rate limit"]
-    assert fluxo.heranca_pura and fluxo.contraditorio
+    assert fluxo.proprios == [] and fluxo.efetivo == []
+    assert fluxo.quebra and not fluxo.heranca_pura
 
 
 def test_o_resolvedor_nao_altera_as_listas_recebidas():
@@ -226,15 +241,14 @@ REMOTO_RESOLVIDO = [
 
 def _resolvido(*tipos):
     return FluxoDoEscopo(
-        efetivo=[{"type": t, "executionPoint": "FIRST"} for t in tipos]
+        proprios=[{"type": t, "executionPoint": "FIRST"} for t in tipos]
     )
 
 
 def test_heranca_pura_manda_a_lista_governada_vazia():
-    """V-27 2: `[]` e a codificacao compacta de "o fluxo do pai", e mantem a
-    propagacao viva quando o `all.yaml` muda."""
+    """`[]` herda, e mantém a propagação viva quando o `all.yaml` muda."""
     fluxo = montar_fluxo_do_escopo(
-        FluxoDoEscopo(efetivo=list(HERDADO), heranca_pura=True),
+        FluxoDoEscopo(efetivo=list(HERDADO)),
         REMOTO_RESOLVIDO,
         gerar_idtemp=preparar_contador_idtemp({}),
     )
@@ -295,7 +309,7 @@ def _declarado(tipo, content=None, custom_id=None, ponto="FIRST"):
 
 def _montar(*declarados, remotos=REMOTO_COM_CONTENT):
     return montar_fluxo_do_escopo(
-        FluxoDoEscopo(efetivo=list(declarados)),
+        FluxoDoEscopo(proprios=list(declarados)),
         remotos,
         gerar_idtemp=preparar_contador_idtemp({"id": 100}),
     )
@@ -396,7 +410,7 @@ def test_item_que_o_remoto_nao_tem_nasce_novo():
         REMOTO_RESOLVIDO,
         gerar_idtemp=preparar_contador_idtemp({"id": 100}),
     )
-    assert fluxo[0]["id"] is None and fluxo[0]["idTemp"] == 101
+    assert fluxo[0]["id"] == fluxo[0]["idTemp"] == PISO_IDTEMP
 
 
 def test_nao_governado_volta_intacto_no_fim():
@@ -422,20 +436,20 @@ def test_tombstone_remoto_fica_fora_do_pool_de_casamento():
         _resolvido("Log"), remotos, gerar_idtemp=preparar_contador_idtemp({})
     )
     assert len(fluxo) == 1
-    assert fluxo[0]["id"] is None and fluxo[0].get("status") == "REFERENCE"
+    assert fluxo[0]["id"] != 4 and fluxo[0].get("status") == "REFERENCE"
 
 
 def test_itens_novos_de_escopos_diferentes_nao_colidem_em_idtemp():
     """O cenario exato do W-9, que custou um `Custom` sumido sob HTTP 200."""
     contador = preparar_contador_idtemp({"id": 10})
     raiz = montar_fluxo_do_escopo(
-        FluxoDoEscopo(efetivo=[{"type": "Custom", "customInterceptorId": 32,
-                                "executionPoint": "FIRST"}]),
+        FluxoDoEscopo(proprios=[{"type": "Custom", "customInterceptorId": 32,
+                                 "executionPoint": "FIRST"}]),
         [], gerar_idtemp=contador,
     )
     recurso = montar_fluxo_do_escopo(
-        FluxoDoEscopo(efetivo=[{"type": "Custom", "customInterceptorId": 33,
-                                "executionPoint": "FIRST"}]),
+        FluxoDoEscopo(proprios=[{"type": "Custom", "customInterceptorId": 33,
+                                 "executionPoint": "FIRST"}]),
         [], gerar_idtemp=contador,
     )
     assert raiz[0]["idTemp"] != recurso[0]["idTemp"]
@@ -454,7 +468,7 @@ def test_tipo_repetido_no_escopo_nao_e_deduplicado():
         {"id": 2, "type": "Rate limit", "executionPoint": "FIRST", "position": 2},
         {"id": 3, "type": "Log", "executionPoint": "FIRST", "position": 3, "content": "B"},
     ]
-    resolvido = FluxoDoEscopo(efetivo=[
+    resolvido = FluxoDoEscopo(proprios=[
         {"type": "Log", "executionPoint": "FIRST", "content": "A"},
         {"type": "Rate limit", "executionPoint": "FIRST"},
         {"type": "Log", "executionPoint": "FIRST", "content": "B"},
@@ -467,8 +481,8 @@ def test_tipo_repetido_no_escopo_nao_e_deduplicado():
     assert [i["id"] for i in fluxo] == [1, 2, 3]
 
 
-def test_repeticoes_do_herdado_sobrevivem_a_resolucao():
-    """Dois `Log` no pai e um item proprio devem publicar tres itens."""
+def test_append_publica_so_o_declarado_e_executa_o_herdado_repetido():
+    """Dois `Log` no pai e um item próprio: o escopo guarda um item e executa três."""
     fluxo = resolver_fluxo_declarado(
         [{"type": "Payload size", "executionPoint": "FIRST"}],
         [{"type": "Log", "executionPoint": "FIRST"},
@@ -478,7 +492,8 @@ def test_repeticoes_do_herdado_sobrevivem_a_resolucao():
     publicado = montar_fluxo_do_escopo(
         fluxo, [], gerar_idtemp=preparar_contador_idtemp({"id": 50})
     )
-    assert [i["type"] for i in publicado] == ["Log", "Log", "Payload size"]
+    assert [i["type"] for i in publicado] == ["Payload size"]
+    assert [i["type"] for i in fluxo.efetivo] == ["Log", "Log", "Payload size"]
 
 
 # --- herdado marcado como removido ------------------------------------------
@@ -494,14 +509,23 @@ HERDADO_NO_WIRE = [
 ]
 
 
-def _substitui(*tipos):
+def _quebra(*tipos):
     return FluxoDoEscopo(
-        efetivo=[{"type": t, "executionPoint": "FIRST"} for t in tipos], substitui=True
+        proprios=[{"type": t, "executionPoint": "FIRST"} for t in tipos], quebra=True
     )
 
 
 def _marcacoes(fluxo):
     return [i for i in fluxo if i.get("status") == "REMOVED"]
+
+
+def test_identidade_e_id_ou_idtemp():
+    assert identidade({"id": 7, "idTemp": 7}) == 7
+    assert identidade({"id": None, "idTemp": 40}) == 40
+    assert identidade({}) is None
+    assert alvo_da_marcacao({"parent": {"id": None, "idTemp": 40}}) == 40
+    assert alvo_da_marcacao({"parent": {"id": 10, "idTemp": 10}}) == 10
+    assert alvo_da_marcacao({"parent": None}) is None
 
 
 def test_fluxo_composto_soma_o_herdado_ao_proprio():
@@ -520,9 +544,34 @@ def test_fluxo_composto_tira_o_herdado_marcado_como_removido():
     assert [i["id"] for i in composto] == [11, 12, 20]
 
 
-def test_substituir_marca_cada_herdado_como_removido():
+def test_fluxo_composto_reconhece_marcacao_por_idtemp():
+    """O item que entra no pai no mesmo payload ainda não tem `id`."""
+    herdado = HERDADO_NO_WIRE + [
+        {"id": None, "idTemp": 40, "type": "OAuth", "executionPoint": "FIRST", "position": 4}
+    ]
+    proprios = [{"id": None, "idTemp": 41, "type": "OAuth", "executionPoint": "FIRST",
+                 "status": "REMOVED", "parent": {"id": None, "idTemp": 40}}]
+    assert [i["type"] for i in fluxo_composto(proprios, herdado)] == ["Log", "Custom", "Log"]
+
+
+def test_fluxo_composto_executa_os_proprios_pela_position_depois_do_herdado():
+    """A ordem é por escopo: `position` 0 no próprio não passa à frente do herdado."""
+    proprios = [
+        {"id": 21, "type": "Rate limit", "executionPoint": "FIRST", "position": 5},
+        {"id": 20, "type": "Payload size", "executionPoint": "FIRST", "position": 0},
+    ]
+    composto = fluxo_composto(proprios, HERDADO_NO_WIRE)
+    assert [i["id"] for i in composto] == [10, 11, 12, 20, 21]
+
+
+def test_fluxo_composto_ignora_o_nao_governado():
+    proprios = [{"id": 30, "type": "Custom", "executionPoint": "THIRD", "position": 1}]
+    assert fluxo_composto(proprios, HERDADO_NO_WIRE) == HERDADO_NO_WIRE
+
+
+def test_quebrar_marca_cada_herdado_como_removido():
     fluxo = montar_fluxo_do_escopo(
-        _substitui("Payload size"),
+        _quebra("Payload size"),
         [],
         gerar_idtemp=preparar_contador_idtemp({"id": 50}),
         herdado=HERDADO_NO_WIRE,
@@ -533,7 +582,7 @@ def test_substituir_marca_cada_herdado_como_removido():
     assert [i["type"] for i in vivos] == ["Payload size"]
     assert [m["parent"]["id"] for m in marcacoes] == [10, 11, 12]
     for marcacao, herdado in zip(marcacoes, HERDADO_NO_WIRE):
-        assert marcacao["id"] is None and marcacao["idTemp"] is not None
+        assert marcacao["id"] == marcacao["idTemp"] >= PISO_IDTEMP
         assert marcacao["type"] == herdado["type"]
         assert marcacao["executionPoint"] == herdado["executionPoint"]
         assert marcacao["position"] == herdado["position"]
@@ -548,14 +597,14 @@ def test_marcacao_que_o_escopo_ja_tem_e_reaproveitada():
          "status": "REMOVED", "parent": {"id": 10, "idTemp": 10}},
     ]
     fluxo = montar_fluxo_do_escopo(
-        _substitui("Payload size"),
+        _quebra("Payload size"),
         remotos,
         gerar_idtemp=preparar_contador_idtemp({"id": 50}),
         herdado=HERDADO_NO_WIRE,
     )
     por_pai = {m["parent"]["id"]: m for m in _marcacoes(fluxo)}
     assert por_pai[10]["id"] == 90
-    assert por_pai[11]["id"] is None
+    assert por_pai[11]["id"] == por_pai[11]["idTemp"] >= PISO_IDTEMP
 
 
 def test_marcacao_de_item_que_nao_e_mais_herdado_sai():
@@ -564,7 +613,7 @@ def test_marcacao_de_item_que_nao_e_mais_herdado_sai():
          "position": 5, "status": "REMOVED", "parent": {"id": 99}},
     ]
     fluxo = montar_fluxo_do_escopo(
-        _substitui("Payload size"),
+        _quebra("Payload size"),
         remotos,
         gerar_idtemp=preparar_contador_idtemp({"id": 50}),
         herdado=HERDADO_NO_WIRE,
@@ -572,31 +621,52 @@ def test_marcacao_de_item_que_nao_e_mais_herdado_sai():
     assert 99 not in {m["parent"]["id"] for m in _marcacoes(fluxo)}
 
 
-def test_proprios_ficam_depois_do_herdado_na_numeracao():
+def test_posicao_dos_proprios_nao_depende_do_herdado():
+    """A `position` só ordena dentro do escopo (V-28): nada de pular o herdado."""
     fluxo = montar_fluxo_do_escopo(
-        _substitui("Payload size", "Rate limit"),
+        _quebra("Payload size", "Rate limit"),
         [],
         gerar_idtemp=preparar_contador_idtemp({"id": 50}),
         herdado=HERDADO_NO_WIRE,
     )
     vivos = [i for i in fluxo if i.get("status") != "REMOVED"]
     assert [(i["type"], i["position"]) for i in vivos] == [
-        ("Payload size", 3),
-        ("Rate limit", 4),
+        ("Payload size", 1),
+        ("Rate limit", 2),
     ]
 
 
-def test_herdado_sem_id_nao_e_marcado():
+def test_herdado_novo_e_marcado_pelo_idtemp():
+    """O item que entra no pai neste payload ainda não tem `id` (V-28 §5)."""
     herdado = HERDADO_NO_WIRE + [
         {"id": None, "idTemp": 40, "type": "OAuth", "executionPoint": "FIRST", "position": 4}
     ]
     fluxo = montar_fluxo_do_escopo(
-        _substitui("Payload size"),
+        _quebra("Payload size"),
         [],
         gerar_idtemp=preparar_contador_idtemp({"id": 50}),
         herdado=herdado,
     )
-    assert "OAuth" not in {m["type"] for m in _marcacoes(fluxo)}
+    oauth = next(m for m in _marcacoes(fluxo) if m["type"] == "OAuth")
+    assert oauth["parent"] == {"id": None, "idTemp": 40}
+    assert oauth["idTemp"] not in (40, None)
+
+
+def test_quebrar_sem_itens_manda_so_as_marcacoes():
+    fluxo = montar_fluxo_do_escopo(
+        FluxoDoEscopo(quebra=True),
+        [],
+        gerar_idtemp=preparar_contador_idtemp({"id": 50}),
+        herdado=HERDADO_NO_WIRE,
+    )
+    assert len(fluxo) == 3 and all(i["status"] == "REMOVED" for i in fluxo)
+
+
+def test_quebrar_com_pai_vazio_manda_lista_vazia():
+    fluxo = montar_fluxo_do_escopo(
+        FluxoDoEscopo(quebra=True), [], gerar_idtemp=preparar_contador_idtemp({}), herdado=[]
+    )
+    assert fluxo == []
 
 
 def test_quem_nao_substitui_nao_marca_o_herdado():

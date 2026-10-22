@@ -25,7 +25,7 @@
     },
     "inherit": {
       "type": "boolean",
-      "description": "true = os itens declarados sao acrescentados ao fluxo herdado, que e preservado integralmente (W-4). false = vale exatamente o fluxo declarado. Lista vazia HERDA (W-5): nao existe 'escopo sem fluxo'."
+      "description": "true = os itens declarados executam depois do fluxo herdado; sem itens, o escopo so herda. false = executa exatamente o fluxo declarado; sem itens, o escopo nao executa nenhum interceptor."
     },
     "interceptors_request": {
       "$ref": "#/$defs/fluxo",

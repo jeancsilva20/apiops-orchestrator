@@ -25,12 +25,11 @@ import pathlib
 
 import pytest
 
-from apiops_orchestrator.domain.services.interceptor_flow import fluxo_efetivo
+from apiops_orchestrator.domain.services.interceptor_flow import fluxo_composto
 from apiops_orchestrator.domain.services.template_conformance import (
     SEVERIDADE_INFO,
     SEVERIDADE_WARNING,
     comparar,
-    comparar_deriva_de_override,
 )
 
 FIXTURES = pathlib.Path(__file__).parents[3] / "fixtures" / "manager"
@@ -124,25 +123,6 @@ def test_pontos_de_execucao_sao_comparados_separadamente():
     assert len(achados) == 1 and "Log" in achados[0].mensagem
 
 
-# --- deriva de override (V-25 §4.2) ----------------------------------------
-
-
-def test_override_alinhado_com_a_supressao_nao_avisa():
-    pai = [_item("A", id=1), _item("B", id=2), _item("C", id=3)]
-    filho = [_item("A", id=1), _item("B", id=2)]
-    assert comparar_deriva_de_override(filho, pai, 1, "GET /x") == []
-
-
-def test_override_que_ficou_para_tras_avisa():
-    """O pai ganhou itens depois da cópia; o override congelado não recebeu."""
-    pai = [_item("A", id=1), _item("B", id=2), _item("C", id=3), _item("D", id=4)]
-    filho = [_item("A", id=1)]
-    achados = comparar_deriva_de_override(filho, pai, 1, "GET /x")
-    assert len(achados) == 1
-    assert achados[0].severidade == SEVERIDADE_WARNING
-    assert "deixa 3 interceptor(es) de fora" in achados[0].mensagem
-
-
 # --- oracle contra o estado real congelado ---------------------------------
 
 
@@ -153,17 +133,17 @@ def _achados_da_417():
     rev = json.loads((FIXTURES / "api-417-rev2.json").read_text(encoding="utf-8"))[
         "revision"
     ]
-    raiz = fluxo_efetivo(rev.get("interceptors"), [])
+    raiz = fluxo_composto(rev.get("interceptors"))
     saida = {"raiz da revision": comparar(raiz, regua, "raiz da revision")}
     for recurso in rev.get("resources") or []:
-        efetivo = fluxo_efetivo(recurso.get("interceptors"), raiz)
+        efetivo = fluxo_composto(recurso.get("interceptors"), raiz)
         saida[f"resource {recurso.get('name')}"] = comparar(
             efetivo, regua, f"resource {recurso.get('name')}"
         )
         for op in recurso.get("operations") or []:
             rotulo = f"{op.get('method')} {op.get('path')}"
             saida[rotulo] = comparar(
-                fluxo_efetivo(op.get("interceptors"), efetivo), regua, rotulo
+                fluxo_composto(op.get("interceptors"), efetivo), regua, rotulo
             )
     return saida
 
@@ -204,21 +184,34 @@ def test_oracle_append_de_additional_info_no_recurso_de_atribuicao():
 
 
 @pytest.mark.skipif(not FIXTURES.is_dir(), reason="fixtures do Manager ausentes")
-def test_oracle_log_com_encrypt_content_divergente():
-    """V-11 §3: `Log` com `encryptContent: true` — a régua tem `false`."""
+def test_oracle_log_proprio_da_rota_executa_depois_do_herdado():
+    """O `Log` com `encryptContent: true` da rota não substitui o `Log` da raiz:
+    roda depois do herdado (V-28), e aparece como acréscimo, não como alteração."""
     achados = _achados_da_417()["POST /tarefas/{id}/atribuicao-responsavel"]
-    divergencia = [a for a in achados if "encryptContent" in a.mensagem]
-    assert len(divergencia) == 1
-    assert divergencia[0].severidade == SEVERIDADE_WARNING
+    assert not any("encryptContent" in a.mensagem for a in achados)
+    assert achados[-1].severidade == SEVERIDADE_INFO and '"Log"' in achados[-1].mensagem
+
+
+@pytest.mark.skipif(not FIXTURES.is_dir(), reason="fixtures do Manager ausentes")
+def test_oracle_copia_do_health_check_nao_tira_o_custom_178():
+    """A rota reproduz o fluxo sem marcar nada: segue executando a raiz inteira,
+    `Custom #178` incluído, e a cópia roda de novo depois (V-28 §6)."""
+    mensagens = [a.mensagem for a in _achados_da_417()["GET /health-check"]]
+    assert any("Custom #178" in m for m in mensagens)
+    assert sum('"Log" não existe na template' in m for m in mensagens) == 3
 
 
 @pytest.mark.skipif(not FIXTURES.is_dir(), reason="fixtures do Manager ausentes")
 def test_oracle_conjunto_congelado_do_estado_de_2026_10_15():
-    """Trava o conjunto inteiro: qualquer mudança de regra aparece aqui."""
+    """Trava o conjunto inteiro: qualquer mudança de regra aparece aqui.
+
+    Composto como o Manager executa (V-28): as cópias do herdado no
+    `/health-check` e no `Atribuicao Responsavel` rodam de novo e contam como
+    acréscimo."""
     todos = [a for lista in _achados_da_417().values() for a in lista]
-    assert len(todos) == 38
-    assert sum(1 for a in todos if a.severidade == SEVERIDADE_WARNING) == 23
-    assert sum(1 for a in todos if a.severidade == SEVERIDADE_INFO) == 15
+    assert len(todos) == 60
+    assert sum(1 for a in todos if a.severidade == SEVERIDADE_WARNING) == 13
+    assert sum(1 for a in todos if a.severidade == SEVERIDADE_INFO) == 47
 
 
 @pytest.mark.skipif(not FIXTURES.is_dir(), reason="fixtures do Manager ausentes")

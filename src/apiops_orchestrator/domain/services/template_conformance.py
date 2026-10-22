@@ -286,38 +286,3 @@ def _achados_ausente(itens: Sequence[Dict[str, Any]], escopo: str) -> List[Achad
         )
         for i in itens
     ]
-
-
-def comparar_deriva_de_override(
-    fluxo_efetivo: Optional[Sequence[Dict[str, Any]]],
-    fluxo_do_pai: Optional[Sequence[Dict[str, Any]]],
-    suprimidos_declarados: int,
-    escopo: str,
-) -> List[Achado]:
-    """Avisa quando um override omite mais do que a supressão declarada (V-25 §4.2).
-
-    A lista completa explícita **congela** o fluxo do pai no momento do import.
-    Se o pai ganha um interceptor depois, o escopo que fez override não recebe —
-    e o override, que existia para remover um item, vira um escopo que ficou para
-    trás em tudo. Não há como evitar a cópia; há como avisar.
-    """
-    efetivo = [i for pt in PONTOS for i in _governados(fluxo_efetivo, pt)]
-    pai = [i for pt in PONTOS for i in _governados(fluxo_do_pai, pt)]
-    presentes = {_chave(i) for i in efetivo}
-    omitidos = [i for i in pai if _chave(i) not in presentes]
-
-    if len(omitidos) <= suprimidos_declarados:
-        return []
-    return [
-        Achado(
-            severidade=SEVERIDADE_WARNING,
-            escopo=escopo,
-            mensagem=(
-                f"este ponto substitui o fluxo herdado e deixa {len(omitidos)} "
-                "interceptor(es) de fora, mas a remoção pretendida era de apenas "
-                f"{suprimidos_declarados}. O nível acima provavelmente ganhou itens "
-                "depois que esta lista foi escrita. Fora: "
-                + ", ".join(f'"{_rotulo(i)}"' for i in omitidos)
-            ),
-        )
-    ]

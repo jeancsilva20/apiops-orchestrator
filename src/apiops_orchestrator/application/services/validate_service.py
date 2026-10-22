@@ -66,7 +66,7 @@ from apiops_orchestrator.domain.ports.manager_api_port import (
 from apiops_orchestrator.domain.services import revision_payload
 from apiops_orchestrator.domain.services.api_visibility import from_api_payload
 from apiops_orchestrator.domain.services.interceptor_flow import (
-    fluxo_efetivo,
+    fluxo_composto,
     particionar,
 )
 from apiops_orchestrator.domain.services.template_conformance import comparar
@@ -299,7 +299,7 @@ class ValidateService:
         no escopo dono do fluxo, dizendo quantos recursos e rotas também o
         executam.
         """
-        raiz = _DonoDoFluxo("raiz da revision", fluxo_efetivo(payload.get("interceptors"), []))
+        raiz = _DonoDoFluxo("raiz da revision", fluxo_composto(payload.get("interceptors")))
         donos = [raiz]
         for recurso in payload.get("resources") or []:
             if _so_herda(recurso):
@@ -308,7 +308,7 @@ class ValidateService:
             else:
                 dono_do_recurso = _DonoDoFluxo(
                     f"resource {recurso.get('name')}",
-                    fluxo_efetivo(recurso.get("interceptors"), raiz.efetivo),
+                    fluxo_composto(recurso.get("interceptors"), raiz.efetivo),
                 )
                 donos.append(dono_do_recurso)
             for op in recurso.get("operations") or []:
@@ -318,7 +318,7 @@ class ValidateService:
                 donos.append(
                     _DonoDoFluxo(
                         f"{str(op.get('method') or '').upper()} {op.get('path')}",
-                        fluxo_efetivo(op.get("interceptors"), dono_do_recurso.efetivo),
+                        fluxo_composto(op.get("interceptors"), dono_do_recurso.efetivo),
                     )
                 )
 

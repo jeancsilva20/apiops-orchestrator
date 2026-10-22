@@ -1,8 +1,8 @@
-"""Montagem do payload: o fluxo resolvido no repositório (V-27).
+"""Montagem do payload: o que cada escopo guarda, decidido pelo repositório (V-28).
 
-A V-27 tirou a resolução da herança da plataforma. O que estes testes travam é
-que o payload passou a ser consequência do **repositório inteiro** — do
-`all.yaml` até o arquivo da operação — e não do que a plataforma guardava.
+O payload é consequência do **repositório inteiro** — do `all.yaml` até o arquivo
+da operação: cada escopo leva os itens que declara e, quando quebra a herança,
+uma marcação para cada item que o pai executa.
 """
 
 import json
@@ -48,16 +48,12 @@ def _tipos(itens):
     return [i["type"] for i in itens]
 
 
-# --- o caso que motivou a V-27 ---------------------------------------------
+# --- append: o escopo guarda só o que declara -------------------------------
 
 
-def test_inherit_true_com_item_envia_o_herdado_mais_o_declarado():
-    """O defeito do T11: o append publicava só o item novo e apagava a herança.
-
-    A rota tinha 0 itens próprios na plataforma — ou seja, herdava os 2 da raiz.
-    Declarar um `Payload size` com `inherit: true` mandava uma lista de 1, e pela
-    W-4 essa lista passa a ser o fluxo INTEIRO da rota: os 2 herdados somem.
-    """
+def test_inherit_true_com_item_envia_so_o_declarado():
+    """A plataforma soma o herdado sozinha; copiá-lo no escopo o executaria
+    duas vezes (V-28, rota `s3`)."""
     raiz = {
         "interceptors_request": [
             {"type": "Log", "content": {"acceptedTerms": True}},
@@ -72,12 +68,12 @@ def test_inherit_true_com_item_envia_o_herdado_mais_o_declarado():
     montado = _montar(raiz, [_Rec({"name": "R"}, [op])])
 
     publicados = montado.corpo["resources"][0]["operations"][0]["interceptors"]
-    assert _tipos(publicados) == ["Log", "Rate limit", "Payload size"]
+    assert _tipos(publicados) == ["Payload size"]
 
 
 def test_restaurar_heranca_e_acrescentar_item_na_mesma_declaracao():
-    """O pedido do usuário: `inherit: true` + item sobre um escopo que tinha
-    lista própria divergente. O que vale é o pai SEGUNDO O REPOSITÓRIO."""
+    """`inherit: true` + item sobre um escopo com lista própria obsoleta: o
+    obsoleto sai e o escopo volta a executar o herdado, mais o item."""
     raiz = {"interceptors_request": [{"type": "Log"}, {"type": "Rate limit"}]}
     op = _Op("POST", {
         "path": "/x",
@@ -104,12 +100,11 @@ def test_restaurar_heranca_e_acrescentar_item_na_mesma_declaracao():
     montado = _montar(raiz, [_Rec({"name": "R"}, [op])], draft=draft)
 
     publicados = montado.corpo["resources"][0]["operations"][0]["interceptors"]
-    assert _tipos(publicados) == ["Log", "Rate limit", "Payload size"]
-    assert "XSS threat protection" not in _tipos(publicados)
+    assert _tipos(publicados) == ["Payload size"]
 
 
-def test_a_resolucao_desce_tres_niveis():
-    """raiz → recurso → operação, cada um somando ao efetivo do anterior."""
+def test_cada_nivel_guarda_so_o_que_declara():
+    """raiz → recurso → operação: cada um leva só os próprios itens."""
     raiz = {"interceptors_request": [{"type": "Log"}]}
     op = _Op("GET", {"path": "/x", "inherit": True,
                      "interceptors_request": [{"type": "Payload size"}]})
@@ -119,9 +114,10 @@ def test_a_resolucao_desce_tres_niveis():
     )
     montado = _montar(raiz, [recurso])
 
-    assert _tipos(montado.corpo["resources"][0]["interceptors"]) == ["Log", "Rate limit"]
+    assert _tipos(montado.corpo["interceptors"]) == ["Log"]
+    assert _tipos(montado.corpo["resources"][0]["interceptors"]) == ["Rate limit"]
     assert _tipos(montado.corpo["resources"][0]["operations"][0]["interceptors"]) == [
-        "Log", "Rate limit", "Payload size"
+        "Payload size"
     ]
 
 
@@ -135,14 +131,36 @@ def test_heranca_pura_vai_vazia_no_wire():
     assert montado.corpo["resources"][0]["operations"][0]["interceptors"] == []
 
 
-def test_inherit_false_publica_so_o_declarado():
+def test_inherit_false_publica_o_declarado_e_marca_a_raiz_nova_pelo_idtemp():
+    """A raiz inteira entra no Manager nesta publicação: as marcações apontam
+    os itens pelo `idTemp` (V-28 §5)."""
     raiz = {"interceptors_request": [{"type": "Log"}, {"type": "Rate limit"}]}
     op = _Op("GET", {"path": "/x", "inherit": False,
                      "interceptors_request": [{"type": "Payload size"}]})
     montado = _montar(raiz, [_Rec({"name": "R"}, [op])])
 
+    idtemps_da_raiz = sorted(i["idTemp"] for i in montado.corpo["interceptors"])
     publicados = montado.corpo["resources"][0]["operations"][0]["interceptors"]
-    assert _tipos(publicados) == ["Payload size"]
+    assert _vivos(publicados) == ["Payload size"]
+    marcacoes = [i for i in publicados if i.get("status") == "REMOVED"]
+    # Formato da UI: o número temporário vai em `id` e em `idTemp`.
+    assert sorted(m["parent"]["idTemp"] for m in marcacoes) == idtemps_da_raiz
+    assert all(m["parent"]["id"] == m["parent"]["idTemp"] for m in marcacoes)
+
+
+def test_inherit_false_sem_itens_manda_so_as_marcacoes_e_nao_avisa():
+    """Rota sem interceptors (V-28, `s7`): não há mais "não representável"."""
+    op = _Op("GET", {"path": "/x", "inherit": False})
+    montado = _montar(
+        _RAIZ_NO_REPO, [_Rec({"name": "R", "inherit": True}, [op])],
+        draft=_draft_com(_RAIZ_NO_MANAGER),
+    )
+
+    publicados = montado.corpo["resources"][0]["operations"][0]["interceptors"]
+    assert _vivos(publicados) == []
+    assert _marcados(publicados) == [10, 11]
+    assert montado.avisos == []
+    assert montado.esperado["GET /x"] == []
 
 
 _RAIZ_NO_MANAGER = [
@@ -205,7 +223,8 @@ def test_rota_abaixo_de_recurso_que_substitui_marca_so_o_do_recurso():
     assert _marcados(bloco["operations"][0]["interceptors"]) == [20]
 
 
-def test_inherit_false_avisa_o_herdado_que_nasce_na_mesma_publicacao():
+def test_inherit_false_marca_o_herdado_que_nasce_na_mesma_publicacao():
+    """Sem esperar a próxima publicação: o OAuth novo é marcado pelo `idTemp`."""
     op = _Op("GET", {"path": "/x", "inherit": False,
                      "interceptors_request": [{"type": "Payload size"}]})
     montado = _montar(
@@ -214,12 +233,33 @@ def test_inherit_false_avisa_o_herdado_que_nasce_na_mesma_publicacao():
         draft=_draft_com(_RAIZ_NO_MANAGER[:1]),
     )
 
+    oauth = next(i for i in montado.corpo["interceptors"] if i["type"] == "OAuth")
     publicados = montado.corpo["resources"][0]["operations"][0]["interceptors"]
-    assert _marcados(publicados) == [10]
-    assert any(
-        "GET /x" in a and "OAuth" in a and "ainda não podem ser removidos" in a
-        for a in montado.avisos
+    marcacoes = {m["type"]: m["parent"] for m in publicados if m.get("status") == "REMOVED"}
+    assert marcacoes["Log"]["id"] == 10
+    assert marcacoes["OAuth"] == {"id": oauth["idTemp"], "idTemp": oauth["idTemp"]}
+    assert montado.avisos == []
+
+
+def test_item_novo_no_recurso_e_marcado_na_rota_pelo_idtemp():
+    recurso_remoto = {
+        "name": "R", "interceptors": [],
+        "operations": [{"id": 5, "method": "GET", "path": "/x", "interceptors": []}],
+    }
+    op = _Op("GET", {"path": "/x", "inherit": False,
+                     "interceptors_request": [{"type": "Payload size"}]})
+    recurso = _Rec(
+        {"name": "R", "inherit": False, "interceptors_request": [{"type": "Rate limit"}]},
+        [op],
     )
+    montado = _montar(
+        _RAIZ_NO_REPO, [recurso], draft=_draft_com(_RAIZ_NO_MANAGER, [recurso_remoto])
+    )
+
+    bloco = montado.corpo["resources"][0]
+    novo = next(i for i in bloco["interceptors"] if i.get("status") != "REMOVED")
+    marcacoes = [i for i in bloco["operations"][0]["interceptors"] if i.get("status") == "REMOVED"]
+    assert [m["parent"] for m in marcacoes] == [{"id": novo["idTemp"], "idTemp": novo["idTemp"]}]
 
 
 def test_o_nao_governado_volta_intacto_mesmo_na_heranca_pura():
@@ -234,7 +274,7 @@ def test_o_nao_governado_volta_intacto_mesmo_na_heranca_pura():
     assert montado.corpo["resources"][0]["interceptors"] == [preservado]
 
 
-# --- avisos (V-27 §5 e §8) --------------------------------------------------
+# --- avisos -----------------------------------------------------------------
 
 
 def test_avisa_que_a_lista_propria_sera_removida():
@@ -245,6 +285,7 @@ def test_avisa_que_a_lista_propria_sera_removida():
     assert len(avisos) == 1
     assert "esses interceptors saem" in avisos[0]
     assert "Rate limit" in avisos[0]
+    assert avisos[0].endswith("Se a intenção era mantê-los, liste-os no arquivo.")
 
 
 def test_nao_avisa_quando_o_escopo_ja_herdava():
@@ -269,14 +310,80 @@ def test_tombstone_sozinho_nao_conta_como_lista_propria():
     assert _avisos_do_escopo(fluxo, remoto, "POST /x") == []
 
 
-def test_inherit_false_sem_itens_avisa_a_contradicao():
-    """T06: a plataforma não representa escopo sem fluxo."""
-    fluxo = resolver_fluxo_declarado([], [{"type": "Log"}], inherit=False)
-    avisos = _avisos_do_escopo(fluxo, None, "POST /x")
+def _rota_remota(*itens):
+    return {"name": "R", "interceptors": [], "operations": [
+        {"id": 5, "method": "GET", "path": "/x", "interceptors": list(itens)}
+    ]}
 
-    assert len(avisos) == 1
-    assert "não lista nenhum interceptor" in avisos[0]
-    assert "continuar herdando" in avisos[0]
+
+def _cortados(repo_raiz, draft, op_dados):
+    op = _Op("GET", {"path": "/x", **op_dados})
+    montado = _montar(repo_raiz, [_Rec({"name": "R", "inherit": True}, [op])], draft=draft)
+    return [a for a in montado.avisos if "deixa de executar" in a]
+
+
+def test_avisa_o_herdado_que_o_escopo_deixa_de_executar():
+    """O repositório importado pela W-4 diz `inherit: false` onde o Manager faz
+    append: publicar corta o herdado, e isso não pode sair calado."""
+    avisos = _cortados(
+        _RAIZ_NO_REPO,
+        _draft_com(_RAIZ_NO_MANAGER, [_rota_remota()]),
+        {"inherit": False, "interceptors_request": [{"type": "Payload size"}]},
+    )
+    assert avisos == [
+        "GET /x: o arquivo declara `inherit: false`, e ao publicar este ponto deixa de "
+        "executar 2 interceptor(es) herdado(s) que executa hoje (Log, Rate limit).\n"
+        "Se a intenção era mantê-los, use `inherit: true` para seguir herdando, ou "
+        "liste-os no arquivo."
+    ]
+
+
+def test_nao_avisa_o_herdado_que_o_escopo_ja_nao_executava():
+    marcacoes = [
+        {"id": 30 + i["id"], "type": i["type"], "executionPoint": "FIRST", "position": i["position"],
+         "status": "REMOVED", "parent": {"id": i["id"], "idTemp": i["id"]}}
+        for i in _RAIZ_NO_MANAGER
+    ]
+    avisos = _cortados(
+        _RAIZ_NO_REPO,
+        _draft_com(_RAIZ_NO_MANAGER, [_rota_remota(*marcacoes)]),
+        {"inherit": False, "interceptors_request": [{"type": "Payload size"}]},
+    )
+    assert avisos == []
+
+
+def test_nao_avisa_o_item_que_sai_do_proprio_pai():
+    """O `Rate limit` sai do `all.yaml`: é mudança do pai, não da rota."""
+    avisos = _cortados(
+        {"interceptors_request": [{"type": "Log"}]},
+        _draft_com(_RAIZ_NO_MANAGER, [_rota_remota()]),
+        {"inherit": False, "interceptors_request": [{"type": "Payload size"}]},
+    )
+    assert len(avisos) == 1 and "deixa de executar 1 interceptor(es)" in avisos[0]
+    assert "(Log)" in avisos[0]
+
+
+def test_nao_avisa_rota_nova_nem_rota_que_herda():
+    assert _cortados(
+        _RAIZ_NO_REPO, _draft_com(_RAIZ_NO_MANAGER),
+        {"inherit": False, "interceptors_request": [{"type": "Payload size"}]},
+    ) == []
+    assert _cortados(
+        _RAIZ_NO_REPO, _draft_com(_RAIZ_NO_MANAGER, [_rota_remota()]),
+        {"inherit": True, "interceptors_request": [{"type": "Payload size"}]},
+    ) == []
+
+
+def test_nao_avisa_quando_marcacoes_saem_e_o_herdado_volta():
+    """Decisão de 22/10/2026: herdado que volta não é avisado."""
+    marcacao = {"id": 40, "type": "Log", "executionPoint": "FIRST", "position": 0,
+                "status": "REMOVED", "parent": {"id": 10, "idTemp": 10}}
+    op = _Op("GET", {"path": "/x", "inherit": True})
+    montado = _montar(
+        _RAIZ_NO_REPO, [_Rec({"name": "R", "inherit": True}, [op])],
+        draft=_draft_com(_RAIZ_NO_MANAGER, [_rota_remota(marcacao)]),
+    )
+    assert montado.avisos == []
 
 
 def test_raiz_sem_interceptors_com_fluxo_remoto_avisa_remocao():
@@ -322,7 +429,7 @@ def test_tombstone_remoto_nao_e_reaproveitado_como_item_vivo():
 
     assert len(publicados) == 1
     assert publicados[0].get("status") != "REMOVED"
-    assert publicados[0]["id"] is None  # nasceu novo, não reusou o tombstone
+    assert publicados[0]["id"] != 9  # nasceu novo, não reusou o tombstone
 
 
 def test_conferir_reporta_tombstone_remanescente():
@@ -361,6 +468,48 @@ def test_conferir_reporta_marcacao_enviada_e_nao_gravada():
     assert any(
         d.startswith("GET /x:") and "que o Manager não gravou" in d for d in divergencias
     )
+
+
+_OAUTH_NOVO = {"id": None, "idTemp": 40, "type": "OAuth", "executionPoint": "FIRST",
+               "position": 1, "content": '{"grantTypes": []}'}
+_LOG_EXISTENTE = {"id": 10, "type": "Log", "executionPoint": "FIRST", "position": 0,
+                  "content": '{"acceptedTerms": true}'}
+
+
+def _arvore(raiz, rota):
+    return {"interceptors": list(raiz), "resources": [{"name": "R", "interceptors": [], "operations": [
+        {"method": "GET", "path": "/x", "interceptors": list(rota)}
+    ]}]}
+
+
+def _marcacao_de(alvo, **campos):
+    return {"id": None, "idTemp": 41, "type": alvo["type"], "executionPoint": "FIRST",
+            "position": alvo["position"], "status": "REMOVED", "content": alvo["content"],
+            **campos}
+
+
+def test_conferir_casa_a_marcacao_por_idtemp_com_o_id_gravado():
+    """A marcação enviada por `idTemp` volta com o id que o Manager gerou."""
+    enviada = _marcacao_de(_OAUTH_NOVO, parent={"id": None, "idTemp": 40})
+    oauth_gravado = {**_OAUTH_NOVO, "id": 900, "idTemp": None}
+    gravada = {**enviada, "id": 901, "idTemp": None, "parent": {"id": 900, "idTemp": 900}}
+
+    enviado = _arvore([_LOG_EXISTENTE, _OAUTH_NOVO], [enviada])
+    publicado = _arvore([_LOG_EXISTENTE, oauth_gravado], [gravada])
+    assert revision_payload.conferir(enviado, publicado) == []
+
+
+def test_conferir_acusa_marcacao_gravada_para_outro_item():
+    enviada = _marcacao_de(_OAUTH_NOVO, parent={"id": None, "idTemp": 40})
+    oauth_gravado = {**_OAUTH_NOVO, "id": 900, "idTemp": None}
+    trocada = {**_marcacao_de(_LOG_EXISTENTE), "id": 901, "parent": {"id": 10, "idTemp": 10}}
+
+    divergencias = revision_payload.conferir(
+        _arvore([_LOG_EXISTENTE, _OAUTH_NOVO], [enviada]),
+        _arvore([_LOG_EXISTENTE, oauth_gravado], [trocada]),
+    )
+    assert any("GET /x" in d and "(Log)" in d and "não foram enviadas" in d for d in divergencias)
+    assert any("GET /x" in d and "(OAuth)" in d and "não gravou" in d for d in divergencias)
 
 
 def test_conferir_nao_conta_tombstone_como_fluxo():
@@ -409,10 +558,9 @@ def test_custom_novo_recebe_o_content_do_catalogo():
     assert json.loads(item["content"])["name"] == "Release Notes"
 
 
-def test_custom_herdado_da_raiz_tambem_resolve_o_content():
-    """O herdado atravessa a hierarquia como item declarado — e um `Custom`
-    materializado num filho precisa do `{id, name, script}` igualmente."""
-    op = _Op("GET", {"path": "/x", "inherit": True,
+def test_marcacao_de_custom_novo_da_raiz_leva_o_content_do_catalogo():
+    """A marcação copia o item que remove — inclusive o `{id, name, script}`."""
+    op = _Op("GET", {"path": "/x", "inherit": False,
                      "interceptors_request": [{"type": "Log"}]})
     montado = revision_payload.montar(
         draft={"id": 1, "interceptors": [], "resources": [], "api": {}},
@@ -422,8 +570,9 @@ def test_custom_herdado_da_raiz_tambem_resolve_o_content():
         resolver_custom=lambda c: {"id": c, "name": "CyberArk", "script": "y"},
     )
     publicados = montado.corpo["resources"][0]["operations"][0]["interceptors"]
-    assert [i["type"] for i in publicados] == ["Custom", "Log"]
-    assert json.loads(publicados[0]["content"])["name"] == "CyberArk"
+    marcacao = next(i for i in publicados if i.get("status") == "REMOVED")
+    assert marcacao["customInterceptorId"] == 33
+    assert json.loads(marcacao["content"])["name"] == "CyberArk"
 
 
 # --- Conferência do `api` aninhado (W-8) --------------------------------------
@@ -537,6 +686,13 @@ def test_esperado_carrega_o_fluxo_declarado_por_escopo():
     assert _tipos(montado.esperado["GET /x"]) == ["Payload size"]
     # herança pura vai como `[]`: não há lista própria para conferir
     assert "resource R" not in montado.esperado
+
+
+def test_esperado_do_append_e_so_o_declarado():
+    op = _Op("GET", {"path": "/x", "inherit": True,
+                     "interceptors_request": [{"type": "Payload size", "content": {"maxSize": 1}}]})
+    montado = _montar(RAIZ_ALTERADA, [_Rec({"name": "R"}, [op])], draft=DRAFT_COM_CONTENT)
+    assert _tipos(montado.esperado["GET /x"]) == ["Payload size"]
 
 
 def _publicado_com(*itens):

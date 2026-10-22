@@ -888,6 +888,45 @@ def test_escopo_com_fluxo_proprio_tem_os_proprios_achados_e_herdeiros(tmp_path):
     assert all(m.endswith("2 rotas que herdam este fluxo") for m in por_escopo["resource A"])
 
 
+REGUA_SO_LOG = [
+    {"id": 1, "type": "Log", "executionPoint": "FIRST", "position": 0,
+     "content": '{"encryptContent": false}'},
+]
+
+
+def _achados_com(tmp_path, recurso_a, get_b="path: /b\n"):
+    repo = _repo_com_recursos(tmp_path)
+    (repo / "resources/a/resource.yaml").write_text(recurso_a, encoding="utf-8")
+    (repo / "resources/b/get_b.yaml").write_text(get_b, encoding="utf-8")
+    view = _servico(_ManagerComRegua(REGUA_SO_LOG), modo="pipeline").validate(
+        repo, confirmar=SIM
+    )
+    por_escopo = {}
+    for a in view.achados:
+        if a.scope != "repositório":
+            por_escopo.setdefault(a.scope, []).append((a.severity, a.message))
+    return por_escopo
+
+
+def test_append_e_comparado_com_o_herdado(tmp_path):
+    """O recurso executa o `Log` da raiz e depois o próprio: só o acréscimo aparece."""
+    por_escopo = _achados_com(
+        tmp_path,
+        'name: "A"\ninherit: true\ninterceptors_request:\n  - type: Payload size\n'
+        "    content:\n      maxSize: \"1\"\n",
+    )
+    assert set(por_escopo) == {"resource A"}
+    [(severidade, mensagem)] = por_escopo["resource A"]
+    assert severidade == "INFO" and '"Payload size"' in mensagem
+
+
+def test_rota_sem_interceptors_e_comparada_vazia(tmp_path):
+    por_escopo = _achados_com(tmp_path, 'name: "A"\n', get_b="path: /b\ninherit: false\n")
+    assert set(por_escopo) == {"GET /b"}
+    [(severidade, mensagem)] = por_escopo["GET /b"]
+    assert severidade == "WARNING" and "não é executado aqui" in mensagem
+
+
 
 def test_esteira_sem_template_api_id_falha_antes_do_manager(tmp_path):
     """Configuração da esteira é conferida antes de qualquer chamada."""

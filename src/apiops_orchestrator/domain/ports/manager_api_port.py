@@ -131,7 +131,7 @@ class ManagerApiPort(ABC):
         """Estado completo de uma revisão: interceptors, resources e o `api` aninhado.
 
         É daqui que saem `workflowId` e `workflowStageId`, que o publish reenvia
-        intactos (D-020), e o fluxo **resolvido** de cada escopo (W-4).
+        intactos (D-020), e os itens próprios e as marcações de cada escopo (V-28).
         """
 
     @abstractmethod

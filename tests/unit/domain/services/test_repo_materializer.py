@@ -124,8 +124,23 @@ def test_tombstone_vira_lista_completa_sem_o_item_suprimido():
     # o restante do fluxo herdado continua lá, explícito
     assert tipos == ["Custom", "Log"]
     # O comentário explica a regra, sem citar documento interno (T1).
-    assert "menos: XSS threat protection" in texto
-    assert "lista vazia sempre significa herdar" in texto
+    assert "deixa de executar, do herdado: XSS threat protection" in texto
+    assert "fluxo completo que vale aqui" in texto
+
+
+def test_tudo_marcado_e_nada_proprio_vira_rota_sem_interceptors():
+    marcacoes = [
+        dict(TOMBSTONE, id=60 + n, type=i["type"], parent={"id": i["id"], "idTemp": i["id"]})
+        for n, i in enumerate(RAIZ)
+        if i["executionPoint"] in ("FIRST", "SECOND")
+    ]
+    r = materializar(
+        API, _revision([{"method": "GET", "path": "/tarefas", "interceptors": marcacoes}])
+    )
+    dados, texto = _ler(r, "get_tarefas.yaml")
+    assert dados["inherit"] is False
+    assert "interceptors_request" not in dados and "interceptors_response" not in dados
+    assert "não executa nenhum interceptor" in texto
 
 
 def test_tombstone_nao_vira_apenas_comentario():
@@ -161,29 +176,21 @@ def test_sem_item_proprio_declara_heranca_pura():
     assert "apenas herda" in texto
 
 
-def test_lista_propria_disjunta_do_herdado_declara_override():
-    """A plataforma não tem estado "append" (W-4): lista própria não vazia **É**
-    o fluxo efetivo do escopo.
-
-    Materializar `inherit: true` aqui faria o repositório afirmar "herdado +
-    próprio" sobre uma rota que executa só o próprio. Sob a V-27, que resolve o
-    fluxo a partir do repositório, essa afirmação seria republicada — e a rota
-    ganharia os itens da raiz que ela não executa. O round-trip tem de fechar.
-    """
+def test_lista_propria_sem_marcacao_vira_append():
+    """Sem marcações, a rota executa o herdado e depois os próprios (V-28):
+    `inherit: true` com os itens fecha o round-trip."""
     novo = {"id": 1, "type": "Payload size", "executionPoint": "FIRST", "content": '{"maxSize": 2048}'}
     r = materializar(
         API, _revision([{"method": "GET", "path": "/tarefas", "interceptors": [novo]}])
     )
     dados, texto = _ler(r, "get_tarefas.yaml")
-    assert dados["inherit"] is False
+    assert dados["inherit"] is True
     assert [i["type"] for i in dados["interceptors_request"]] == ["Payload size"]
-    assert "substitui o herdado" in texto
-    # O comentário nomeia o que a rota deixa de executar — que era justamente o
-    # que o `inherit: true` escondia.
-    assert "não executa, do herdado:" in texto
+    assert "executam depois do fluxo herdado" in texto
 
 
-def test_reproducao_do_herdado_declara_override():
+def test_copia_do_herdado_sem_marcacao_tambem_e_append():
+    """A cópia executa de novo, depois do herdado: é o que a rota faz no Manager."""
     reproduz = [
         {"id": 50, "type": "Custom", "customInterceptorId": 32, "executionPoint": "FIRST"},
     ]
@@ -191,9 +198,9 @@ def test_reproducao_do_herdado_declara_override():
         API,
         _revision([{"method": "GET", "path": "/tarefas", "interceptors": reproduz}]),
     )
-    dados, texto = _ler(r, "get_tarefas.yaml")
-    assert dados["inherit"] is False
-    assert "substitui o herdado" in texto
+    dados, _ = _ler(r, "get_tarefas.yaml")
+    assert dados["inherit"] is True
+    assert dados["interceptors_request"] == [{"type": "Custom", "id": 32}]
 
 
 # --- reparos de serialização ------------------------------------------------

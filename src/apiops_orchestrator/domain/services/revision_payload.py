@@ -4,9 +4,9 @@ Lógica pura. O payload nasce como **cópia profunda do estado remoto** e recebe
 só o que o repositório declara — assim tudo que o repositório não governa volta
 intacto, sem precisar ser enumerado.
 
-O fluxo de interceptors é a exceção deliberada: desde a **V-27** ele é
-**resolvido aqui**, descendo `all.yaml` → `resource.yaml` → operação, e vai para
-o wire já resolvido. A plataforma deixou de decidir o que cada escopo executa.
+O fluxo de interceptors é a exceção deliberada: o que cada escopo guarda é
+decidido aqui, descendo `all.yaml` → `resource.yaml` → operação — os itens
+próprios e as marcações do que deixa de herdar (V-28).
 
 É por construção que `workflowId` e `workflowStageId` são preservados (D-020):
 eles viajam na cópia, e nada aqui os reescreve.
@@ -20,7 +20,9 @@ from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tupl
 
 from apiops_orchestrator.domain.services.interceptor_flow import (
     FluxoDoEscopo,
+    alvo_da_marcacao,
     fluxo_composto,
+    identidade,
     montar_fluxo_do_escopo,
     particionar,
     preparar_contador_idtemp,
@@ -33,9 +35,9 @@ from apiops_orchestrator.domain.services.template_conformance import normalizar_
 class PayloadMontado:
     corpo: Dict[str, Any]
     avisos: List[str] = field(default_factory=list)
-    # Fluxo que o REPOSITÓRIO declara para cada escopo com lista própria, na
-    # ordem declarada. É o oráculo da conferência: comparar o publicado só com o
-    # payload deixaria passar qualquer perda na própria montagem.
+    # Itens próprios que o REPOSITÓRIO declara para cada escopo que não só herda,
+    # na ordem declarada. É o oráculo da conferência: comparar o publicado só com
+    # o payload deixaria passar qualquer perda na própria montagem.
     esperado: Dict[str, List[Dict[str, Any]]] = field(default_factory=dict)
 
 
@@ -88,24 +90,9 @@ def _avisos_do_escopo(
     *,
     raiz: bool = False,
 ) -> List[str]:
-    """O que o dev precisa saber sobre o efeito da declaração neste escopo.
-
-    Sob a V-27 o repositório resolve o fluxo e a plataforma passa a ser
-    sobrescrita. Isso transforma duas situações antes inócuas em **remoções**, e
-    nenhuma delas pode acontecer calada.
-    """
+    """Itens próprios que a publicação remove do escopo, que não podem sair calados."""
     avisos: List[str] = []
     proprios = _vivos(remoto)
-
-    if fluxo.contraditorio:
-        avisos.append(
-            f"{escopo}: o arquivo declara `inherit: false` mas não lista nenhum "
-            "interceptor. O Manager não consegue representar \"não executa nada\" — "
-            "lista vazia sempre significa herdar. Na prática este ponto vai continuar "
-            "herdando o fluxo do nível acima.\n"
-            "Para que ele execute outra coisa, liste os interceptors que devem valer "
-            "aqui."
-        )
 
     if raiz:
         # A raiz não herda de ninguém: `[]` ali não significa "herda", significa
@@ -127,26 +114,40 @@ def _avisos_do_escopo(
             f"Manager ({_rotular(proprios)}), mas o repositório declara que este "
             "ponto apenas herda. Ao publicar, esses interceptors saem e o fluxo "
             "passa a ser o do nível acima.\n"
-            "Se a intenção era mantê-los, liste-os no arquivo com `inherit: false`."
+            "Se a intenção era mantê-los, liste-os no arquivo."
         )
 
     return avisos
 
 
-def _avisos_de_herdado_novo(
-    fluxo: FluxoDoEscopo, herdado: Sequence[Dict[str, Any]], escopo: str
+def _avisos_de_herdado_cortado(
+    fluxo: FluxoDoEscopo,
+    remoto: Optional[Dict[str, Any]],
+    herdado_remoto: Sequence[Dict[str, Any]],
+    herdado: Sequence[Dict[str, Any]],
+    escopo: str,
 ) -> List[str]:
-    """Herdado que entra no Manager nesta publicação ainda não pode ser marcado
-    como removido no escopo que o substitui."""
-    novos = [i for i in herdado if i.get("id") is None]
-    if not fluxo.substitui or not novos:
+    """Herdado que o escopo executa hoje e deixa de executar porque quebra a
+    herança. `herdado_remoto` e `herdado` são o que o pai executa hoje e depois
+    desta publicação."""
+    if not fluxo.quebra or not remoto:
+        return []
+    executa_hoje = {
+        identidade(i) for i in fluxo_composto(remoto.get("interceptors"), herdado_remoto)
+    }
+    continua_no_pai = {i.get("id") for i in herdado if i.get("id") is not None}
+    cortados = [
+        i for i in herdado_remoto
+        if i.get("id") in executa_hoje and i.get("id") in continua_no_pai
+    ]
+    if not cortados:
         return []
     return [
-        f"{escopo}: o arquivo declara `inherit: false`, mas {len(novos)} "
-        f"interceptor(es) herdado(s) ({_rotular(novos)}) entram no Manager nesta "
-        "mesma publicação e ainda não podem ser removidos deste ponto. Até a próxima "
-        "publicação, ele também vai executá-los.\n"
-        "Rode o comando de novo depois desta publicação para que eles saiam daqui."
+        f"{escopo}: o arquivo declara `inherit: false`, e ao publicar este ponto deixa "
+        f"de executar {len(cortados)} interceptor(es) herdado(s) que executa hoje "
+        f"({_rotular(cortados)}).\n"
+        "Se a intenção era mantê-los, use `inherit: true` para seguir herdando, ou "
+        "liste-os no arquivo."
     ]
 
 
@@ -287,10 +288,9 @@ def montar(
     contador: Iterator[int] = preparar_contador_idtemp(draft)
 
     def _esperar(escopo: str, fluxo: FluxoDoEscopo) -> None:
-        # Herança pura vai como `[]` e a plataforma resolve: não há lista
-        # própria para conferir — a contagem por escopo já cobre esse caso.
+        # Herança pura vai como `[]`: a contagem por escopo já cobre esse caso.
         if not fluxo.heranca_pura:
-            esperado[escopo] = list(fluxo.efetivo)
+            esperado[escopo] = list(fluxo.proprios)
 
     def _content(declarado: Dict[str, Any]) -> Any:
         """O wire quer `content` como string JSON (ver `construir_item_novo`)."""
@@ -319,9 +319,9 @@ def montar(
             corpo["api"]["apiTags"] = spec["apiTags"]
 
     # --- escopo raiz ---------------------------------------------------------
-    # A resolução desce daqui: o efetivo da raiz alimenta os recursos, e o de
-    # cada recurso alimenta suas operações (V-27 §2). A raiz não herda — seu
-    # fluxo é exatamente o que o `all.yaml` declara.
+    # A decisão desce daqui: o efetivo da raiz alimenta os recursos, e o de cada
+    # recurso alimenta suas operações. A raiz não herda — seu fluxo é exatamente
+    # o que o `all.yaml` declara.
     fluxo_raiz = resolver_fluxo_declarado(_declarados(raiz), raiz=True)
     avisos.extend(_avisos_do_escopo(fluxo_raiz, draft, "raiz da revision", raiz=True))
     _esperar("raiz", fluxo_raiz)
@@ -335,6 +335,7 @@ def montar(
         resolver_content=_content,
     )
     composto_raiz = fluxo_composto(corpo["interceptors"])
+    composto_raiz_remoto = fluxo_composto(draft.get("interceptors"))
 
     # --- recursos e operações ------------------------------------------------
     # Cada pasta é ligada ao recurso remoto pelas rotas, não pelo nome (V-12a):
@@ -378,7 +379,10 @@ def montar(
         )
         avisos.extend(_avisos_do_escopo(fluxo_recurso, remoto, f"resource {rotulo}"))
         avisos.extend(
-            _avisos_de_herdado_novo(fluxo_recurso, composto_raiz, f"resource {rotulo}")
+            _avisos_de_herdado_cortado(
+                fluxo_recurso, remoto, composto_raiz_remoto, composto_raiz,
+                f"resource {rotulo}",
+            )
         )
         _esperar(f"resource {rotulo}", fluxo_recurso)
         if dados.get("description") is not None:
@@ -394,6 +398,9 @@ def montar(
             herdado=composto_raiz,
         )
         composto_recurso = fluxo_composto(bloco["interceptors"], composto_raiz)
+        composto_recurso_remoto = fluxo_composto(
+            remoto.get("interceptors"), composto_raiz_remoto
+        )
 
         remotas_por_chave = {
             _rota(o.get("method"), o.get("path")): o
@@ -421,8 +428,9 @@ def montar(
                 _avisos_do_escopo(fluxo_op, remota, f"{op.metodo} {od.get('path')}")
             )
             avisos.extend(
-                _avisos_de_herdado_novo(
-                    fluxo_op, composto_recurso, f"{op.metodo} {od.get('path')}"
+                _avisos_de_herdado_cortado(
+                    fluxo_op, remota, composto_recurso_remoto, composto_recurso,
+                    f"{op.metodo} {od.get('path')}",
                 )
             )
             _esperar(_rotulo_rota(chave), fluxo_op)
@@ -561,18 +569,46 @@ def _por_escopo(
     }
 
 
+def _assinatura_do_alvo(item: Dict[str, Any]) -> Tuple[Any, ...]:
+    """Tipo, Custom, ponto de execução e `content` normalizado de um item."""
+    content = (
+        None
+        if item.get("type") == "Custom"
+        else json.dumps(normalizar_content(item.get("content")), sort_keys=True, default=str)
+    )
+    ponto = str(item.get("executionPoint") or "").upper()
+    return (item.get("type"), _custom_id(item), ponto, content)
+
+
 def _marcacoes_por_escopo(
     no: Dict[str, Any], rotulos: Sequence[str]
-) -> Dict[str, Dict[Any, Dict[str, Any]]]:
-    """Marcações de remoção de cada escopo, indexadas pelo `parent.id` que apontam."""
-    return {
-        escopo: {
-            (i.get("parent") or {}).get("id"): i
-            for i in itens
-            if i.get("status") == "REMOVED"
-        }
-        for escopo, itens in _por_escopo(no, rotulos).items()
-    }
+) -> Dict[str, Dict[Tuple[Any, ...], List[Dict[str, Any]]]]:
+    """Marcações de remoção de cada escopo, agrupadas pelo item herdado que
+    removem, resolvido no fluxo que o pai executa do mesmo lado."""
+    saida: Dict[str, Dict[Tuple[Any, ...], List[Dict[str, Any]]]] = {}
+
+    def agrupar(escopo: str, itens: Any, herdado: Sequence[Dict[str, Any]]) -> None:
+        por_identidade = {identidade(i): i for i in herdado if identidade(i) is not None}
+        grupos: Dict[Tuple[Any, ...], List[Dict[str, Any]]] = {}
+        for marcacao in particionar(itens)[0]:
+            if marcacao.get("status") != "REMOVED":
+                continue
+            alvo = por_identidade.get(alvo_da_marcacao(marcacao), marcacao)
+            grupos.setdefault(_assinatura_do_alvo(alvo), []).append(marcacao)
+        saida[escopo] = grupos
+
+    raiz = fluxo_composto(no.get("interceptors"))
+    agrupar("raiz", no.get("interceptors"), [])
+    for recurso, rotulo in zip(no.get("resources") or [], rotulos):
+        agrupar(f"resource {rotulo}", recurso.get("interceptors"), raiz)
+        composto = fluxo_composto(recurso.get("interceptors"), raiz)
+        for op in recurso.get("operations") or []:
+            agrupar(
+                _rotulo_rota(_rota(op.get("method"), op.get("path"))),
+                op.get("interceptors"),
+                composto,
+            )
+    return saida
 
 
 def _contagem_por_escopo(no: Dict[str, Any], rotulos: Sequence[str]) -> Dict[str, int]:
@@ -661,13 +697,21 @@ def conferir(
             f"o recurso {sobrando} está no Manager mas não foi enviado"
         )
 
+    # Pelo item que removem, e não pelo `parent.id`: a marcação enviada por
+    # `idTemp` volta gravada com o id que o Manager gerou.
     marcacoes_enviadas = _marcacoes_por_escopo(enviado, rotulos_e)
     marcacoes_gravadas = _marcacoes_por_escopo(publicado, rotulos_p)
     for escopo in sorted(set(marcacoes_enviadas) | set(marcacoes_gravadas)):
         enviadas = marcacoes_enviadas.get(escopo, {})
         gravadas = marcacoes_gravadas.get(escopo, {})
-        sobrando = [gravadas[k] for k in gravadas.keys() - enviadas.keys()]
-        faltando = [enviadas[k] for k in enviadas.keys() - gravadas.keys()]
+        sobrando: List[Dict[str, Any]] = []
+        faltando: List[Dict[str, Any]] = []
+        for alvo in sorted(set(enviadas) | set(gravadas), key=str):
+            diferenca = len(gravadas.get(alvo, [])) - len(enviadas.get(alvo, []))
+            if diferenca > 0:
+                sobrando += gravadas[alvo][:diferenca]
+            elif diferenca < 0:
+                faltando += enviadas[alvo][:-diferenca]
         if sobrando:
             divergencias.append(
                 f"{escopo}: o Manager ainda tem {len(sobrando)} marcação(ões) de "

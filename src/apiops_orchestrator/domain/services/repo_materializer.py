@@ -12,6 +12,7 @@ Decisões que o código implementa:
   removido é identificado por `parent.id`, confirmado por leitura da revisão 9175;
 * **V-22** — o que está fora de `FIRST`/`SECOND` não entra no YAML;
 * **V-26** — a herança é sempre declarada (`inherit`);
+* **V-28** — itens próprios sem marcações são append (`inherit: true`);
 * **fila 23/24** — os dois reparos de serialização.
 """
 
@@ -20,10 +21,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from apiops_orchestrator.domain.services import repo_layout as layout
-from apiops_orchestrator.domain.services.interceptor_flow import (
-    chave_interceptor,
-    particionar,
-)
+from apiops_orchestrator.domain.services.interceptor_flow import particionar
 from apiops_orchestrator.domain.services.yaml_serialization import escalar
 
 LARGURA_DESCRICAO = 92
@@ -277,12 +275,11 @@ def _declarar_heranca(
     tombstones: Sequence[Dict[str, Any]],
     herdado: Sequence[Dict[str, Any]],
 ) -> List[str]:
-    """Decide entre append, override e supressão — e escreve o bloco.
+    """Decide entre herança pura, append e supressão — e escreve o bloco.
 
     A supressão (V-25) é a **lista completa explícita**: o fluxo herdado menos os
-    itens apontados por `parent.id`, mais o que o escopo declara de próprio.
-    Emitir `inherit: true` com comentário perderia a remoção na republicação;
-    emitir `inherit: false` sem lista publicaria o escopo sem fluxo nenhum.
+    itens apontados por `parent.id`, mais o que o escopo tem de próprio. Sem
+    marcações, os itens próprios executam depois do herdado: é append (V-28).
     """
     if tombstones:
         restante, alvos = _suprimir(herdado, tombstones)
@@ -290,19 +287,18 @@ def _declarar_heranca(
         nao_resolvidos = len(tombstones) - len(
             [a for a in alvos if any(i.get("id") == a for i in herdado)]
         )
-        linhas = [
-            "",
-            "inherit: false",
-            f"# este ponto executa o fluxo herdado, menos: {nomes}",
-            "# a lista abaixo é completa de propósito: o Manager não tem como",
-            "# dizer \"herde tudo, exceto um\" — lista vazia sempre significa herdar",
-        ]
+        linhas = ["", "inherit: false", f"# este ponto deixa de executar, do herdado: {nomes}"]
+        fluxo = list(restante) + list(presentes)
+        if fluxo:
+            linhas.append("# a lista abaixo é o fluxo completo que vale aqui")
+        else:
+            linhas.append("# não executa nenhum interceptor")
         if nao_resolvidos:
             linhas.append(
                 f"# atenção: {nao_resolvidos} remoção(ões) apontam para um "
                 "interceptor que não está no fluxo herdado deste ponto"
             )
-        return linhas + _fluxo(list(restante) + list(presentes))
+        return linhas + _fluxo(fluxo)
 
     if not presentes:
         # Sem artigo: `escopo` ora é "recurso", ora "operação", e qualquer
@@ -313,21 +309,10 @@ def _declarar_heranca(
             "# apenas herda o fluxo do nível acima: nenhum interceptor próprio",
         ]
 
-    # Lista própria não vazia **É** o fluxo efetivo do escopo (W-4): a plataforma
-    # não tem estado "append". Materializar `inherit: true` aqui faria o
-    # repositório afirmar "herdado + próprio" sobre um escopo que executa só o
-    # próprio — e a V-27, que resolve o fluxo a partir do repositório,
-    # republicaria essa afirmação, mudando o fluxo sem ninguém ter pedido.
-    chaves_herdadas = {chave_interceptor(i) for i in herdado}
-    ausentes = sorted(
-        f"{t}#{cid}" if cid else str(t)
-        for (t, cid, _p) in chaves_herdadas - {chave_interceptor(i) for i in presentes}
-    )
     return [
         "",
-        "inherit: false",
-        "# o fluxo abaixo substitui o herdado, e é o que este ponto executa",
-        f"# não executa, do herdado: {', '.join(ausentes) or 'nada'}",
+        "inherit: true",
+        "# os interceptors abaixo executam depois do fluxo herdado",
     ] + _fluxo(presentes)
 
 
