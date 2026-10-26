@@ -191,6 +191,62 @@ def test_apply_contract_does_not_touch_the_current_document():
     assert current == _current()
 
 
+def test_parameter_keeps_the_extensions_of_the_manager_one_with_same_name_and_location():
+    current = _current()
+    current["paths"]["/tarefas/{id}"]["get"]["parameters"] = [
+        {"name": "expand", "in": "query", "description": "Antiga", "x-example": "comentarios"}
+    ]
+    declared = {"name": "expand", "in": "query", "description": "Nova", "schema": {"type": "string"}}
+
+    document = oc.apply_contract(current, _contract(parameters=[declared]))
+
+    assert document["paths"]["/tarefas/{id}"]["get"]["parameters"] == [
+        {
+            "name": "expand",
+            "in": "query",
+            "description": "Nova",
+            "schema": {"type": "string"},
+            "x-example": "comentarios",
+        }
+    ]
+
+
+def test_path_item_parameter_extensions_are_kept_in_the_operation():
+    current = _current()
+    current["paths"]["/tarefas/{id}"]["parameters"][0]["x-example"] = "42"
+
+    document = oc.apply_contract(
+        current, _contract(parameters=[{"name": "id", "in": "path", "required": True}])
+    )
+
+    assert document["paths"]["/tarefas/{id}"]["get"]["parameters"] == [
+        {"name": "id", "in": "path", "required": True, "x-example": "42"}
+    ]
+
+
+def test_extensions_do_not_go_to_a_parameter_in_another_location():
+    current = _current()
+    current["paths"]["/tarefas/{id}"]["get"]["parameters"] = [
+        {"name": "expand", "in": "query", "x-example": "comentarios"}
+    ]
+
+    document = oc.apply_contract(current, _contract(parameters=[{"name": "expand", "in": "header"}]))
+
+    assert document["paths"]["/tarefas/{id}"]["get"]["parameters"] == [{"name": "expand", "in": "header"}]
+
+
+def test_kept_parameter_extensions_make_the_second_write_unnecessary():
+    current = _current()
+    current["paths"]["/tarefas/{id}"]["get"]["parameters"] = [
+        {"name": "expand", "in": "query", "x-example": "comentarios"}
+    ]
+    contract = _contract(parameters=[{"name": "expand", "in": "query"}])
+
+    written = oc.apply_contract(current, contract)
+
+    assert oc.same_document(written, oc.apply_contract(written, contract))
+
+
 def test_route_only_in_the_manager_is_left_alone():
     current = _current()
     current["paths"]["/saude"] = {"get": {"summary": "Saúde", "responses": OK}}

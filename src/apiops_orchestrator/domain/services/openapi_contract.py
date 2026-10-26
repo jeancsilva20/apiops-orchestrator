@@ -157,16 +157,34 @@ def apply_contract(current: Dict[str, Any], contract: RepositoryContract) -> Dic
     for path, item in (document.get("paths") or {}).items():
         if not isinstance(item, dict):
             continue
-        item.pop("parameters", None)
+        path_parameters = item.pop("parameters", None)
         for method in HTTP_METHODS:
             operation = item.get(method)
             fields = contract.operations.get((method.upper(), path))
             if not isinstance(operation, dict) or fields is None:
                 continue
+            current_parameters = operation.get("parameters")
             for name in OPERATION_FIELDS:
                 _replace(operation, name, fields.get(name))
+            _keep_parameter_extensions(operation, current_parameters, path_parameters)
 
     return document
+
+
+def _keep_parameter_extensions(operation: Dict[str, Any], *current: Any) -> None:
+    """Copies into each repository parameter the `x-*` of the current one with the same `name`+`in`."""
+    extensions: Dict[Tuple[Any, Any], Dict[str, Any]] = {}
+    for parameters in current:
+        for parameter in parameters if isinstance(parameters, list) else []:
+            if not isinstance(parameter, dict) or parameter.get("name") is None:
+                continue
+            found = {k: v for k, v in parameter.items() if isinstance(k, str) and k.startswith("x-")}
+            if found:
+                extensions.setdefault(parameter_key(parameter), found)
+    for parameter in operation.get("parameters") or []:
+        if isinstance(parameter, dict):
+            for name, value in extensions.get(parameter_key(parameter), {}).items():
+                parameter.setdefault(name, copy.deepcopy(value))
 
 
 def removed_items(current: Dict[str, Any], contract: RepositoryContract) -> List[str]:
