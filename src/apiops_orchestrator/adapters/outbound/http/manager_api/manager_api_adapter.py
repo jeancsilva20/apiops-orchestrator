@@ -476,7 +476,7 @@ class ManagerApiAdapter(ManagerApiPort):
         return self._request("PUT", f"revisions/{revision_id}/swagger", json=document)
 
     def deploy_revision(self, environment_id: int, revision_id: int) -> Optional[int]:
-        resposta = self._request(
+        response = self._request(
             "POST",
             "deployments",
             json={
@@ -485,7 +485,7 @@ class ManagerApiAdapter(ManagerApiPort):
                 "status": "DEPLOYED",
             },
         )
-        return _wire_int(resposta.get("id")) if isinstance(resposta, dict) else None
+        return _wire_int(response.get("id")) if isinstance(response, dict) else None
 
     def get_workflow(self, workflow_id: int) -> Dict[str, Any]:
         return self._request(
@@ -497,7 +497,7 @@ class ManagerApiAdapter(ManagerApiPort):
         if isinstance(payload, list):
             return payload
         if isinstance(payload, dict):
-            for chave in ("content", "data", "attributes"):
-                if isinstance(payload.get(chave), list):
-                    return payload[chave]
+            for key in ("content", "data", "attributes"):
+                if isinstance(payload.get(key), list):
+                    return payload[key]
         return []

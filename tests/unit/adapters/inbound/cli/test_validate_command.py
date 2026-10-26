@@ -23,20 +23,20 @@ from apiops_orchestrator.application.exceptions.manager_failure_messages import 
 )
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
     GovernanceBlockedError,
-    IdentidadeDivergenteError,
-    ReguaInalcancavelError,
+    IdentityMismatchError,
+    RulerUnreachableError,
     ValidateError,
 )
 from apiops_orchestrator.domain.models.validate_view import (
     SCHEMA_SEN_VALIDATE_V1,
-    SEVERIDADE_INFO,
-    SEVERIDADE_WARNING,
-    Achado,
-    AtributoExigido,
-    CompletenessResumo,
-    GovernancaResultado,
-    PublicacaoResultado,
-    ReguaSnapshot,
+    SEVERITY_INFO,
+    SEVERITY_WARNING,
+    Finding,
+    RequiredAttribute,
+    CompletenessSummary,
+    GovernanceResult,
+    PublicationResult,
+    RulerSnapshot,
     ValidateApi,
     ValidateRevision,
     ValidateView,
@@ -57,25 +57,25 @@ def _view(**overrides) -> ValidateView:
             base_path="/letras/v2",
         ),
         revision=ValidateRevision(manager_id=9161, revision_number=1),
-        regua=ReguaSnapshot(
+        ruler=RulerSnapshot(
             template_id=414,
             revision_number=3,
             flow_hash="a1b2c3d4",
             interceptors_count=8,
         ),
-        achados=[
-            Achado(SEVERIDADE_WARNING, "GET /health-check", "sobrescreve a regua"),
-            Achado(SEVERIDADE_INFO, "resource Tarefas", "1 item alem da regua"),
+        findings=[
+            Finding(SEVERITY_WARNING, "GET /health-check", "sobrescreve a regua"),
+            Finding(SEVERITY_INFO, "resource Tarefas", "1 item alem da regua"),
         ],
-        governanca=GovernancaResultado(
+        governance=GovernanceResult(
             workflow_id=500,
             stage_id=1402,
-            required=[AtributoExigido(149, "My new"), AtributoExigido(231, "teste giroto")],
+            required=[RequiredAttribute(149, "My new"), RequiredAttribute(231, "teste giroto")],
             missing=[],
             blocked=False,
         ),
-        publicacao=PublicacaoResultado(attempted=True, accepted=True, verified=True),
-        completeness=CompletenessResumo(
+        publication=PublicationResult(attempted=True, accepted=True, verified=True),
+        completeness=CompletenessSummary(
             score=42.0, gate_percent=70.0, suggestions=["Adicione exemplos"]
         ),
     )
@@ -91,18 +91,18 @@ class _ServicoFake:
         self._erro = erro
         self.chamado_com = None
 
-    def validate(self, repo_path, *, confirmar, progresso=None):
+    def validate(self, repo_path, *, confirm, progress=None):
         self.chamado_com = {
             "repo_path": repo_path,
-            "confirmar": confirmar,
-            "progresso": progresso,
+            "confirmar": confirm,
+            "progresso": progress,
         }
         if self._erro is not None:
             raise self._erro
         # A borda narra as etapas por este callable; exercitá-lo aqui garante
         # que a barra de progresso não quebre a saída legível por máquina.
-        if progresso is not None:
-            progresso("Lendo o repositório")
+        if progress is not None:
+            progress("Lendo o repositório")
         return self._resultado
 
 
@@ -195,7 +195,7 @@ def test_publicacao_distingue_aceita_de_conferida():
     """W-8: HTTP 200 não é prova — `accepted` e `verified` são campos distintos."""
     servico = _ServicoFake(
         resultado=_view(
-            publicacao=PublicacaoResultado(
+            publication=PublicationResult(
                 attempted=True,
                 accepted=True,
                 verified=False,
@@ -227,9 +227,9 @@ def test_nenhuma_saida_carrega_credencial():
         resultado = runner.invoke(
             app, ["sen", "validate", "-o", formato], obj=_ctx(servico)
         )
-        saida = resultado.output.lower()
+        output = resultado.output.lower()
         for proibido in ("authorization", "bearer", "client_secret", "token", "cookie"):
-            assert proibido not in saida, f"{proibido!r} vazou no formato {formato}"
+            assert proibido not in output, f"{proibido!r} vazou no formato {formato}"
 
 
 # --- exit codes ------------------------------------------------------------
@@ -246,7 +246,7 @@ def test_exit_0_com_achados_warning():
 def test_exit_0_com_completeness_abaixo_do_gate():
     """Decisão 2: completeness é informativa no validate; o gate trava em DEV+."""
     servico = _ServicoFake(
-        resultado=_view(completeness=CompletenessResumo(score=12.0, gate_percent=70.0))
+        resultado=_view(completeness=CompletenessSummary(score=12.0, gate_percent=70.0))
     )
     resultado = runner.invoke(app, ["sen", "validate", "-o", "json"], obj=_ctx(servico))
     assert resultado.exit_code == 0
@@ -255,8 +255,8 @@ def test_exit_0_com_completeness_abaixo_do_gate():
 @pytest.mark.parametrize(
     "erro",
     [
-        IdentidadeDivergenteError("basePath", "/letras/v9", "/letras/v2", 417),
-        ReguaInalcancavelError(999999, 404),
+        IdentityMismatchError("basePath", "/letras/v9", "/letras/v2", 417),
+        RulerUnreachableError(999999, 404),
     ],
 )
 def test_exit_1_para_falha_tecnica(erro):
@@ -281,9 +281,9 @@ def test_erro_inesperado_nao_vaza_stack_e_encerra_com_1():
     resultado = runner.invoke(app, ["sen", "validate"], obj=_ctx(servico))
     assert resultado.exit_code == 1
     assert "Traceback" not in resultado.output
-    saida = " ".join(resultado.output.split())
-    assert INTERNAL_ERROR_MESSAGE in saida
-    assert "falha interna qualquer" not in saida
+    output = " ".join(resultado.output.split())
+    assert INTERNAL_ERROR_MESSAGE in output
+    assert "falha interna qualquer" not in output
 
 
 def test_cli_apenas_traduz_o_exit_code_que_o_erro_carrega():
@@ -310,10 +310,10 @@ def test_diag_structure_descreve_a_estrutura_sem_rede(tmp_path):
         encoding="utf-8",
     )
     (tmp_path / "all.yaml").write_text("destination:\n  url: https://x\n", encoding="utf-8")
-    pasta = tmp_path / "resources" / "tarefas"
-    pasta.mkdir(parents=True)
-    (pasta / "resource.yaml").write_text('name: "Tarefas"\n', encoding="utf-8")
-    (pasta / "get_tarefas.yaml").write_text("path: /tarefas\n", encoding="utf-8")
+    folder = tmp_path / "resources" / "tarefas"
+    folder.mkdir(parents=True)
+    (folder / "resource.yaml").write_text('name: "Tarefas"\n', encoding="utf-8")
+    (folder / "get_tarefas.yaml").write_text("path: /tarefas\n", encoding="utf-8")
 
     resultado = runner.invoke(
         app, ["sen", "diag", "structure", "--repo", str(tmp_path), "-o", "json"]
@@ -375,13 +375,13 @@ def _diag_draft(tmp_path, visibility):
         "userGroups": ["APIOps"],
     })
     manager = _ManagerDoDraft(visibility)
-    fabrica = lambda: (  # noqa: E731
-        manager, SimpleNamespace(modo_pipeline=False), ApiAccessGuard(sessao)
+    factory = lambda: (  # noqa: E731
+        manager, SimpleNamespace(pipeline_mode=False), ApiAccessGuard(sessao)
     )
     resultado = runner.invoke(
         app,
         ["sen", "diag", "draft", "--repo", str(tmp_path), "-o", "json"],
-        obj={"manager_api_factory": fabrica},
+        obj={"manager_api_factory": factory},
     )
     return resultado, manager
 
@@ -438,7 +438,7 @@ def test_progresso_e_injetado_pela_cli():
 def test_progresso_nao_contamina_saida_legivel_por_maquina(formato):
     """Regressão: a narração das etapas invalidava o documento.
 
-    O `_ServicoFake` chama `progresso(...)` justamente para exercitar isto. Uma
+    O `_ServicoFake` chama `progress(...)` justamente para exercitar isto. Uma
     linha de progresso em stdout quebra o parse na esteira, e stderr também não
     salva — muita esteira captura `2>&1`. Em `-o json`/`-o yaml` o progresso
     simplesmente não existe.
@@ -461,8 +461,8 @@ def test_confirmacao_explica_que_grava_um_rascunho_sem_deploy():
     capturado = {}
 
     class _ServicoQuePergunta(_ServicoFake):
-        def validate(self, repo_path, *, confirmar, progresso=None):
-            capturado["respondeu"] = confirmar(
+        def validate(self, repo_path, *, confirm, progress=None):
+            capturado["respondeu"] = confirm(
                 "Para validar a sua API, uma versão de rascunho será gravada no "
                 "API Manager, na revisão 1 (id 9161).\n"
                 "Nenhum ambiente recebe deploy, e nada é promovido."
@@ -492,29 +492,29 @@ def test_cancelar_o_prompt_interrompe_com_130_e_sem_relatorio(entrada):
     código de saída distingue "cancelado" (130) de "recusado" (0) e de falha (1).
     """
     class _ServicoQuePergunta(_ServicoFake):
-        def validate(self, repo_path, *, confirmar, progresso=None):
-            confirmar("Uma versão de rascunho será gravada.")
+        def validate(self, repo_path, *, confirm, progress=None):
+            confirm("Uma versão de rascunho será gravada.")
             raise AssertionError("o comando deveria ter sido interrompido no prompt")
 
     servico = _ServicoQuePergunta(resultado=_view())
     resultado = runner.invoke(app, ["sen", "validate"], obj=_ctx(servico), input=entrada)
-    saida = " ".join(resultado.output.split())
+    output = " ".join(resultado.output.split())
 
     assert resultado.exit_code == 130
-    assert "Validação cancelada. Nada foi gravado." in saida
-    assert "Conformidade" not in saida
-    assert INTERNAL_ERROR_MESSAGE not in saida
+    assert "Validação cancelada. Nada foi gravado." in output
+    assert "Conformidade" not in output
+    assert INTERNAL_ERROR_MESSAGE not in output
 
 
 def test_responder_n_encerra_sem_relatorio():
     """Sem a cascata completa não há relatório parcial — só o desfecho."""
-    view = _view(publicacao=PublicacaoResultado(attempted=False))
+    view = _view(publication=PublicationResult(attempted=False))
     resultado = runner.invoke(
         app, ["sen", "validate"], obj=_ctx(_ServicoFake(resultado=view))
     )
-    saida = " ".join(resultado.output.split())
+    output = " ".join(resultado.output.split())
 
     assert resultado.exit_code == 0
-    assert "Validação cancelada. Nada foi gravado." in saida
-    assert "Conformidade" not in saida and "Validação  " not in saida
-    assert "sobrescreve a regua" not in saida
+    assert "Validação cancelada. Nada foi gravado." in output
+    assert "Conformidade" not in output and "Validação  " not in output
+    assert "sobrescreve a regua" not in output

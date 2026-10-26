@@ -24,7 +24,7 @@ from apiops_orchestrator.domain.models.deploy_model import (
     SCHEMA_SEN_DEPLOY_V1,
     DeployEnvironment,
     DeployGovernance,
-    DeploymentResultado,
+    DeploymentResult,
     DeployState,
     DeployView,
 )
@@ -34,15 +34,15 @@ from apiops_orchestrator.domain.models.publish_view import (
     RevisionDeployment,
 )
 from apiops_orchestrator.domain.models.validate_view import (
-    ESCOPO_REPOSITORIO,
+    REPOSITORY_SCOPE,
     SCHEMA_SEN_VALIDATE_V1,
-    SEVERIDADE_WARNING,
-    Achado,
-    AtributoExigido,
-    CompletenessResumo,
-    GovernancaResultado,
-    PublicacaoResultado,
-    ReguaSnapshot,
+    SEVERITY_WARNING,
+    Finding,
+    RequiredAttribute,
+    CompletenessSummary,
+    GovernanceResult,
+    PublicationResult,
+    RulerSnapshot,
     ValidateApi,
     ValidateRevision,
     ValidateView,
@@ -61,9 +61,9 @@ def _sem_erro_interno(resultado) -> None:
 
 
 def test_literal_devolve_o_texto_original_dentro_de_marcacao():
-    valor = "Basepath [/api-sga-notificacao] e [bold]negrito[/bold] \\"
+    value = "Basepath [/api-sga-notificacao] e [bold]negrito[/bold] \\"
 
-    assert Text.from_markup(f"[white]{_literal(valor)}[/white]").plain == valor
+    assert Text.from_markup(f"[white]{_literal(value)}[/white]").plain == value
 
 
 def test_list_api_mostra_nome_e_base_path_com_colchetes():
@@ -145,16 +145,16 @@ def _validate_view(**overrides) -> ValidateView:
             manager_id=68, name="Letras [/x]", version="1.0", base_path="/letras/[bold]v2"
         ),
         revision=ValidateRevision(manager_id=9161, revision_number=1),
-        regua=ReguaSnapshot(template_id=414, revision_number=3, flow_hash="h[/x]", interceptors_count=8),
-        achados=[
-            Achado(SEVERIDADE_WARNING, "GET /a[/x]", "template [/x] diverge"),
-            Achado(SEVERIDADE_WARNING, ESCOPO_REPOSITORIO, "repo [bold] muda"),
+        ruler=RulerSnapshot(template_id=414, revision_number=3, flow_hash="h[/x]", interceptors_count=8),
+        findings=[
+            Finding(SEVERITY_WARNING, "GET /a[/x]", "template [/x] diverge"),
+            Finding(SEVERITY_WARNING, REPOSITORY_SCOPE, "repo [bold] muda"),
         ],
-        governanca=GovernancaResultado(
-            workflow_id=500, stage_id=1402, required=[AtributoExigido(1, "Dono [/x]")]
+        governance=GovernanceResult(
+            workflow_id=500, stage_id=1402, required=[RequiredAttribute(1, "Dono [/x]")]
         ),
-        publicacao=PublicacaoResultado(attempted=True, accepted=True, verified=True),
-        completeness=CompletenessResumo(
+        publication=PublicationResult(attempted=True, accepted=True, verified=True),
+        completeness=CompletenessSummary(
             score=75.8, gate_percent=70.0, suggestions=["Basepath [/api-sga-notificacao] sem versão"]
         ),
     )
@@ -167,7 +167,7 @@ class _ValidateFake:
         self._resultado = resultado
         self._erro = erro
 
-    def validate(self, repo_path, *, confirmar, progresso=None):
+    def validate(self, repo_path, *, confirm, progress=None):
         if self._erro is not None:
             raise self._erro
         return self._resultado
@@ -198,13 +198,13 @@ def test_validate_mostra_dados_e_sugestoes_com_colchetes():
 
 def test_validate_mostra_faltantes_e_divergencias_com_colchetes():
     view = _validate_view(
-        governanca=GovernancaResultado(
+        governance=GovernanceResult(
             workflow_id=500,
             stage_id=1402,
-            required=[AtributoExigido(1, "Dono [/x]")],
-            missing=[AtributoExigido(1, "Dono [/x]")],
+            required=[RequiredAttribute(1, "Dono [/x]")],
+            missing=[RequiredAttribute(1, "Dono [/x]")],
         ),
-        publicacao=PublicacaoResultado(
+        publication=PublicationResult(
             attempted=True, accepted=True, verified=False, divergences=["campo [/x] difere"]
         ),
     )
@@ -228,7 +228,7 @@ class _PublishFake:
     def __init__(self, resultado):
         self._resultado = resultado
 
-    def publish(self, repo_path, *, progresso=None):
+    def publish(self, repo_path, *, progress=None):
         return self._resultado
 
 
@@ -239,9 +239,9 @@ def test_publish_mostra_api_avisos_e_ambientes_com_colchetes():
         execution_mode="pipeline",
         api=ValidateApi(manager_id=68, name="Letras [/x]", version="1.0", base_path="/l[bold]"),
         revision=ValidateRevision(manager_id=9175, revision_number=2),
-        governanca=GovernancaResultado(workflow_id=500, stage_id=1402),
-        publicacao=PublicacaoResultado(attempted=True, accepted=True, verified=True),
-        avisos=["timeout [/x] muda"],
+        governance=GovernanceResult(workflow_id=500, stage_id=1402),
+        publication=PublicationResult(attempted=True, accepted=True, verified=True),
+        warnings=["timeout [/x] muda"],
         deployments=[
             RevisionDeployment(
                 deployment_id=1,
@@ -265,7 +265,7 @@ class _DeployFake:
     def __init__(self, resultado):
         self._resultado = resultado
 
-    def deploy(self, repo_path, *, progresso=None):
+    def deploy(self, repo_path, *, progress=None):
         return self._resultado
 
 
@@ -277,13 +277,13 @@ def test_deploy_mostra_ambiente_e_avisos_com_colchetes():
         api=ValidateApi(manager_id=68, name="Letras [/x]", version="1.0", base_path="/l"),
         revision=ValidateRevision(manager_id=9327, revision_number=3),
         environment=DeployEnvironment(manager_id=7, name="ECAD [/x] Dev"),
-        governanca=DeployGovernance(workflow_id=500, stage_id=1402, deployable_environments=[7]),
+        governance=DeployGovernance(workflow_id=500, stage_id=1402, deployable_environments=[7]),
         previous_state=DeployState(268, 9175, 2, "ontem [/x]"),
         new_state=DeployState(269, 9327, 3, "hoje"),
-        deployment=DeploymentResultado(
+        deployment=DeploymentResult(
             attempted=True, accepted=True, deployment_id=269, verified=True, status="SUCCESS"
         ),
-        avisos=["aviso [bold] do deploy"],
+        warnings=["aviso [bold] do deploy"],
     )
 
     resultado = runner.invoke(

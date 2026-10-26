@@ -19,27 +19,27 @@ from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from apiops_orchestrator.domain.services.repo_layout import (
     GOVERNED_EXECUTION_POINTS,
-    eh_governado,
+    is_governed,
 )
 
 __all__ = [
     "GOVERNED_EXECUTION_POINTS",
-    "eh_governado",
-    "particionar",
-    "chave_interceptor",
-    "maior_identificador",
-    "identidade",
-    "alvo_da_marcacao",
-    "fluxo_composto",
-    "preparar_contador_idtemp",
-    "construir_item_novo",
-    "FluxoDoEscopo",
-    "resolver_fluxo_declarado",
-    "montar_fluxo_do_escopo",
+    "is_governed",
+    "partition",
+    "interceptor_key",
+    "largest_identifier",
+    "identity",
+    "tombstone_target",
+    "composed_flow",
+    "prepare_idtemp_counter",
+    "build_new_item",
+    "ScopeFlow",
+    "resolve_declared_flow",
+    "assemble_scope_flow",
 ]
 
 
-def chave_interceptor(item: Dict[str, Any]) -> Tuple[str, Optional[int], str]:
+def interceptor_key(item: Dict[str, Any]) -> Tuple[str, Optional[int], str]:
     """Identidade declarativa de um interceptor, para casamento entre repo e wire.
 
     `Custom` é identificado pelo `customInterceptorId`: mesmo id, mesmo objeto no
@@ -47,16 +47,16 @@ def chave_interceptor(item: Dict[str, Any]) -> Tuple[str, Optional[int], str]:
     de execução, e a diferença de configuração mora no `content`, comparado pela
     conformidade.
     """
-    tipo = str(item.get("type") or "")
+    kind = str(item.get("type") or "")
     custom_id = item.get("customInterceptorId")
-    if custom_id is None and tipo == "Custom":
+    if custom_id is None and kind == "Custom":
         custom_id = item.get("id")
-    ponto = str(item.get("executionPoint") or "").upper()
-    return (tipo, custom_id, ponto)
+    point = str(item.get("executionPoint") or "").upper()
+    return (kind, custom_id, point)
 
 
-def particionar(
-    remotos: Optional[Sequence[Dict[str, Any]]],
+def partition(
+    remote_resources: Optional[Sequence[Dict[str, Any]]],
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Separa os interceptors remotos em **governados** e **preservados** (V-22).
 
@@ -70,17 +70,17 @@ def particionar(
     A ordem relativa é mantida nas duas listas, e os itens não são copiados nem
     normalizados: o preservado volta como veio.
     """
-    governados: List[Dict[str, Any]] = []
-    preservados: List[Dict[str, Any]] = []
-    for item in remotos or []:
-        if eh_governado(item.get("executionPoint")):
-            governados.append(item)
+    governed: List[Dict[str, Any]] = []
+    preserved: List[Dict[str, Any]] = []
+    for item in remote_resources or []:
+        if is_governed(item.get("executionPoint")):
+            governed.append(item)
         else:
-            preservados.append(item)
-    return governados, preservados
+            preserved.append(item)
+    return governed, preserved
 
 
-def maior_identificador(no: Any) -> int:
+def largest_identifier(no: Any) -> int:
     """Maior `id`, `idTemp` ou `position` encontrado em toda a árvore do payload.
 
     É o piso do contador global de `idTemp` (W-9): o `idTemp` é único no
@@ -91,80 +91,80 @@ def maior_identificador(no: Any) -> int:
     A varredura é profunda de propósito: `interceptors` aparecem na raiz, em cada
     recurso e em cada operação, e o contador precisa enxergar todos.
     """
-    maior = 0
-    pilha = [no]
-    while pilha:
-        atual = pilha.pop()
-        if isinstance(atual, dict):
-            for campo in ("id", "idTemp", "position"):
-                valor = atual.get(campo)
-                if isinstance(valor, bool):
+    largest = 0
+    stack = [no]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, dict):
+            for field_name in ("id", "idTemp", "position"):
+                value = current.get(field_name)
+                if isinstance(value, bool):
                     continue
-                if isinstance(valor, int) and valor > maior:
-                    maior = valor
-                elif isinstance(valor, str) and valor.isdigit():
-                    maior = max(maior, int(valor))
-            pilha.extend(atual.values())
-        elif isinstance(atual, (list, tuple)):
-            pilha.extend(atual)
-    return maior
+                if isinstance(value, int) and value > largest:
+                    largest = value
+                elif isinstance(value, str) and value.isdigit():
+                    largest = max(largest, int(value))
+            stack.extend(current.values())
+        elif isinstance(current, (list, tuple)):
+            stack.extend(current)
+    return largest
 
 
-def identidade(item: Dict[str, Any]) -> Any:
+def identity(item: Dict[str, Any]) -> Any:
     """`id` do item ou, no item que ainda não existe no Manager, o `idTemp`."""
     return item["id"] if item.get("id") is not None else item.get("idTemp")
 
 
-def alvo_da_marcacao(marcacao: Dict[str, Any]) -> Any:
+def tombstone_target(tombstone: Dict[str, Any]) -> Any:
     """Identidade do item herdado que a marcação `REMOVED` aponta."""
-    return identidade(marcacao.get("parent") or {})
+    return identity(tombstone.get("parent") or {})
 
 
-def fluxo_composto(
-    proprios: Optional[Sequence[Dict[str, Any]]],
-    herdado: Optional[Sequence[Dict[str, Any]]] = None,
+def composed_flow(
+    own: Optional[Sequence[Dict[str, Any]]],
+    inherited: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """Fluxo governado que o escopo executa: o herdado, menos os itens marcados
     como removidos no escopo, mais os itens próprios em ordem de `position`."""
-    governados, _ = particionar(proprios)
-    removidos = {
-        alvo_da_marcacao(i) for i in governados if i.get("status") == "REMOVED"
+    governed, _ = partition(own)
+    removed = {
+        tombstone_target(i) for i in governed if i.get("status") == "REMOVED"
     }
-    removidos.discard(None)
-    mantidos = [i for i in herdado or [] if identidade(i) not in removidos]
-    proprios_vivos = sorted(
-        (i for i in governados if i.get("status") != "REMOVED"),
+    removed.discard(None)
+    kept = [i for i in inherited or [] if identity(i) not in removed]
+    live_own = sorted(
+        (i for i in governed if i.get("status") != "REMOVED"),
         key=lambda i: i.get("position") or 0,
     )
-    return mantidos + proprios_vivos
+    return kept + live_own
 
 
 # --------------------------------------------------------------------------- publish
 
 
 # Piso dos `idTemp`, acima de qualquer id que o Manager gere. O item novo vai com
-# `id` igual ao `idTemp` (ver `construir_item_novo`), então o número temporário
+# `id` igual ao `idTemp` (ver `build_new_item`), então o número temporário
 # não pode coincidir com o id de um item existente nem com os ids que o Manager
 # gera no mesmo PUT. A UI usa números dessa ordem (o relógio em milissegundos).
-PISO_IDTEMP = 1_000_000_000_000
+IDTEMP_FLOOR = 1_000_000_000_000
 
 
-def preparar_contador_idtemp(payload: Any) -> "Iterator[int]":
+def prepare_idtemp_counter(payload: Any) -> "Iterator[int]":
     """Contador GLOBAL de `idTemp`, acima de tudo que já existe e do piso.
 
     **W-9**: o `idTemp` é único no **payload inteiro**, não no escopo. Dois itens
     novos em escopos diferentes que compartilhem o valor fazem o Manager
     **descartar um deles**, devolvendo HTTP 200.
     """
-    proximo = max(maior_identificador(payload) + 1, PISO_IDTEMP)
+    next_id = max(largest_identifier(payload) + 1, IDTEMP_FLOOR)
     while True:
-        yield proximo
-        proximo += 1
+        yield next_id
+        next_id += 1
 
 
-def construir_item_novo(
+def build_new_item(
     *,
-    tipo: str,
+    kind: str,
     execution_point: str,
     idtemp: int,
     position: int,
@@ -181,7 +181,7 @@ def construir_item_novo(
     * `id` vai igual ao `idTemp`, como a UI faz. Com `id` nulo, a marcação de
       uma rota para item novo do recurso some quando o recurso também marca um
       item novo da raiz no mesmo PUT (bateria da 425). O `idTemp` vem acima de
-      `PISO_IDTEMP`, então não coincide com o id de um item existente;
+      `IDTEMP_FLOOR`, então não coincide com o id de um item existente;
     * `customInterceptorId` é **preservado** — é a referência ao script no tenant.
     """
     if idtemp is None:
@@ -198,7 +198,7 @@ def construir_item_novo(
         "id": idtemp,
         "idTemp": idtemp,
         "position": position,
-        "type": tipo,
+        "type": kind,
         "content": content,
         "executionPoint": execution_point,
         "status": "REFERENCE",
@@ -212,34 +212,34 @@ def construir_item_novo(
 
 
 @dataclass(frozen=True)
-class FluxoDoEscopo:
+class ScopeFlow:
     """O que um escopo guarda e o que executa, decidido pelo repositório.
 
-    * `proprios` — itens declarados, que o escopo guarda;
-    * `quebra` — o escopo marca como removido todo item que o pai executa;
-    * `efetivo` — o que o escopo executa.
+    * `own` — itens declarados, que o escopo guarda;
+    * `breaks_inheritance` — o escopo marca como removido todo item que o pai executa;
+    * `effective` — o que o escopo executa.
     """
 
-    proprios: List[Dict[str, Any]] = field(default_factory=list)
-    efetivo: List[Dict[str, Any]] = field(default_factory=list)
-    quebra: bool = False
+    own: List[Dict[str, Any]] = field(default_factory=list)
+    effective: List[Dict[str, Any]] = field(default_factory=list)
+    breaks_inheritance: bool = False
 
     @property
-    def heranca_pura(self) -> bool:
+    def pure_inheritance(self) -> bool:
         """Sem itens próprios e sem quebra: a lista vai vazia e o escopo herda."""
-        return not self.proprios and not self.quebra
+        return not self.own and not self.breaks_inheritance
 
 
-def resolver_fluxo_declarado(
-    declarados: Optional[Sequence[Dict[str, Any]]],
-    herdado: Optional[Sequence[Dict[str, Any]]] = None,
+def resolve_declared_flow(
+    declared: Optional[Sequence[Dict[str, Any]]],
+    inherited: Optional[Sequence[Dict[str, Any]]] = None,
     *,
     inherit: bool = True,
-    raiz: bool = False,
-) -> FluxoDoEscopo:
+    root: bool = False,
+) -> ScopeFlow:
     """Decide o que UM escopo guarda e executa.
 
-    `herdado` é o `efetivo` do escopo acima. A raiz guarda e executa o que o
+    `inherited` é o `effective` do escopo acima. A raiz guarda e executa o que o
     `all.yaml` declara.
 
     | `inherit` | guarda | executa |
@@ -247,23 +247,23 @@ def resolver_fluxo_declarado(
     | `true` | os declarados | o herdado + os declarados |
     | `false` | os declarados + marcação de todo o herdado | os declarados |
     """
-    declarados = list(declarados or [])
-    herdado = list(herdado or [])
+    declared = list(declared or [])
+    inherited = list(inherited or [])
 
-    if raiz:
-        return FluxoDoEscopo(proprios=declarados, efetivo=declarados)
+    if root:
+        return ScopeFlow(own=declared, effective=declared)
     if inherit:
-        return FluxoDoEscopo(proprios=declarados, efetivo=herdado + declarados)
-    return FluxoDoEscopo(proprios=declarados, efetivo=declarados, quebra=True)
+        return ScopeFlow(own=declared, effective=inherited + declared)
+    return ScopeFlow(own=declared, effective=declared, breaks_inheritance=True)
 
 
-def montar_fluxo_do_escopo(
-    fluxo: FluxoDoEscopo,
-    remotos: Optional[Sequence[Dict[str, Any]]],
+def assemble_scope_flow(
+    flow: ScopeFlow,
+    remote_resources: Optional[Sequence[Dict[str, Any]]],
     *,
-    gerar_idtemp: Optional["Iterator[int]"] = None,
+    generate_idtemp: Optional["Iterator[int]"] = None,
     resolver_content: Optional[Any] = None,
-    herdado: Optional[Sequence[Dict[str, Any]]] = None,
+    inherited: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """Escreve no formato do PUT de revisão o que o escopo guarda.
 
@@ -271,15 +271,15 @@ def montar_fluxo_do_escopo(
     `idTemp`, `status`, `parentType`) e levam o `content` e a ordem do YAML; só
     o `Custom` mantém o `content` do Manager (V-11 §4). O escopo reusa as
     posições que já ocupa, os novos estendem a faixa e o conjunto segue a ordem
-    declarada. Com `quebra`, cada item de `herdado` — o fluxo que o pai executa
-    neste payload (`fluxo_composto`) — ganha uma marcação de remoção.
+    declarada. Com `breaks_inheritance`, cada item de `inherited` — o fluxo que o pai executa
+    neste payload (`composed_flow`) — ganha uma marcação de remoção.
     """
-    gerar_idtemp = gerar_idtemp or preparar_contador_idtemp({})
-    governados, preservados = particionar(remotos)
+    generate_idtemp = generate_idtemp or prepare_idtemp_counter({})
+    governed, preserved = partition(remote_resources)
 
-    if fluxo.heranca_pura:
+    if flow.pure_inheritance:
         # V-22: o não governado continua voltando intacto.
-        return list(preservados)
+        return list(preserved)
 
     # Pool de ocorrências por chave. Um `dict` chave→item perderia repetições, e
     # fluxos reais REPETEM tipo: `/health-check` tem dois `Log` em FIRST, e a
@@ -289,102 +289,102 @@ def montar_fluxo_do_escopo(
     # O tombstone fica FORA do pool: ele tem a mesma chave do item que suprime, e
     # reaproveitá-lo publicaria um `status: REMOVED` no lugar do item vivo. As
     # marcações de remoção são remontadas à parte, a partir do herdado.
-    disponiveis: Dict[Any, List[Dict[str, Any]]] = {}
-    for item in governados:
+    available: Dict[Any, List[Dict[str, Any]]] = {}
+    for item in governed:
         if item.get("status") == "REMOVED":
             continue
-        disponiveis.setdefault(chave_interceptor(item), []).append(item)
+        available.setdefault(interceptor_key(item), []).append(item)
 
-    def consumir(chave: Any) -> Optional[Dict[str, Any]]:
-        fila = disponiveis.get(chave)
-        return fila.pop(0) if fila else None
+    def consume(key: Any) -> Optional[Dict[str, Any]]:
+        queue = available.get(key)
+        return queue.pop(0) if queue else None
 
-    def content_declarado(declarado: Dict[str, Any]) -> Any:
+    def declared_content(declared: Dict[str, Any]) -> Any:
         if resolver_content is not None:
-            return resolver_content(declarado)
-        return declarado.get("content")
+            return resolver_content(declared)
+        return declared.get("content")
 
-    saida: List[Dict[str, Any]] = []
-    posicao = max([i.get("position") or 0 for i in governados] or [0])
+    output: List[Dict[str, Any]] = []
+    position = max([i.get("position") or 0 for i in governed] or [0])
 
-    for declarado in fluxo.proprios:
-        existente = consumir(chave_interceptor(declarado))
-        if existente is not None:
+    for declared in flow.own:
+        existing_item = consume(interceptor_key(declared))
+        if existing_item is not None:
             # Cópia: o remoto pertence a quem chamou e não pode ser alterado.
-            item = copy.deepcopy(existente)
-            if declarado.get("type") != "Custom":
-                item["content"] = _content_do_wire(content_declarado(declarado))
-            saida.append(item)
+            item = copy.deepcopy(existing_item)
+            if declared.get("type") != "Custom":
+                item["content"] = _wire_content(declared_content(declared))
+            output.append(item)
             continue
-        posicao += 1
-        saida.append(
-            construir_item_novo(
-                tipo=str(declarado.get("type")),
-                execution_point=str(declarado.get("executionPoint") or "FIRST"),
-                idtemp=next(gerar_idtemp),
-                position=posicao,
-                content=content_declarado(declarado),
-                custom_interceptor_id=declarado.get("customInterceptorId")
-                or (declarado.get("id") if declarado.get("type") == "Custom" else None),
+        position += 1
+        output.append(
+            build_new_item(
+                kind=str(declared.get("type")),
+                execution_point=str(declared.get("executionPoint") or "FIRST"),
+                idtemp=next(generate_idtemp),
+                position=position,
+                content=declared_content(declared),
+                custom_interceptor_id=declared.get("customInterceptorId")
+                or (declared.get("id") if declared.get("type") == "Custom" else None),
             )
         )
 
-    _ordenar_posicoes_como_declarado(saida)
+    _sort_positions_as_declared(output)
 
-    if fluxo.quebra:
-        saida += _marcar_como_removido(herdado or [], governados, gerar_idtemp)
+    if flow.breaks_inheritance:
+        output += _mark_as_removed(inherited or [], governed, generate_idtemp)
 
     # V-22: o não governado volta intacto, sempre.
-    return saida + list(preservados)
+    return output + list(preserved)
 
 
-def _marcar_como_removido(
-    herdado: Sequence[Dict[str, Any]],
-    remotos: Sequence[Dict[str, Any]],
-    gerar_idtemp: "Iterator[int]",
+def _mark_as_removed(
+    inherited: Sequence[Dict[str, Any]],
+    remote_resources: Sequence[Dict[str, Any]],
+    generate_idtemp: "Iterator[int]",
 ) -> List[Dict[str, Any]]:
     """Uma marcação de remoção para cada item herdado, reaproveitando a que o
     escopo já tiver para o mesmo item. Item que entra no pai neste payload é
     apontado pelo `idTemp`."""
-    existentes = {
-        alvo_da_marcacao(i): i for i in remotos if i.get("status") == "REMOVED"
+    existing = {
+        tombstone_target(i): i for i in remote_resources if i.get("status") == "REMOVED"
     }
-    marcacoes: List[Dict[str, Any]] = []
-    for item in herdado:
-        alvo = identidade(item)
-        if alvo is None:
+    tombstones: List[Dict[str, Any]] = []
+    for item in inherited:
+        target = identity(item)
+        if target is None:
             continue
-        existente = existentes.pop(alvo, None)
-        if existente is not None:
-            marcacao = copy.deepcopy(existente)
+        existing_item = existing.pop(target, None)
+        if existing_item is not None:
+            tombstone = copy.deepcopy(existing_item)
         else:
-            marcacao = construir_item_novo(
-                tipo=str(item.get("type")),
+            tombstone = build_new_item(
+                kind=str(item.get("type")),
                 execution_point=str(item.get("executionPoint") or "FIRST"),
-                idtemp=next(gerar_idtemp),
+                idtemp=next(generate_idtemp),
                 position=item.get("position") or 0,
                 content=item.get("content"),
                 custom_interceptor_id=item.get("customInterceptorId"),
                 parent_type=item.get("parentType") or "REVISION",
             )
-            marcacao["status"] = "REMOVED"
+            tombstone["status"] = "REMOVED"
             if item.get("id") is not None:
-                marcacao["parent"] = {"id": item["id"], "idTemp": item["id"]}
+                tombstone["parent"] = {"id": item["id"], "idTemp": item["id"]}
             else:
-                marcacao["parent"] = {"id": None, "idTemp": item.get("idTemp")}
-        marcacao["position"] = item.get("position")
-        marcacoes.append(marcacao)
-    return marcacoes
+                tombstone["parent"] = {"id": None, "idTemp": item.get("idTemp")}
+        tombstone["position"] = item.get("position")
+        tombstones.append(tombstone)
+    return tombstones
 
 
-def _content_do_wire(content: Any) -> Any:
-    """O wire carrega `content` como STRING JSON (ver `construir_item_novo`)."""
+def _wire_content(content: Any) -> Any:
+    """O wire carrega `content` como STRING JSON (ver `build_new_item`)."""
     if isinstance(content, (dict, list)):
         return json.dumps(content, ensure_ascii=False)
     return content
 
 
-def _ordenar_posicoes_como_declarado(itens: List[Dict[str, Any]]) -> None:
+def _sort_positions_as_declared(items: List[Dict[str, Any]]) -> None:
     """Redistribui, por execution point, as posições do escopo na ordem da lista.
 
     A plataforma executa pela `position`, não pela ordem da lista (W-3, D-8).
@@ -392,8 +392,8 @@ def _ordenar_posicoes_como_declarado(itens: List[Dict[str, Any]]) -> None:
     no YAML, e um item inserido no meio iria para o fim. Os números usados são
     os mesmos que o escopo já ocupa — só a atribuição muda.
     """
-    for ponto in GOVERNED_EXECUTION_POINTS:
-        do_ponto = [i for i in itens if str(i.get("executionPoint") or "").upper() == ponto]
-        numeros = sorted(i.get("position") or 0 for i in do_ponto)
-        for item, numero in zip(do_ponto, numeros):
-            item["position"] = numero
+    for point in GOVERNED_EXECUTION_POINTS:
+        at_point = [i for i in items if str(i.get("executionPoint") or "").upper() == point]
+        numbers = sorted(i.get("position") or 0 for i in at_point)
+        for item, number in zip(at_point, numbers):
+            item["position"] = number

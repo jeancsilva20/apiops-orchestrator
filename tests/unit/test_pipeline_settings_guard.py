@@ -22,8 +22,8 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
 from apiops_orchestrator.application.services import deploy_service, publish_service
 from apiops_orchestrator.domain.models.validate_view import (
     SCHEMA_SEN_VALIDATE_V1,
-    PublicacaoResultado,
-    ReguaSnapshot,
+    PublicationResult,
+    RulerSnapshot,
     ValidateApi,
     ValidateRevision,
     ValidateView,
@@ -41,12 +41,12 @@ PROIBIDOS_FORA_DA_ESTEIRA = (
     "modo local",
 )
 
-FORA_DA_ESTEIRA = SimpleNamespace(modo_pipeline=False)
+FORA_DA_ESTEIRA = SimpleNamespace(pipeline_mode=False)
 
 
-def _sem_proibidos(texto: str) -> None:
-    for nome in PROIBIDOS_FORA_DA_ESTEIRA:
-        assert nome not in texto, nome
+def _sem_proibidos(text: str) -> None:
+    for name in PROIBIDOS_FORA_DA_ESTEIRA:
+        assert name not in text, name
 
 
 # --- help ----------------------------------------------------------------------
@@ -77,7 +77,7 @@ def test_help_nao_nomeia_a_configuracao_da_esteira(argv):
 
 def test_recusa_do_publish_nao_nomeia_a_esteira_por_dentro():
     with pytest.raises(ValidateError) as capturado:
-        publish_service.exigir_esteira(FORA_DA_ESTEIRA)
+        publish_service.require_pipeline(FORA_DA_ESTEIRA)
 
     assert "não roda na sua máquina" in capturado.value.message
     _sem_proibidos(capturado.value.message)
@@ -85,7 +85,7 @@ def test_recusa_do_publish_nao_nomeia_a_esteira_por_dentro():
 
 def test_recusa_do_deploy_nao_nomeia_a_esteira_por_dentro():
     with pytest.raises(DeployError) as capturado:
-        deploy_service.exigir_esteira(FORA_DA_ESTEIRA)
+        deploy_service.require_pipeline(FORA_DA_ESTEIRA)
 
     assert "não roda na sua máquina" in capturado.value.message
     _sem_proibidos(capturado.value.message)
@@ -120,13 +120,13 @@ def _view_local() -> ValidateView:
         execution_mode="local",
         api=ValidateApi(manager_id=417, name="Letras", version="1.0.0", base_path="/letras"),
         revision=ValidateRevision(manager_id=9161, revision_number=1),
-        regua=ReguaSnapshot(template_id=414, revision_number=3, flow_hash="ab", interceptors_count=1),
-        publicacao=PublicacaoResultado(attempted=True, accepted=True, verified=True),
+        ruler=RulerSnapshot(template_id=414, revision_number=3, flow_hash="ab", interceptors_count=1),
+        publication=PublicationResult(attempted=True, accepted=True, verified=True),
     )
 
 
 class _ValidateFake:
-    def validate(self, repo_path, *, confirmar, progresso=None):
+    def validate(self, repo_path, *, confirm, progress=None):
         return _view_local()
 
 
@@ -150,10 +150,10 @@ def test_documento_local_nao_tem_a_chave_do_modo():
 # --- falha de carga da configuração --------------------------------------------
 
 
-def _settings_invalidas(monkeypatch, chaves):
+def _settings_invalidas(monkeypatch, keys):
     erro = pydantic.ValidationError.from_exception_data(
         title="Settings",
-        line_errors=[{"type": "missing", "loc": (c,), "input": {}} for c in chaves],
+        line_errors=[{"type": "missing", "loc": (c,), "input": {}} for c in keys],
     )
     monkeypatch.setattr(main_mod, "Settings", MagicMock(side_effect=erro))
 
@@ -169,40 +169,40 @@ def test_credencial_ausente_e_nomeada(monkeypatch):
     monkeypatch.delenv("EXECUTION_MODE", raising=False)
     _settings_invalidas(monkeypatch, ["SEN_CREDENTIALS"])
 
-    mensagem = _mensagem_de_carga()
+    message = _mensagem_de_carga()
 
-    assert "SEN_CREDENTIALS" in mensagem
-    assert main_mod.OUTRA_CONFIGURACAO_INVALIDA not in mensagem
+    assert "SEN_CREDENTIALS" in message
+    assert main_mod.OTHER_INVALID_CONFIGURATION not in message
 
 
-@pytest.mark.parametrize("modo", ["xyz", "local", ""])
-def test_fora_da_esteira_so_chaves_da_esteira_viram_mensagem_generica(monkeypatch, modo):
-    monkeypatch.setenv("EXECUTION_MODE", modo)
+@pytest.mark.parametrize("mode", ["xyz", "local", ""])
+def test_fora_da_esteira_so_chaves_da_esteira_viram_mensagem_generica(monkeypatch, mode):
+    monkeypatch.setenv("EXECUTION_MODE", mode)
     _settings_invalidas(monkeypatch, ["EXECUTION_MODE", "TARGET_REVISION_NUMBER"])
 
-    mensagem = _mensagem_de_carga()
+    message = _mensagem_de_carga()
 
-    assert mensagem == main_mod.CONFIGURACAO_INVALIDA
-    _sem_proibidos(mensagem)
+    assert message == main_mod.INVALID_CONFIGURATION
+    _sem_proibidos(message)
 
 
 def test_chave_do_dev_e_chave_da_esteira_juntas(monkeypatch):
     monkeypatch.setenv("EXECUTION_MODE", "xyz")
     _settings_invalidas(monkeypatch, ["SEN_CREDENTIALS", "EXECUTION_MODE"])
 
-    mensagem = _mensagem_de_carga()
+    message = _mensagem_de_carga()
 
-    assert "SEN_CREDENTIALS" in mensagem
-    assert mensagem.endswith(main_mod.OUTRA_CONFIGURACAO_INVALIDA)
-    _sem_proibidos(mensagem)
+    assert "SEN_CREDENTIALS" in message
+    assert message.endswith(main_mod.OTHER_INVALID_CONFIGURATION)
+    _sem_proibidos(message)
 
 
 def test_na_esteira_a_variavel_e_nomeada_mas_o_modo_nao(monkeypatch):
     monkeypatch.setenv("EXECUTION_MODE", " Pipeline ")
     _settings_invalidas(monkeypatch, ["TARGET_REVISION_NUMBER", "EXECUTION_MODE"])
 
-    mensagem = _mensagem_de_carga()
+    message = _mensagem_de_carga()
 
-    assert "TARGET_REVISION_NUMBER" in mensagem
-    assert "EXECUTION_MODE" not in mensagem
-    assert mensagem.endswith(main_mod.OUTRA_CONFIGURACAO_INVALIDA)
+    assert "TARGET_REVISION_NUMBER" in message
+    assert "EXECUTION_MODE" not in message
+    assert message.endswith(main_mod.OTHER_INVALID_CONFIGURATION)

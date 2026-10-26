@@ -74,19 +74,19 @@ class Settings(BaseSettings):
 
     @field_validator("EXECUTION_MODE", mode="before")
     @classmethod
-    def _normalizar_modo(cls, valor: Any) -> str:
+    def _normalize_mode(cls, value: Any) -> str:
         """Aceita só `local` e `pipeline`; ausente ou vazio assume `local` (V-11 §4)."""
-        if valor is None or (isinstance(valor, str) and not valor.strip()):
+        if value is None or (isinstance(value, str) and not value.strip()):
             return "local"
-        modo = str(valor).strip().lower()
-        if modo not in ("local", "pipeline"):
+        mode = str(value).strip().lower()
+        if mode not in ("local", "pipeline"):
             raise ValueError(
-                f"EXECUTION_MODE inválido: {valor!r}. Use 'local' ou 'pipeline'."
+                f"EXECUTION_MODE inválido: {value!r}. Use 'local' ou 'pipeline'."
             )
-        return modo
+        return mode
 
     @property
-    def modo_pipeline(self) -> bool:
+    def pipeline_mode(self) -> bool:
         """Verdadeiro quando o orquestrador roda na esteira."""
         return self.EXECUTION_MODE == "pipeline"
 

@@ -22,13 +22,13 @@ from apiops_orchestrator.application.exceptions.manager_failure_messages import 
     INTERNAL_ERROR_MESSAGE,
 )
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
-    ArquivoIlegivelError,
+    UnreadableFileError,
     GovernanceBlockedError,
-    IdentidadeDivergenteError,
-    LayoutInvalidoError,
-    PublicacaoDivergenteError,
-    PublicacaoRecusadaError,
-    RotaDuplicadaError,
+    IdentityMismatchError,
+    InvalidLayoutError,
+    PublicationDivergenceError,
+    PublicationRejectedError,
+    DuplicateRouteError,
     ValidateError,
 )
 from apiops_orchestrator.application.services.manager_failure_translator import (
@@ -37,9 +37,9 @@ from apiops_orchestrator.application.services.manager_failure_translator import 
 )
 from apiops_orchestrator.application.services.repo_importer_service import (
     RepoCanonicalReader,
-    RepositorioCarregado,
+    LoadedRepository,
 )
-from apiops_orchestrator.domain.models.validate_view import PublicacaoResultado
+from apiops_orchestrator.domain.models.validate_view import PublicationResult
 from apiops_orchestrator.domain.ports.local_file_importer_port import (
     LocalFileImporterPort,
 )
@@ -54,14 +54,14 @@ logger = logging.getLogger(__name__)
 
 # Recusas da gravação cujo motivo da plataforma orienta a correção do repositório.
 # As demais (sessão, acesso, tamanho, limite de taxa) usam a mensagem da família.
-_STATUS_COM_MOTIVO = frozenset({400, 409, 412, 422})
+_STATUS_WITH_REASON = frozenset({400, 409, 412, 422})
 
 
 @dataclass(frozen=True)
 class WrittenRevision:
     """Write result and the revision state read back to verify it."""
 
-    result: PublicacaoResultado
+    result: PublicationResult
     published: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -70,12 +70,12 @@ class RevisionWriter:
         self,
         manager_api: ManagerApiPort,
         importer: LocalFileImporterPort,
-        comando: str,
+        command: str,
     ):
         self._manager_api = manager_api
         self._importer = importer
-        # Prefixo dos eventos de log: `validate.publicacao.*`, `publish.publicacao.*`.
-        self._comando = comando
+        # Prefixo dos eventos de log: `validate.publication.*`, `publish.publication.*`.
+        self._command = command
         self._cache_custom: Dict[int, Optional[Dict[str, Any]]] = {}
 
     def resolver_custom(self, custom_id: int) -> Optional[Dict[str, Any]]:
@@ -93,164 +93,164 @@ class RevisionWriter:
 
     # --- antes da escrita ----------------------------------------------------
 
-    def carregar(self, repo_path: Path) -> RepositorioCarregado:
+    def load(self, repo_path: Path) -> LoadedRepository:
         """Carrega o repositório. Sem rede — é o que permite abortar antes."""
-        lido = RepoCanonicalReader(self._importer).carregar(str(repo_path))
-        if lido.faltando:
-            ausente = lido.faltando[0]
-            pista = ""
-            if lido.ignorados:
-                pista = f"Arquivos não reconhecidos na mesma árvore: {', '.join(lido.ignorados[:3])}."
-            raise LayoutInvalidoError(ausente, pista or None)
-        if lido.ilegiveis:
-            caminho, _, motivo = lido.ilegiveis[0].partition(": ")
-            raise ArquivoIlegivelError(caminho, motivo)
-        self._sem_rota_duplicada(lido)
-        return lido
+        loaded = RepoCanonicalReader(self._importer).load(str(repo_path))
+        if loaded.missing:
+            missing = loaded.missing[0]
+            hint = ""
+            if loaded.ignored:
+                hint = f"Arquivos não reconhecidos na mesma árvore: {', '.join(loaded.ignored[:3])}."
+            raise InvalidLayoutError(missing, hint or None)
+        if loaded.unreadable:
+            file_path, _, reason = loaded.unreadable[0].partition(": ")
+            raise UnreadableFileError(file_path, reason)
+        self._ensure_no_duplicate_route(loaded)
+        return loaded
 
     @staticmethod
-    def _sem_rota_duplicada(lido: RepositorioCarregado) -> None:
+    def _ensure_no_duplicate_route(loaded: LoadedRepository) -> None:
         """I-6: cada rota em um só arquivo, mesmo em pastas diferentes.
 
         A montagem liga as pastas aos recursos do Manager pelas rotas (V-12a);
         só funciona se cada rota tiver um único dono no repositório, como já
         tem na plataforma (W-6).
         """
-        arquivos_por_rota: Dict[str, List[str]] = {}
-        for recurso in lido.recursos:
-            for op in recurso.operacoes:
+        files_by_route: Dict[str, List[str]] = {}
+        for resource in loaded.resources:
+            for op in resource.operations:
                 if not op.path:
                     continue
-                rota = f"{str(op.metodo or '').upper()} {op.path}"
-                arquivos_por_rota.setdefault(rota, []).append(op.caminho)
-        repetidas = {r: a for r, a in arquivos_por_rota.items() if len(a) > 1}
-        if repetidas:
-            raise RotaDuplicadaError(repetidas)
+                route = f"{str(op.method or '').upper()} {op.path}"
+                files_by_route.setdefault(route, []).append(op.file_path)
+        repeated = {r: a for r, a in files_by_route.items() if len(a) > 1}
+        if repeated:
+            raise DuplicateRouteError(repeated)
 
     @staticmethod
-    def guarda_identidade(spec: Dict[str, Any], api: Dict[str, Any]) -> None:
+    def guard_identity(spec: Dict[str, Any], api: Dict[str, Any]) -> None:
         """Guarda 1 (D-11): `version` e `basePath` definem a identidade da API.
 
         `spec.id` NÃO aborta — é o endereço do GET, não a identidade funcional.
         """
-        for campo in ("version", "basePath"):
-            no_repo = spec.get(campo)
-            no_manager = api.get(campo)
+        for field_name in ("version", "basePath"):
+            no_repo = spec.get(field_name)
+            no_manager = api.get(field_name)
             if no_repo is not None and str(no_repo) != str(no_manager):
-                raise IdentidadeDivergenteError(
-                    campo, str(no_repo), str(no_manager), spec.get("id")
+                raise IdentityMismatchError(
+                    field_name, str(no_repo), str(no_manager), spec.get("id")
                 )
 
     @staticmethod
-    def revisao_por_numero(api: Dict[str, Any], numero: int) -> Dict[str, Any]:
+    def revision_by_number(api: Dict[str, Any], number: int) -> Dict[str, Any]:
         """Resolve a revisão pelo NÚMERO (V-24). Criar revisão é ato humano."""
-        revisoes = api.get("revisions") or []
-        if not revisoes:
+        revisions = api.get("revisions") or []
+        if not revisions:
             raise ValidateError(
                 f"A API {api.get('id')} não tem nenhuma revisão no Manager. Criar "
                 "revisão é ato humano: crie a revisão pela interface do Manager e "
                 "rode o comando novamente."
             )
-        for revisao in revisoes:
-            if revisao.get("revisionNumber") == numero:
-                return revisao
+        for revision in revisions:
+            if revision.get("revisionNumber") == number:
+                return revision
         raise ValidateError(
-            f"A API não tem revisão de número {numero}. Disponíveis: "
-            + ", ".join(str(r.get("revisionNumber")) for r in revisoes)
+            f"A API não tem revisão de número {number}. Disponíveis: "
+            + ", ".join(str(r.get("revisionNumber")) for r in revisions)
         )
 
     @staticmethod
-    def customs_referenciados(lido: RepositorioCarregado) -> Iterator[Tuple[Any, str]]:
-        """Pares `(id, escopo)` de todo `Custom` que o repositório declara."""
-        def do_bloco(bloco: Dict[str, Any], escopo: str):
-            for chave in ("interceptors_request", "interceptors_response"):
-                for item in bloco.get(chave) or []:
+    def referenced_customs(loaded: LoadedRepository) -> Iterator[Tuple[Any, str]]:
+        """Pares `(id, scope)` de todo `Custom` que o repositório declara."""
+        def from_block(block: Dict[str, Any], scope: str):
+            for key in ("interceptors_request", "interceptors_response"):
+                for item in block.get(key) or []:
                     if item.get("type") == "Custom" and item.get("id") is not None:
-                        yield (item["id"], escopo)
+                        yield (item["id"], scope)
 
-        yield from do_bloco(lido.raiz, "all.yaml")
-        for recurso in lido.recursos:
-            yield from do_bloco(recurso.dados or {}, recurso.caminho)
-            for op in recurso.operacoes:
-                yield from do_bloco(op.dados or {}, op.caminho)
+        yield from from_block(loaded.root, "all.yaml")
+        for resource in loaded.resources:
+            yield from from_block(resource.data or {}, resource.file_path)
+            for op in resource.operations:
+                yield from from_block(op.data or {}, op.file_path)
 
     @staticmethod
-    def texto_de_confirmacao(base: str, avisos: Sequence[str]) -> str:
+    def confirmation_text(base: str, warnings: Sequence[str]) -> str:
         """Pergunta da confirmação local, com o que vai sair do Manager.
 
         Os avisos da montagem dizem o que a gravação apaga. Em modo local eles
         vão AQUI, antes do s/n — exibidos só depois, o dev confirmaria sem saber
         —, e não se repetem no resultado.
         """
-        if not avisos:
+        if not warnings:
             return base
-        return base + "\n\nAtenção:\n\n" + "\n\n".join(avisos)
+        return base + "\n\nAtenção:\n\n" + "\n\n".join(warnings)
 
     # --- escrita -------------------------------------------------------------
 
-    def gravar_e_conferir(
+    def write_and_verify(
         self,
-        revisao: Dict[str, Any],
-        montado: "revision_payload.PayloadMontado",
+        revision: Dict[str, Any],
+        assembled: "revision_payload.AssembledPayload",
         *,
-        etapa: Callable[[str], None] = lambda _: None,
-        rotulo_gravacao: str,
-        alvo_recusa: str,
+        step: Callable[[str], None] = lambda _: None,
+        write_label: str,
+        rejection_target: str,
     ) -> WrittenRevision:
         """E3 + E3.1: um único PUT na revisão e a releitura que o confere.
 
         `workflowId`/`workflowStageId` viajam na cópia profunda do estado remoto
-        que está em `montado.corpo` — nada aqui os reescreve (D-020).
+        que está em `assembled.body` — nada aqui os reescreve (D-020).
         """
-        etapa(rotulo_gravacao)
+        step(write_label)
         try:
-            self._manager_api.update_revision(revisao["id"], montado.corpo)
+            self._manager_api.update_revision(revision["id"], assembled.body)
         except ManagerApiGovernanceBlockedError as exc:
             # O pré-check liberou, mas a plataforma bloqueou: o workflow que
             # valida não é o gravado na revisão (V-23 §3). O faltante não é
             # calculável sem o stage efetivo — degrada para o motivo literal.
             logger.info(
                 "%s.publicacao.governanca_recusou workflow_erro=%s workflow_revisao=%s",
-                self._comando,
+                self._command,
                 exc.workflow_id,
-                revisao.get("workflowId"),
+                revision.get("workflowId"),
             )
             raise GovernanceBlockedError(
                 workflow_id=exc.workflow_id,
                 stage_id=None,
                 missing=[],
                 raw=exc.raw,
-                motivos=exc.messages,
+                reasons=exc.messages,
             ) from exc
         except ManagerApiTransportRejectedError as exc:
-            raise self._recusa_da_gravacao(exc, alvo_recusa) from exc
+            raise self._write_rejection(exc, rejection_target) from exc
 
         # E3.1: HTTP 200 não é prova de sucesso (W-8).
-        etapa("Conferindo o que foi gravado")
-        publicado = self._manager_api.get_revision(revisao["id"]) or {}
-        divergencias = revision_payload.conferir(
-            montado.corpo, publicado, esperado=montado.esperado
+        step("Conferindo o que foi gravado")
+        published = self._manager_api.get_revision(revision["id"]) or {}
+        divergences = revision_payload.verify(
+            assembled.body, published, expected=assembled.expected
         )
-        if divergencias:
-            raise PublicacaoDivergenteError(divergencias)
+        if divergences:
+            raise PublicationDivergenceError(divergences)
 
         return WrittenRevision(
-            result=PublicacaoResultado(attempted=True, accepted=True, verified=True),
-            published=publicado,
+            result=PublicationResult(attempted=True, accepted=True, verified=True),
+            published=published,
         )
 
-    def _recusa_da_gravacao(
-        self, exc: ManagerApiTransportRejectedError, alvo: str
-    ) -> PublicacaoRecusadaError:
+    def _write_rejection(
+        self, exc: ManagerApiTransportRejectedError, target: str
+    ) -> PublicationRejectedError:
         """Recusa do `PUT` fora da governança: motivo da plataforma ou mensagem da família."""
-        motivos = exc.messages if exc.status_code in _STATUS_COM_MOTIVO else []
+        reasons = exc.messages if exc.status_code in _STATUS_WITH_REASON else []
         logger.info(
             "%s.publicacao.recusada status_code=%s motivos=%d",
-            self._comando,
+            self._command,
             exc.status_code,
-            len(motivos),
+            len(reasons),
         )
-        padrao = manager_failure_message(classify_manager_failure(exc))
-        return PublicacaoRecusadaError(
-            padrao or INTERNAL_ERROR_MESSAGE, motivos, alvo=alvo
+        default = manager_failure_message(classify_manager_failure(exc))
+        return PublicationRejectedError(
+            default or INTERNAL_ERROR_MESSAGE, reasons, target=target
         )

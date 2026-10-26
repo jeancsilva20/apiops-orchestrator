@@ -55,12 +55,12 @@ def leitor():
     return RepoCanonicalReader(LocalFileImporterAdapter())
 
 
-def _montar(raiz, arquivos):
-    for caminho, conteudo in arquivos.items():
-        destino = raiz / caminho
-        destino.parent.mkdir(parents=True, exist_ok=True)
-        destino.write_text(textwrap.dedent(conteudo), encoding="utf-8")
-    return raiz
+def _montar(root, files):
+    for file_path, conteudo in files.items():
+        destination = root / file_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(textwrap.dedent(conteudo), encoding="utf-8")
+    return root
 
 
 def test_carrega_um_repositorio_completo(tmp_path, leitor):
@@ -73,14 +73,14 @@ def test_carrega_um_repositorio_completo(tmp_path, leitor):
             "resources/tarefas/get_tarefas.yaml": OPERACAO_YAML,
         },
     )
-    r = leitor.carregar(str(repo))
+    r = leitor.load(str(repo))
 
-    assert r.completo
+    assert r.complete
     assert r.basic_info["spec"]["id"] == 417
-    assert len(r.raiz["interceptors_request"]) == 2
-    assert [rec.slug for rec in r.recursos] == ["tarefas"]
-    assert r.recursos[0].nome == "Tarefas"
-    assert r.total_operacoes == 1
+    assert len(r.root["interceptors_request"]) == 2
+    assert [rec.slug for rec in r.resources] == ["tarefas"]
+    assert r.resources[0].name == "Tarefas"
+    assert r.total_operations == 1
 
 
 def test_metodo_vem_do_nome_e_path_do_conteudo(tmp_path, leitor):
@@ -93,30 +93,30 @@ def test_metodo_vem_do_nome_e_path_do_conteudo(tmp_path, leitor):
             "resources/tarefas/delete_tarefas_{id}.yaml": "path: /tarefas/{id}\n",
         },
     )
-    operacao = leitor.carregar(str(repo)).recursos[0].operacoes[0]
+    operacao = leitor.load(str(repo)).resources[0].operations[0]
 
-    assert operacao.metodo == "DELETE"
+    assert operacao.method == "DELETE"
     assert operacao.path == "/tarefas/{id}"
-    assert "method" not in operacao.dados
+    assert "method" not in operacao.data
 
 
 def test_all_yaml_ausente_impede_a_publicacao(tmp_path, leitor):
     """Publicar sem o escopo raiz apagaria o fluxo da revision (V-18 §2.3)."""
     repo = _montar(tmp_path, {"api-basic-info.yaml": BASIC_INFO})
-    r = leitor.carregar(str(repo))
+    r = leitor.load(str(repo))
 
-    assert not r.completo
-    assert "all.yaml" in r.faltando
+    assert not r.complete
+    assert "all.yaml" in r.missing
 
 
 def test_typo_no_arquivo_base_e_reportado_dos_dois_lados(tmp_path, leitor):
     repo = _montar(
         tmp_path, {"api-basic-info.yaml": BASIC_INFO, "alll.yaml": ALL_YAML}
     )
-    r = leitor.carregar(str(repo))
+    r = leitor.load(str(repo))
 
-    assert "all.yaml" in r.faltando
-    assert "alll.yaml" in r.ignorados
+    assert "all.yaml" in r.missing
+    assert "alll.yaml" in r.ignored
 
 
 def test_arquivo_ilegivel_falha_alto_em_vez_de_virar_vazio(tmp_path, leitor):
@@ -140,11 +140,11 @@ def test_arquivo_ilegivel_falha_alto_em_vez_de_virar_vazio(tmp_path, leitor):
             ),
         },
     )
-    r = leitor.carregar(str(repo))
+    r = leitor.load(str(repo))
 
-    assert not r.completo
-    assert len(r.ilegiveis) == 1
-    assert "post_token.yaml" in r.ilegiveis[0]
+    assert not r.complete
+    assert len(r.unreadable) == 1
+    assert "post_token.yaml" in r.unreadable[0]
 
 
 def test_arquivo_nao_relacionado_nao_derruba_a_leitura(tmp_path, leitor):
@@ -156,15 +156,15 @@ def test_arquivo_nao_relacionado_nao_derruba_a_leitura(tmp_path, leitor):
             "anotacoes.yaml": "rascunho: true\n",
         },
     )
-    r = leitor.carregar(str(repo))
+    r = leitor.load(str(repo))
 
-    assert r.completo
-    assert r.ignorados == ["anotacoes.yaml"]
+    assert r.complete
+    assert r.ignored == ["anotacoes.yaml"]
 
 
 def test_repositorio_vazio_lista_os_dois_arquivos_base(tmp_path, leitor):
-    r = leitor.carregar(str(tmp_path))
-    assert set(r.faltando) == {"api-basic-info.yaml", "all.yaml"}
+    r = leitor.load(str(tmp_path))
+    assert set(r.missing) == {"api-basic-info.yaml", "all.yaml"}
 
 
 def test_leitura_nao_toca_a_rede(tmp_path, leitor, monkeypatch):
@@ -180,7 +180,7 @@ def test_leitura_nao_toca_a_rede(tmp_path, leitor, monkeypatch):
     repo = _montar(
         tmp_path, {"api-basic-info.yaml": BASIC_INFO, "all.yaml": ALL_YAML}
     )
-    assert leitor.carregar(str(repo)).completo
+    assert leitor.load(str(repo)).complete
 
 
 def test_components_file_is_loaded(tmp_path, leitor):
@@ -193,13 +193,13 @@ def test_components_file_is_loaded(tmp_path, leitor):
         },
     )
 
-    loaded = leitor.carregar(str(repo))
+    loaded = leitor.load(str(repo))
 
     assert loaded.components == {"schemas": {"Tarefa": {"type": "object"}}}
-    assert loaded.completo
+    assert loaded.complete
 
 
 def test_missing_components_file_loads_empty(tmp_path, leitor):
     repo = _montar(tmp_path, {"api-basic-info.yaml": BASIC_INFO, "all.yaml": ALL_YAML})
 
-    assert leitor.carregar(str(repo)).components == {}
+    assert leitor.load(str(repo)).components == {}

@@ -20,10 +20,10 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
-    ApiInacessivelError,
+    ApiInaccessibleError,
     GovernanceBlockedError,
-    TagInvalidaError,
-    TemplateNaoConfiguradaError,
+    InvalidTagError,
+    TemplateNotConfiguredError,
 )
 from apiops_orchestrator.application.enums.manager_failure_kind_enum import (
     ManagerFailureKind,
@@ -39,9 +39,9 @@ from apiops_orchestrator.application.services.manager_failure_translator import 
 from apiops_orchestrator.application.services.governance_precheck_service import (
     GovernancePrecheckService,
 )
-from apiops_orchestrator.application.services.regua_service import ReguaService
+from apiops_orchestrator.application.services.ruler_service import RulerService
 from apiops_orchestrator.application.services.repo_importer_service import (
-    RepositorioCarregado,
+    LoadedRepository,
 )
 from apiops_orchestrator.application.services.revision_writer import (
     RevisionWriter,
@@ -51,14 +51,14 @@ from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
 from apiops_orchestrator.domain.models.validate_view import (
     SCHEMA_SEN_VALIDATE_V1,
-    ESCOPO_REPOSITORIO,
-    SEVERIDADE_WARNING,
-    Achado,
-    AtributoExigido,
-    CompletenessResumo,
-    GovernancaResultado,
-    PublicacaoResultado,
-    ReguaSnapshot,
+    REPOSITORY_SCOPE,
+    SEVERITY_WARNING,
+    Finding,
+    RequiredAttribute,
+    CompletenessSummary,
+    GovernanceResult,
+    PublicationResult,
+    RulerSnapshot,
     ValidateApi,
     ValidateRevision,
     ValidateView,
@@ -73,19 +73,19 @@ from apiops_orchestrator.domain.ports.manager_api_port import (
 from apiops_orchestrator.domain.services import revision_payload
 from apiops_orchestrator.domain.services.api_visibility import from_api_payload
 from apiops_orchestrator.domain.services.interceptor_flow import (
-    fluxo_composto,
-    particionar,
+    composed_flow,
+    partition,
 )
-from apiops_orchestrator.domain.services.template_conformance import comparar
+from apiops_orchestrator.domain.services.template_conformance import compare
 
 logger = logging.getLogger(__name__)
 
 GATE_COMPLETENESS = 70.0
-REVISAO_DRAFT = 1
+DRAFT_REVISION = 1
 
 
-def api_visivel(
-    manager_api: ManagerApiPort, acesso: ApiAccessGuard, api_id: Any
+def api_visible(
+    manager_api: ManagerApiPort, access: ApiAccessGuard, api_id: Any
 ) -> Optional[Dict[str, Any]]:
     """`GET /apis/{id}` da API do repositório; `None` se ela não existe ou a sessão não a enxerga."""
     try:
@@ -94,50 +94,50 @@ def api_visivel(
         if classify_manager_failure(exc) is not ManagerFailureKind.NOT_FOUND:
             raise
         return None
-    return api if acesso.can_see(from_api_payload(api)) else None
+    return api if access.can_see(from_api_payload(api)) else None
 
 
-def numero_alvo(settings: Settings) -> int:
+def target_number(settings: Settings) -> int:
     """Número da revisão gravada: o configurado na esteira, sempre a Draft fora dela."""
-    if not settings.modo_pipeline:
-        return REVISAO_DRAFT
-    return settings.TARGET_REVISION_NUMBER or REVISAO_DRAFT
+    if not settings.pipeline_mode:
+        return DRAFT_REVISION
+    return settings.TARGET_REVISION_NUMBER or DRAFT_REVISION
 
 
-def _agora() -> str:
+def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _so_herda(no: Dict[str, Any]) -> bool:
+def _only_inherits(no: Dict[str, Any]) -> bool:
     """Sem lista governada própria, o escopo executa o fluxo do escopo acima."""
-    return not particionar(no.get("interceptors"))[0]
+    return not partition(no.get("interceptors"))[0]
 
 
-def _repository_warnings(warnings: List[str]) -> List[Achado]:
+def _repository_warnings(warnings: List[str]) -> List[Finding]:
     return [
-        Achado(severity=SEVERIDADE_WARNING, scope=ESCOPO_REPOSITORIO, message=warning)
+        Finding(severity=SEVERITY_WARNING, scope=REPOSITORY_SCOPE, message=warning)
         for warning in warnings
     ]
 
 
 @dataclass
-class _DonoDoFluxo:
+class _FlowOwner:
     """Escopo com fluxo próprio, e quantos escopos abaixo dele só o herdam."""
 
-    escopo: str
-    efetivo: List[Dict[str, Any]]
-    recursos: int = 0
-    rotas: int = 0
+    scope: str
+    effective: List[Dict[str, Any]]
+    resources: int = 0
+    routes: int = 0
 
-    def sufixo_dos_herdeiros(self) -> str:
-        partes = []
-        if self.recursos:
-            partes.append(f"{self.recursos} recurso" + ("s" if self.recursos > 1 else ""))
-        if self.rotas:
-            partes.append(f"{self.rotas} rota" + ("s" if self.rotas > 1 else ""))
-        if not partes:
+    def heirs_suffix(self) -> str:
+        parts = []
+        if self.resources:
+            parts.append(f"{self.resources} recurso" + ("s" if self.resources > 1 else ""))
+        if self.routes:
+            parts.append(f"{self.routes} rota" + ("s" if self.routes > 1 else ""))
+        if not parts:
             return ""
-        return f" — vale também para {' e '.join(partes)} que herdam este fluxo"
+        return f" — vale também para {' e '.join(parts)} que herdam este fluxo"
 
 
 class ValidateService:
@@ -151,10 +151,10 @@ class ValidateService:
         self._manager_api = manager_api
         self._importer = importer
         self._settings = settings
-        self._acesso = ApiAccessGuard(session)
-        self._regua = ReguaService(manager_api, settings)
-        self._governanca = GovernancePrecheckService(manager_api)
-        self._escrita = RevisionWriter(manager_api, importer, comando="validate")
+        self._access = ApiAccessGuard(session)
+        self._ruler = RulerService(manager_api, settings)
+        self._governance = GovernancePrecheckService(manager_api)
+        self._writer = RevisionWriter(manager_api, importer, command="validate")
         self._contract = ContractWriter(manager_api, command="validate")
 
     # --- cascata -------------------------------------------------------------
@@ -163,109 +163,109 @@ class ValidateService:
         self,
         repo_path: Path,
         *,
-        confirmar: Callable[[str], bool],
-        progresso: Optional[Callable[[str], None]] = None,
+        confirm: Callable[[str], bool],
+        progress: Optional[Callable[[str], None]] = None,
     ) -> ValidateView:
         """Executa a cascata E1..E4.
 
-        `progresso` é opcional e serve só à apresentação: a borda usa para
+        `progress` é opcional e serve só à apresentação: a borda usa para
         narrar em que etapa a espera está. Como o comando faz cinco chamadas de
         rede em sequência, uma barra sem rótulo deixaria o dev sem saber se o
         que demora é a leitura da template ou a publicação. O serviço não sabe
         o que a borda faz com o texto — pode ser barra, log ou nada.
         """
-        etapa = progresso or (lambda _: None)
+        step = progress or (lambda _: None)
 
         # Configuração primeiro: uma esteira mal configurada não deve gastar
         # autenticação nem rede para descobrir isso.
-        if self._settings.modo_pipeline and self._settings.TEMPLATE_API_ID is None:
-            raise TemplateNaoConfiguradaError()
+        if self._settings.pipeline_mode and self._settings.TEMPLATE_API_ID is None:
+            raise TemplateNotConfiguredError()
 
-        etapa("Lendo o repositório")
-        lido = self._escrita.carregar(repo_path)
-        contract, contract_warnings = self._contract.validate(lido)
-        spec = lido.basic_info.get("spec") or {}
+        step("Lendo o repositório")
+        loaded = self._writer.load(repo_path)
+        contract, contract_warnings = self._contract.validate(loaded)
+        spec = loaded.basic_info.get("spec") or {}
 
-        etapa("Consultando a API no Manager")
-        api = api_visivel(self._manager_api, self._acesso, spec.get("id"))
+        step("Consultando a API no Manager")
+        api = api_visible(self._manager_api, self._access, spec.get("id"))
         if api is None:
-            raise ApiInacessivelError(spec.get("id"))
-        self._escrita.guarda_identidade(spec, api)
+            raise ApiInaccessibleError(spec.get("id"))
+        self._writer.guard_identity(spec, api)
 
-        revisao = self._revisao_alvo(api)
-        draft = self._manager_api.get_revision(revisao["id"]) or {}
+        revision = self._target_revision(api)
+        draft = self._manager_api.get_revision(revision["id"]) or {}
 
         # O payload é montado ANTES da conformidade, de propósito: a E2 precisa
         # avaliar o fluxo que SERÁ publicado, não o que está lá. Avaliar o
         # remoto faria o comando relatar o estado anterior à edição do dev —
         # ele só veria o efeito da própria mudança rodando o comando de novo.
         # A montagem é pura; o payload é o mesmo objeto usado na E3.
-        etapa("Lendo a API-template")
-        regua = self._e2_regua(lido)
+        step("Lendo a API-template")
+        ruler = self._e2_ruler(loaded)
 
-        etapa("Comparando com o padrão")
-        montado = revision_payload.montar(
+        step("Comparando com o padrão")
+        assembled = revision_payload.assemble(
             draft=draft,
-            basic_info=lido.basic_info,
-            raiz=lido.raiz,
-            recursos=lido.recursos,
-            resolver_custom=self._escrita.resolver_custom,
+            basic_info=loaded.basic_info,
+            root=loaded.root,
+            resources=loaded.resources,
+            resolver_custom=self._writer.resolver_custom,
         )
-        achados = self._conformidade(montado.corpo, regua)
+        findings = self._conformance(assembled.body, ruler)
         # Em local, o que vai sair do Manager é mostrado na confirmação, antes
         # da gravação, e não se repete no resultado. Na esteira não há pergunta.
-        if self._settings.modo_pipeline:
-            achados.extend(_repository_warnings(montado.avisos))
-        achados.extend(_repository_warnings(contract_warnings))
+        if self._settings.pipeline_mode:
+            findings.extend(_repository_warnings(assembled.warnings))
+        findings.extend(_repository_warnings(contract_warnings))
 
-        etapa("Verificando a governança")
-        precheck = self._governanca.avaliar(draft, spec.get("apiTags"))
+        step("Verificando a governança")
+        precheck = self._governance.evaluate(draft, spec.get("apiTags"))
         # Os avisos dizem quando o pré-check não pôde antecipar a governança
         # (revisão sem workflow, stage ausente, tag específica): o dev precisa
         # saber que o veredito virá da gravação.
-        achados.extend(
-            Achado(
-                severity=SEVERIDADE_WARNING,
-                scope=ESCOPO_REPOSITORIO,
-                message=f"Governança: {aviso}",
+        findings.extend(
+            Finding(
+                severity=SEVERITY_WARNING,
+                scope=REPOSITORY_SCOPE,
+                message=f"Governança: {warning}",
             )
-            for aviso in precheck.avisos
+            for warning in precheck.warnings
         )
         # Antes do bloqueio de governança: com tag inválida o Manager aceitaria e
         # apagaria todas as `apiTags` — é o erro mais destrutivo, e é do repositório.
-        if precheck.tags_invalidas:
-            raise TagInvalidaError(precheck.tags_invalidas)
-        if precheck.bloqueado:
+        if precheck.invalid_tags:
+            raise InvalidTagError(precheck.invalid_tags)
+        if precheck.blocked:
             raise GovernanceBlockedError(
                 workflow_id=precheck.workflow_id,
                 stage_id=precheck.stage_id,
                 missing=[
                     {"attributeId": f.attribute_id, "name": f.name}
-                    for f in precheck.faltantes
+                    for f in precheck.missing_names
                 ],
             )
 
-        prepared = self._contract.prepare(revisao["id"], contract, etapa)
-        if self._settings.modo_pipeline:
-            achados.extend(_repository_warnings(prepared.warnings))
+        prepared = self._contract.prepare(revision["id"], contract, step)
+        if self._settings.pipeline_mode:
+            findings.extend(_repository_warnings(prepared.warnings))
 
-        written = self._e3_publicar(montado, revisao, confirmar, etapa, prepared)
-        publicacao = written.result if written else PublicacaoResultado(attempted=False)
+        written = self._e3_publish(assembled, revision, confirm, step, prepared)
+        publication = written.result if written else PublicationResult(attempted=False)
 
         if written is not None:
-            achados.extend(
+            findings.extend(
                 _repository_warnings(
-                    self._contract.write(revisao["id"], prepared, written.published, etapa)
+                    self._contract.write(revision["id"], prepared, written.published, step)
                 )
             )
-            etapa("Calculando o quality score")
-            completeness = self._e4_completeness(revisao["id"])
+            step("Calculando o quality score")
+            completeness = self._e4_completeness(revision["id"])
         else:
-            completeness = CompletenessResumo()
+            completeness = CompletenessSummary()
 
         return ValidateView(
             schema=SCHEMA_SEN_VALIDATE_V1,
-            generated_at=_agora(),
+            generated_at=_now(),
             execution_mode=self._settings.EXECUTION_MODE,
             api=ValidateApi(
                 manager_id=spec.get("id"),
@@ -274,44 +274,44 @@ class ValidateService:
                 base_path=api.get("basePath"),
             ),
             revision=ValidateRevision(
-                manager_id=revisao["id"], revision_number=revisao.get("revisionNumber")
+                manager_id=revision["id"], revision_number=revision.get("revisionNumber")
             ),
-            regua=ReguaSnapshot(
-                template_id=regua.template_id,
-                revision_number=regua.revision_number,
-                flow_hash=regua.flow_hash,
-                interceptors_count=regua.total,
+            ruler=RulerSnapshot(
+                template_id=ruler.template_id,
+                revision_number=ruler.revision_number,
+                flow_hash=ruler.flow_hash,
+                interceptors_count=ruler.total,
             ),
-            achados=achados,
-            governanca=GovernancaResultado(
+            findings=findings,
+            governance=GovernanceResult(
                 workflow_id=precheck.workflow_id,
                 stage_id=precheck.stage_id,
                 required=[
-                    AtributoExigido(e.attribute_id, e.name, e.tag_id)
-                    for e in precheck.exigidos
+                    RequiredAttribute(e.attribute_id, e.name, e.tag_id)
+                    for e in precheck.required
                 ],
                 missing=[],
                 blocked=False,
             ),
-            publicacao=publicacao,
+            publication=publication,
             completeness=completeness,
         )
 
     # --- revisão alvo ---------------------------------------------------------
 
-    def _revisao_alvo(self, api: Dict[str, Any]) -> Dict[str, Any]:
+    def _target_revision(self, api: Dict[str, Any]) -> Dict[str, Any]:
         """Resolve a revisão pelo NÚMERO (V-24); fora da esteira é sempre a Draft (V-24 §6)."""
-        return self._escrita.revisao_por_numero(api, numero_alvo(self._settings))
+        return self._writer.revision_by_number(api, target_number(self._settings))
 
     # --- E2 ------------------------------------------------------------------
 
-    def _e2_regua(self, lido: RepositorioCarregado):
+    def _e2_ruler(self, loaded: LoadedRepository):
         """Lê a régua e verifica os `Custom` referenciados — ambos abortam se falham."""
-        regua = self._regua.carregar(lido.basic_info)
-        self._regua.verificar_customs(self._escrita.customs_referenciados(lido))
-        return regua
+        ruler = self._ruler.load(loaded.basic_info)
+        self._ruler.check_customs(self._writer.referenced_customs(loaded))
+        return ruler
 
-    def _conformidade(self, payload: Dict[str, Any], regua) -> List[Achado]:
+    def _conformance(self, payload: Dict[str, Any], ruler) -> List[Finding]:
         """Compara com a régua o fluxo efetivo DO PAYLOAD, escopo a escopo.
 
         Escopo que só herda executa o mesmo fluxo do escopo acima: compará-lo
@@ -319,58 +319,58 @@ class ValidateService:
         no escopo dono do fluxo, dizendo quantos recursos e rotas também o
         executam.
         """
-        raiz = _DonoDoFluxo("raiz da revision", fluxo_composto(payload.get("interceptors")))
-        donos = [raiz]
-        for recurso in payload.get("resources") or []:
-            if _so_herda(recurso):
-                dono_do_recurso = raiz
-                raiz.recursos += 1
+        root = _FlowOwner("raiz da revision", composed_flow(payload.get("interceptors")))
+        owners = [root]
+        for resource in payload.get("resources") or []:
+            if _only_inherits(resource):
+                resource_owner = root
+                root.resources += 1
             else:
-                dono_do_recurso = _DonoDoFluxo(
-                    f"resource {recurso.get('name')}",
-                    fluxo_composto(recurso.get("interceptors"), raiz.efetivo),
+                resource_owner = _FlowOwner(
+                    f"resource {resource.get('name')}",
+                    composed_flow(resource.get("interceptors"), root.effective),
                 )
-                donos.append(dono_do_recurso)
-            for op in recurso.get("operations") or []:
-                if _so_herda(op):
-                    dono_do_recurso.rotas += 1
+                owners.append(resource_owner)
+            for op in resource.get("operations") or []:
+                if _only_inherits(op):
+                    resource_owner.routes += 1
                     continue
-                donos.append(
-                    _DonoDoFluxo(
+                owners.append(
+                    _FlowOwner(
                         f"{str(op.get('method') or '').upper()} {op.get('path')}",
-                        fluxo_composto(op.get("interceptors"), dono_do_recurso.efetivo),
+                        composed_flow(op.get("interceptors"), resource_owner.effective),
                     )
                 )
 
-        achados: List[Achado] = []
-        for dono in donos:
-            sufixo = dono.sufixo_dos_herdeiros()
-            achados.extend(
-                self._traduzir(comparar(dono.efetivo, regua.interceptors, dono.escopo), sufixo)
+        findings: List[Finding] = []
+        for owner in owners:
+            suffix = owner.heirs_suffix()
+            findings.extend(
+                self._translate(compare(owner.effective, ruler.interceptors, owner.scope), suffix)
             )
-        return achados
+        return findings
 
     @staticmethod
-    def _traduzir(achados, sufixo: str = "") -> List[Achado]:
+    def _translate(findings, suffix: str = "") -> List[Finding]:
         return [
-            Achado(
-                severity=a.severidade,
-                scope=a.escopo,
-                message=a.mensagem + sufixo,
-                interceptor_type=a.tipo,
+            Finding(
+                severity=a.severity,
+                scope=a.scope,
+                message=a.message + suffix,
+                interceptor_type=a.kind,
                 custom_interceptor_id=a.custom_interceptor_id,
             )
-            for a in achados
+            for a in findings
         ]
 
     # --- E3 / E3.1 -----------------------------------------------------------
 
-    def _e3_publicar(
+    def _e3_publish(
         self,
-        montado: "revision_payload.PayloadMontado",
-        revisao: Dict[str, Any],
-        confirmar: Callable[[str], bool],
-        etapa: Callable[[str], None] = lambda _: None,
+        assembled: "revision_payload.AssembledPayload",
+        revision: Dict[str, Any],
+        confirm: Callable[[str], bool],
+        step: Callable[[str], None] = lambda _: None,
         prepared: Optional[PreparedContract] = None,
     ) -> Optional[WrittenRevision]:
         # Guarda 2 (D-9): em local a escrita é ato deliberado do dev.
@@ -379,7 +379,7 @@ class ValidateService:
         # versão anterior ("Publicar na revisão N") parecia anunciar uma subida
         # para ambiente com deploy. O que acontece aqui é uma gravação no
         # rascunho, que é o único jeito de obter o veredito da governança.
-        if not self._settings.modo_pipeline:
+        if not self._settings.pipeline_mode:
             # A pergunta em si ("Deseja prosseguir?") fica na borda: o serviço
             # não sabe que a confirmação é um sim/não de terminal.
             contract_line = (
@@ -387,37 +387,37 @@ class ValidateService:
                 if prepared is not None and prepared.write
                 else ""
             )
-            pergunta = self._escrita.texto_de_confirmacao(
+            question = self._writer.confirmation_text(
                 "Para validar a sua API, uma versão de rascunho será gravada no "
-                f"API Manager, na revisão {revisao.get('revisionNumber')} "
-                f"(id {revisao['id']}).\n"
+                f"API Manager, na revisão {revision.get('revisionNumber')} "
+                f"(id {revision['id']}).\n"
                 f"{contract_line}"
                 "Nenhum ambiente recebe deploy, e nada é promovido.",
-                list(montado.avisos) + list(prepared.warnings if prepared else []),
+                list(assembled.warnings) + list(prepared.warnings if prepared else []),
             )
-            if not confirmar(pergunta):
+            if not confirm(question):
                 return None
 
         # E3 + E3.1: UM ÚNICO PUT (W-7) e a conferência — 200 não é prova (W-8).
-        return self._escrita.gravar_e_conferir(
-            revisao,
-            montado,
-            etapa=etapa,
-            rotulo_gravacao="Gravando o rascunho no Manager",
-            alvo_recusa="do rascunho",
+        return self._writer.write_and_verify(
+            revision,
+            assembled,
+            step=step,
+            write_label="Gravando o rascunho no Manager",
+            rejection_target="do rascunho",
         )
 
     # --- E4 ------------------------------------------------------------------
 
-    def _e4_completeness(self, revision_id: int) -> CompletenessResumo:
+    def _e4_completeness(self, revision_id: int) -> CompletenessSummary:
         """Informativa: o gate de 70% trava em DEV+, não na Draft."""
         try:
-            leitura = self._manager_api.get_revision_completeness(revision_id)
+            reading = self._manager_api.get_revision_completeness(revision_id)
         except Exception as exc:  # degrada: não é o veredito do comando
             logger.info("validate.completeness.indisponivel motivo=%s", exc)
-            return CompletenessResumo()
-        return CompletenessResumo(
-            score=getattr(leitura, "score", None),
+            return CompletenessSummary()
+        return CompletenessSummary(
+            score=getattr(reading, "score", None),
             gate_percent=GATE_COMPLETENESS,
-            suggestions=list(getattr(leitura, "suggestions", []) or []),
+            suggestions=list(getattr(reading, "suggestions", []) or []),
         )

@@ -16,7 +16,7 @@ from apiops_orchestrator.application.services.manager_failure_translator import 
     manager_failure_message,
 )
 from apiops_orchestrator.application.services.repo_importer_service import (
-    RepositorioCarregado,
+    LoadedRepository,
 )
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiError,
@@ -60,13 +60,13 @@ class ContractWriter:
         # Log event prefix: `validate.contract.*`, `publish.contract.*`.
         self._command = command
 
-    def validate(self, loaded: RepositorioCarregado) -> Tuple[RepositoryContract, List[str]]:
+    def validate(self, loaded: LoadedRepository) -> Tuple[RepositoryContract, List[str]]:
         """Validates and extracts the repository contract; an error aborts before any write."""
         result = openapi_contract_validator.validate(
             basic_info=loaded.basic_info,
             components=loaded.components,
-            resources=loaded.recursos,
-            ignored=loaded.ignorados,
+            resources=loaded.resources,
+            ignored=loaded.ignored,
         )
         if result.errors:
             logger.info("%s.contract.invalid errors=%d", self._command, len(result.errors))
@@ -74,7 +74,7 @@ class ContractWriter:
         contract = openapi_contract.extract_contract(
             basic_info=loaded.basic_info,
             components=loaded.components,
-            resources=loaded.recursos,
+            resources=loaded.resources,
         )
         return contract, list(result.warnings)
 
@@ -176,7 +176,7 @@ class ContractWriter:
             ]
 
         differences = openapi_contract.verify_contract(document, written)
-        differences += [f"fluxo: {d}" for d in revision_payload.conferir(approved, revision)]
+        differences += [f"fluxo: {d}" for d in revision_payload.verify(approved, revision)]
         for key in ("workflowId", "workflowStageId"):
             if approved.get(key) != revision.get(key):
                 differences.append(

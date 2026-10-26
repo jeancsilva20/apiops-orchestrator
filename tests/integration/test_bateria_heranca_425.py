@@ -26,7 +26,7 @@ from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_import
 )
 from apiops_orchestrator.application.services.validate_service import ValidateService
 from apiops_orchestrator.domain.services import repo_layout as layout
-from apiops_orchestrator.domain.services.repo_materializer import materializar
+from apiops_orchestrator.domain.services.repo_materializer import materialize
 
 API_ID = 425
 AMBIENTE = 7
@@ -71,82 +71,82 @@ def lab(manager, tmp_path_factory):
     draft_id = next(r["id"] for r in api["revisions"] if r["revisionNumber"] == 1)
     backup = manager.get_revision(draft_id)
     swagger = manager._request("GET", f"revisions/{draft_id}/swagger")
-    destino = tmp_path_factory.mktemp("backup") / "backup-425.json"
-    destino.write_text(
+    destination = tmp_path_factory.mktemp("backup") / "backup-425.json"
+    destination.write_text(
         json.dumps({"revision": backup, "swagger": swagger}, indent=1, ensure_ascii=False),
         encoding="utf-8",
     )
-    print(f"\n[arnês] backup em {destino}")
+    print(f"\n[arnês] backup em {destination}")
     yield {"api": api, "draft_id": draft_id, "backup": backup}
     manager._request("PUT", f"revisions/{draft_id}/swagger", json=copy.deepcopy(swagger))
 
 
 @pytest.fixture(scope="module")
-def validar(manager):
+def validate(manager):
     from apiops_orchestrator.main import _load_settings
 
     settings = _load_settings()
-    assert not settings.modo_pipeline, "a bateria roda em modo local, na Draft"
+    assert not settings.pipeline_mode, "a bateria roda em modo local, na Draft"
     servico = ValidateService(
         manager_api=manager, importer=LocalFileImporterAdapter(), settings=settings
     )
 
-    def _validar(caminho):
+    def _validar(file_path):
         perguntas = []
-        view = servico.validate(caminho, confirmar=lambda texto: perguntas.append(texto) or True)
+        view = servico.validate(file_path, confirm=lambda text: perguntas.append(text) or True)
         return view, "\n".join(perguntas)
 
     return _validar
 
 
-def _header(rotulo):
+def _header(label):
     return {
         "type": "Header",
         "content": {
             "headerList": [
-                {"name": f"X-Lab-{rotulo}", "tokenType": "CUSTOM", "attribute": rotulo},
-                {"name": "X-Lab-Ordem", "tokenType": "CUSTOM", "attribute": rotulo},
+                {"name": f"X-Lab-{label}", "tokenType": "CUSTOM", "attribute": label},
+                {"name": "X-Lab-Ordem", "tokenType": "CUSTOM", "attribute": label},
             ],
             "ignoreBodyValidationMultiPartFormData": False,
         },
     }
 
 
-def _bloco(inherit, rotulos):
-    bloco = {} if inherit is None else {"inherit": inherit}
-    if rotulos:
-        bloco["interceptors_request"] = [_header(r) for r in rotulos]
-    return bloco
+def _block(inherit, labels):
+    block = {} if inherit is None else {"inherit": inherit}
+    if labels:
+        block["interceptors_request"] = [_header(r) for r in labels]
+    return block
 
 
-def _escrever(caminho, dados):
-    caminho.parent.mkdir(parents=True, exist_ok=True)
-    caminho.write_text(
-        yaml.safe_dump(dados, allow_unicode=True, sort_keys=False), encoding="utf-8"
+def _write(file_path, data):
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    file_path.write_text(
+        yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8"
     )
 
 
-def _repo(tmp_path, lab, raiz, recursos):
-    """Repositório inteiro: `raiz` são rótulos; `recursos` é
-    `{pasta: (nome, inherit, rótulos, {path: (inherit, rótulos)})}`."""
+def _repo(tmp_path, lab, root, resources):
+    """Repositório inteiro: `root` são rótulos; `resources` é
+    `{folder: (name, inherit, rótulos, {path: (inherit, rótulos)})}`."""
     basic_info = next(
-        a for a in materializar(lab["api"], lab["backup"]).arquivos
-        if a.caminho == layout.ARQUIVO_BASIC_INFO
+        a for a in materialize(lab["api"], lab["backup"]).files
+        if a.file_path == layout.BASIC_INFO_FILE
     )
-    (tmp_path / layout.ARQUIVO_BASIC_INFO).write_text(
-        basic_info.texto.replace("template: ''", f"template: {REGUA}"), encoding="utf-8"
+    (tmp_path / layout.BASIC_INFO_FILE).write_text(
+        basic_info.text.replace("template: ''", f"template: {REGUA}"), encoding="utf-8"
     )
-    _escrever(tmp_path / layout.ARQUIVO_RAIZ, {"destination": {"url": DESTINO}, **_bloco(None, raiz)})
-    for pasta, (nome, inherit, rotulos, rotas) in recursos.items():
-        base = tmp_path / layout.PASTA_RECURSOS / pasta
-        _escrever(base / layout.ARQUIVO_RECURSO, {"name": nome, **_bloco(inherit, rotulos)})
-        for path, (inherit_rota, rotulos_rota) in rotas.items():
-            arquivo = base / f"get{path.replace('/', '_')}.yaml"
-            _escrever(
-                arquivo,
+    _write(tmp_path / layout.ROOT_FILE, {"destination": {"url": DESTINO}, **_block(None, root)})
+    for folder, (name, inherit, labels, routes) in resources.items():
+        base = tmp_path / layout.RESOURCES_FOLDER / folder
+        _write(base / layout.RESOURCE_FILE, {"name": name, **_block(inherit, labels)})
+        for path, (inherit_rota, rotulos_rota) in routes.items():
+            file = base / f"get{path.replace('/', '_')}.yaml"
+            _write(
+                file,
                 {
                     "path": path,
-                    **_bloco(inherit_rota, rotulos_rota),
+                    **_block(inherit_rota, rotulos_rota),
                     "responses": {"200": {"description": "OK"}},
                 },
             )
@@ -159,31 +159,31 @@ def _repo(tmp_path, lab, raiz, recursos):
 def _chamadas(manager, inicio, path):
     """Chamadas da rota desde `inicio`, pelo trace do Manager (sem método no port)."""
     fim = datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=5)
-    resposta = manager._request("GET", "calls", params={
+    response = manager._request("GET", "calls", params={
         "actualPage": 1, "pageSize": 5, "apiId": API_ID, "uri": path,
         "beginDate": inicio.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
         "endDate": fim.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
         "environmentId": "", "httpResponse": -2, "operationId": "", "regex": "",
         "resourceId": "", "revisionId": "",
     })
-    return [c for c in resposta.get("calls") or [] if (c.get("uri") or "").endswith(path)]
+    return [c for c in response.get("calls") or [] if (c.get("uri") or "").endswith(path)]
 
 
 def _execucao(manager, chamada):
     """Rótulos executados, na ordem, e quantas execuções de interceptor houve."""
-    detalhe = manager._request(
+    detail = manager._request(
         "GET", f"calls/{chamada['id']}", params={"yearMonth": chamada["yearMonth"]}
     )
-    trace = json.loads(detalhe.get("trace") or "[]")
+    trace = json.loads(detail.get("trace") or "[]")
     execucoes = sum(
         1 for t in trace
         if t["message"].startswith("Executing ") and t["message"].endswith(" Interceptor")
     )
     ordem = []
-    for linha in (detalhe.get("requestHeaders") or "").splitlines():
-        chave, _, valor = linha.partition(": ")
-        if chave.startswith("x-lab-") and chave != "x-lab-ordem" and valor not in ordem:
-            ordem.append(valor)
+    for line in (detail.get("requestHeaders") or "").splitlines():
+        key, _, value = line.partition(": ")
+        if key.startswith("x-lab-") and key != "x-lab-ordem" and value not in ordem:
+            ordem.append(value)
     return ordem, execucoes
 
 
@@ -203,18 +203,18 @@ def _medir(manager, paths):
     return resultado
 
 
-def _deploy_e_conferir(manager, lab, esperado):
+def _deploy_e_conferir(manager, lab, expected):
     """Deploy da Draft e medição até o gateway refletir a revisão publicada."""
     manager.deploy_revision(AMBIENTE, lab["draft_id"])
-    obtido = {}
+    actual = {}
     for _ in range(4):
         time.sleep(20)
-        obtido = _medir(manager, list(esperado))
-        if all(obtido[p] == (esperado[p], len(esperado[p])) for p in esperado):
+        actual = _medir(manager, list(expected))
+        if all(actual[p] == (expected[p], len(expected[p])) for p in expected):
             return
     divergentes = {
-        p: {"esperado": esperado[p], "obtido": obtido[p]}
-        for p in esperado if obtido[p] != (esperado[p], len(esperado[p]))
+        p: {"esperado": expected[p], "obtido": actual[p]}
+        for p in expected if actual[p] != (expected[p], len(expected[p]))
     }
     pytest.fail(f"execução diferente da esperada: {divergentes}")
 
@@ -222,7 +222,7 @@ def _deploy_e_conferir(manager, lab, esperado):
 # --------------------------------------------------------------------- fases
 
 
-def test_1_heranca_nos_tres_niveis(tmp_path, lab, validar, manager):
+def test_1_heranca_nos_tres_niveis(tmp_path, lab, validate, manager):
     """Raiz R1, R2. Recurso que herda, que quebra e que acrescenta, com rotas que
     herdam, acrescentam, quebram e quebram sem itens."""
     repo = _repo(tmp_path, lab, ["R1", "R2"], {
@@ -242,8 +242,8 @@ def test_1_heranca_nos_tres_niveis(tmp_path, lab, validar, manager):
         }),
     })
 
-    view, _ = validar(repo)
-    assert view.publicacao.verified, view.publicacao.divergences
+    view, _ = validate(repo)
+    assert view.publication.verified, view.publication.divergences
 
     _deploy_e_conferir(manager, lab, {
         "/s1-pura": ["R1", "R2"],
@@ -257,7 +257,7 @@ def test_1_heranca_nos_tres_niveis(tmp_path, lab, validar, manager):
     })
 
 
-def test_2_item_novo_no_pai_na_mesma_publicacao(tmp_path, lab, validar, manager):
+def test_2_item_novo_no_pai_na_mesma_publicacao(tmp_path, lab, validate, manager):
     """R3 entra na raiz e C5 no recurso que quebra: as rotas que quebram já não
     os executam nesta publicação (marcação por `idTemp`)."""
     repo = _repo(tmp_path, lab, ["R1", "R2", "R3"], {
@@ -277,9 +277,9 @@ def test_2_item_novo_no_pai_na_mesma_publicacao(tmp_path, lab, validar, manager)
         }),
     })
 
-    view, pergunta = validar(repo)
-    assert view.publicacao.verified, view.publicacao.divergences
-    assert "rode o comando de novo" not in pergunta.lower()
+    view, question = validate(repo)
+    assert view.publication.verified, view.publication.divergences
+    assert "rode o comando de novo" not in question.lower()
 
     _deploy_e_conferir(manager, lab, {
         "/s1-pura": ["R1", "R2", "R3"],
@@ -292,7 +292,7 @@ def test_2_item_novo_no_pai_na_mesma_publicacao(tmp_path, lab, validar, manager)
     })
 
 
-def test_3_volta_a_herdar_item_sai_do_pai_e_corte_avisado(tmp_path, lab, validar, manager):
+def test_3_volta_a_herdar_item_sai_do_pai_e_corte_avisado(tmp_path, lab, validate, manager):
     """R2 sai da raiz; `s5` volta a herdar; `s1` passa a quebrar e o comando
     avisa o herdado que ela deixa de executar (só R1 e R3: R2 saiu do pai)."""
     repo = _repo(tmp_path, lab, ["R1", "R3"], {
@@ -312,11 +312,11 @@ def test_3_volta_a_herdar_item_sai_do_pai_e_corte_avisado(tmp_path, lab, validar
         }),
     })
 
-    view, pergunta = validar(repo)
-    assert view.publicacao.verified, view.publicacao.divergences
+    view, question = validate(repo)
+    assert view.publication.verified, view.publication.divergences
     assert "GET /s1-pura: o arquivo declara `inherit: false`, e ao publicar este ponto " \
-           "deixa de executar 2 interceptor(es)" in pergunta
-    assert pergunta.count("deixa de executar") == 1
+           "deixa de executar 2 interceptor(es)" in question
+    assert question.count("deixa de executar") == 1
 
     _deploy_e_conferir(manager, lab, {
         "/s1-pura": ["S1"],

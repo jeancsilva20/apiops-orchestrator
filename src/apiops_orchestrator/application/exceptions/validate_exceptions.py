@@ -33,7 +33,7 @@ class ValidateError(Exception):
         super().__init__(self.message)
 
 
-class ApiInacessivelError(ValidateError):
+class ApiInaccessibleError(ValidateError):
     """A sessão não enxerga a API do repositório (api-visibility).
 
     Responde igual à API inexistente, sem dizer qual dos dois é o caso.
@@ -46,7 +46,7 @@ class ApiInacessivelError(ValidateError):
         self.api_id = api_id
 
 
-class IdentidadeDivergenteError(ValidateError):
+class IdentityMismatchError(ValidateError):
     """`version` ou `basePath` do repositório divergem do Manager (D-11).
 
     Os dois definem a identidade funcional da API: divergência significa que o
@@ -54,22 +54,22 @@ class IdentidadeDivergenteError(ValidateError):
     de qualquer escrita.
     """
 
-    def __init__(self, campo: str, no_repo: str, no_manager: str, api_id: int):
+    def __init__(self, field_name: str, no_repo: str, no_manager: str, api_id: int):
         super().__init__(
             "Este repositório parece apontar para outra API. O "
-            f"`{campo}` declarado aqui é {no_repo!r}, mas a API {api_id} no Manager "
+            f"`{field_name}` declarado aqui é {no_repo!r}, mas a API {api_id} no Manager "
             f"tem {no_manager!r} — e esse campo não muda depois que a API é criada.\n\n"
             "Confira o `id` em `api-basic-info.yaml`. Se o id estiver certo, só um "
             "administrador do Manager pode acertar o valor divergente.\n\n"
             "Nada foi publicado."
         )
-        self.campo = campo
+        self.field_name = field_name
         self.no_repo = no_repo
         self.no_manager = no_manager
         self.api_id = api_id
 
 
-class TemplateAusenteError(ValidateError):
+class MissingTemplateError(ValidateError):
     """`spec.template` vazio (D-12).
 
     A D-12 revogou o "vazio permitido" da V-11 §1: sem template não há régua, e
@@ -85,7 +85,7 @@ class TemplateAusenteError(ValidateError):
         )
 
 
-class LayoutInvalidoError(ValidateError):
+class InvalidLayoutError(ValidateError):
     """Arquivo base ausente ou estrutura não reconhecida (V-18 §2.3).
 
     `all.yaml` e `resource.yaml` são obrigatórios **pelo nome exato**. A ausência
@@ -93,18 +93,18 @@ class LayoutInvalidoError(ValidateError):
     sem ela não preserva nada — apaga o fluxo da revision inteira.
     """
 
-    def __init__(self, caminho_esperado: str, detalhe: Optional[str] = None):
-        complemento = f" {detalhe}" if detalhe else ""
+    def __init__(self, expected_path: str, detail: Optional[str] = None):
+        details = f" {detail}" if detail else ""
         super().__init__(
-            f"Não encontrei o arquivo `{caminho_esperado}`, que é "
-            f"obrigatório.{complemento}\n\n"
+            f"Não encontrei o arquivo `{expected_path}`, que é "
+            f"obrigatório.{details}\n\n"
             "O nome precisa ser exatamente esse, inclusive maiúsculas e minúsculas. "
             "O comando parou antes de acessar o Manager."
         )
-        self.caminho_esperado = caminho_esperado
+        self.expected_path = expected_path
 
 
-class TemplateNaoConfiguradaError(ValidateError):
+class TemplateNotConfiguredError(ValidateError):
     """Na esteira, `TEMPLATE_API_ID` não está definida.
 
     É falha de configuração, não de rede: a esteira não deixa o repositório
@@ -121,24 +121,24 @@ class TemplateNaoConfiguradaError(ValidateError):
         )
 
 
-class ArquivoIlegivelError(ValidateError):
+class UnreadableFileError(ValidateError):
     """Um arquivo do repositório existe, mas não pôde ser lido.
 
     Diferente do arquivo ausente: o dev precisa saber o que corrigir dentro dele
     — linha e coluna do erro de sintaxe —, não que ele "não foi encontrado".
     """
 
-    def __init__(self, caminho: str, motivo: str):
+    def __init__(self, file_path: str, reason: str):
         super().__init__(
-            f"O arquivo `{caminho}` não pôde ser lido: {motivo}.\n\n"
+            f"O arquivo `{file_path}` não pôde ser lido: {reason}.\n\n"
             "Corrija o arquivo e rode o comando novamente. O comando parou antes de "
             "acessar o Manager."
         )
-        self.caminho = caminho
-        self.motivo = motivo
+        self.file_path = file_path
+        self.reason = reason
 
 
-class RotaDuplicadaError(ValidateError):
+class DuplicateRouteError(ValidateError):
     """Duas operações do repositório declaram a mesma rota (I-6).
 
     A rota `(método, path)` é a identidade da operação, e é por ela que cada
@@ -146,27 +146,27 @@ class RotaDuplicadaError(ValidateError):
     ambígua — por isso aborta na E1, antes de rede.
     """
 
-    def __init__(self, repetidas: Dict[str, List[str]]):
-        linhas: List[str] = []
-        for rota, arquivos in repetidas.items():
-            linhas.append(f"`{rota}`, declarada em:")
-            linhas.extend(f"  - {arquivo}" for arquivo in arquivos)
-        abertura = (
+    def __init__(self, repeated: Dict[str, List[str]]):
+        lines: List[str] = []
+        for route, files in repeated.items():
+            lines.append(f"`{route}`, declarada em:")
+            lines.extend(f"  - {file}" for file in files)
+        opening = (
             "A rota abaixo está declarada em mais de um arquivo:"
-            if len(repetidas) == 1
+            if len(repeated) == 1
             else "As rotas abaixo estão declaradas em mais de um arquivo:"
         )
         super().__init__(
-            abertura
+            opening
             + "\n\n"
-            + "\n".join(linhas)
+            + "\n".join(lines)
             + "\n\nCada rota pertence a um único recurso. Mantenha um só arquivo para "
             "cada rota. O comando parou antes de acessar o Manager."
         )
-        self.repetidas = repetidas
+        self.repeated = repeated
 
 
-class CustomInexistenteError(ValidateError):
+class CustomNotFoundError(ValidateError):
     """O repositório referencia um `Custom` que não existe no tenant (W-2).
 
     O catálogo é autoridade sobre existência: `404` significa ausente. O conteúdo
@@ -174,18 +174,18 @@ class CustomInexistenteError(ValidateError):
     referência que um administrador apagou de propósito.
     """
 
-    def __init__(self, custom_id: int, escopo: str):
+    def __init__(self, custom_id: int, scope: str):
         super().__init__(
-            f"O interceptor Custom de id {custom_id}, declarado em {escopo}, não "
+            f"O interceptor Custom de id {custom_id}, declarado em {scope}, não "
             "existe neste ambiente.\n\n"
             "Confira o id na lista de interceptors customizados do Manager.\n\n"
             "Nada foi publicado."
         )
         self.custom_id = custom_id
-        self.escopo = escopo
+        self.scope = scope
 
 
-class ReguaInalcancavelError(ValidateError):
+class RulerUnreachableError(ValidateError):
     """O `GET` da API-régua falhou (P-2).
 
     Aborta nos dois modos de execução: é falha técnica, não divergência de padrão.
@@ -198,13 +198,13 @@ class ReguaInalcancavelError(ValidateError):
         self,
         template_id: Any,
         status_code: Optional[int] = None,
-        mensagem_padrao: Optional[str] = None,
+        default_message: Optional[str] = None,
     ):
-        """`mensagem_padrao` é o texto da família da falha (classificação
+        """`default_message` é o texto da família da falha (classificação
         compartilhada do Manager); sem ele, a causa assume Manager indisponível.
         """
         if status_code == 404:
-            causa = (
+            cause = (
                 "Essa API não existe neste Manager. Confira o id em "
                 "`spec.template`, no `api-basic-info.yaml`."
             )
@@ -212,16 +212,16 @@ class ReguaInalcancavelError(ValidateError):
             # Sessão expirada vem primeiro de propósito: é de longe a causa mais
             # comum e a única que o dev resolve sozinho. A plataforma devolve 403
             # para os dois casos, então a ordem é a única ajuda que podemos dar.
-            causa = (
+            cause = (
                 "O acesso foi negado. Normalmente é sessão expirada: rode "
                 "`sen login` e tente de novo. Se continuar negado, a template pode "
                 "pertencer a outro ambiente."
             )
         else:
-            causa = mensagem_padrao or UNAVAILABLE_MESSAGE
+            cause = default_message or UNAVAILABLE_MESSAGE
         super().__init__(
             f"Não consegui ler a API-template {template_id}, e sem ela não há "
-            f"padrão para comparar. {causa}\n\n"
+            f"padrão para comparar. {cause}\n\n"
             "Nada foi publicado."
         )
         self.template_id = template_id
@@ -242,7 +242,7 @@ class InvalidContractError(ValidateError):
         self.errors = list(errors)
 
 
-class PublicacaoDivergenteError(ValidateError):
+class PublicationDivergenceError(ValidateError):
     """A plataforma aceitou (200) mas o estado publicado não corresponde ao enviado (W-8).
 
     HTTP 200 não é prova de sucesso: foram observadas três perdas silenciosas
@@ -250,33 +250,33 @@ class PublicacaoDivergenteError(ValidateError):
     é falha.
     """
 
-    def __init__(self, divergencias: List[str]):
+    def __init__(self, divergences: List[str]):
         # Lista em linhas, não `; `: com três ou mais divergências a frase única
         # vira um parágrafo corrido em que nada se distingue.
-        listadas = (
-            "\n".join(f"  - {d}" for d in divergencias)
-            if divergencias
+        listed = (
+            "\n".join(f"  - {d}" for d in divergences)
+            if divergences
             else "  - diferença não detalhada"
         )
         super().__init__(
             "O Manager aceitou a publicação, mas o que ficou gravado não é o que "
-            f"foi enviado:\n\n{listadas}\n\n"
+            f"foi enviado:\n\n{listed}\n\n"
             "Parte da alteração se perdeu no caminho. Confira o estado atual da "
             "revisão no Manager antes de publicar de novo."
         )
-        self.divergencias = list(divergencias)
+        self.divergences = list(divergences)
 
 
 class GovernanceBlockedError(ValidateError):
     """Bloqueio do Adaptive Governance (V-23).
 
     Canal e código de saída próprios, para a esteira ramificar sem ler texto. O
-    atributo faltante é **calculado** — `exigidos(mustHave) − presentes` —, nunca
+    atributo faltante é **calculado** — `required(mustHave) − present` —, nunca
     extraído de `messages[]`, que é texto livre.
 
     Quando o bloqueio só aparece no `PUT` (o workflow que valida não é o gravado
     na revisão — V-23 §3), o faltante não é calculável e a saída degrada para o
-    repasse dos `motivos` da plataforma, literais: evidência, nunca fonte
+    repasse dos `reasons` da plataforma, literais: evidência, nunca fonte
     (V-23 §5, item 3 — "nunca engole o erro").
     """
 
@@ -288,46 +288,46 @@ class GovernanceBlockedError(ValidateError):
         stage_id: Optional[int],
         missing: List[Dict[str, Any]],
         raw: Optional[Dict[str, Any]] = None,
-        motivos: Optional[List[str]] = None,
+        reasons: Optional[List[str]] = None,
     ):
-        nomes = [str(m.get("name") or m.get("attributeId")) for m in missing]
-        motivos = [m for m in (motivos or []) if m]
+        names = [str(m.get("name") or m.get("attributeId")) for m in missing]
+        reasons = [m for m in (reasons or []) if m]
         # Cada item na sua linha: numa lista separada por vírgula, o nome
         # quebra no meio quando o terminal é estreito ("My \nnew") e fica
         # ilegível — justamente o dado que o dev precisa copiar.
-        if nomes or not motivos:
-            faltantes = (
-                "\n".join(f"  - {nome}" for nome in nomes)
-                if nomes
+        if names or not reasons:
+            missing_names = (
+                "\n".join(f"  - {name}" for name in names)
+                if names
                 else "  - atributo não identificado"
             )
-            corpo = (
+            body = (
                 "A governança do Manager não liberou a publicação. A API precisa ter "
-                f"estes atributos antes de subir:\n\n{faltantes}\n\n"
+                f"estes atributos antes de subir:\n\n{missing_names}\n\n"
                 "Adicione em `apiTags`, no `api-basic-info.yaml`, e rode o comando "
                 "novamente."
             )
         else:
             # O motivo é texto livre e não é só atributo faltante (completude,
             # por exemplo): não presumir o que o dev deve ajustar.
-            listados = "\n".join(f"  - {motivo}" for motivo in motivos)
-            corpo = (
+            listed = "\n".join(f"  - {reason}" for reason in reasons)
+            body = (
                 "A governança do Manager não liberou a publicação. Motivo informado "
-                f"pela plataforma:\n\n{listados}\n\n"
+                f"pela plataforma:\n\n{listed}\n\n"
                 "Corrija conforme o motivo acima e rode o comando novamente."
             )
-        onde = f"workflow {workflow_id}" + (
+        where = f"workflow {workflow_id}" + (
             f", stage {stage_id}" if stage_id is not None else ""
         )
-        super().__init__(f"{corpo}\n\nNada foi publicado. ({onde})")
+        super().__init__(f"{body}\n\nNada foi publicado. ({where})")
         self.workflow_id = workflow_id
         self.stage_id = stage_id
         self.missing = list(missing)
         self.raw = raw or {}
-        self.motivos = motivos
+        self.reasons = reasons
 
 
-class TagInvalidaError(ValidateError):
+class InvalidTagError(ValidateError):
     """Tag declarada em `apiTags` que não existe na lista do atributo (pré-check).
 
     Aborta **antes** da escrita: o Manager aceita a gravação com 200 e apaga
@@ -335,22 +335,22 @@ class TagInvalidaError(ValidateError):
     conteúdo do repositório, não bloqueio de governança — por isso `exit 1`.
     """
 
-    def __init__(self, invalidas: List[Any]):
-        listadas = "\n".join(
+    def __init__(self, invalid: List[Any]):
+        listed = "\n".join(
             f"  - `{i.tag}` em `{i.attribute_name}` "
-            f"(tags possíveis: {', '.join(i.validas)})"
-            for i in invalidas
+            f"(tags possíveis: {', '.join(i.valid)})"
+            for i in invalid
         )
         super().__init__(
             "Estas tags não existem no atributo em que foram declaradas, em "
-            f"`apiTags`:\n\n{listadas}\n\n"
+            f"`apiTags`:\n\n{listed}\n\n"
             "Corrija o `api-basic-info.yaml` e rode o comando de novo.\n\n"
             "Nada foi publicado."
         )
-        self.invalidas = list(invalidas)
+        self.invalid = list(invalid)
 
 
-class PublicacaoRecusadaError(ValidateError):
+class PublicationRejectedError(ValidateError):
     """O Manager recusou a gravação do rascunho (`PUT` da revisão), fora da governança.
 
     É erro de subida: o motivo que a plataforma deu é o que o dev precisa para
@@ -360,20 +360,20 @@ class PublicacaoRecusadaError(ValidateError):
 
     def __init__(
         self,
-        mensagem_padrao: str,
-        motivos: Optional[List[str]] = None,
-        alvo: str = "do rascunho",
+        default_message: str,
+        reasons: Optional[List[str]] = None,
+        target: str = "do rascunho",
     ):
-        # `alvo` nomeia o que foi gravado: o `validate` grava o rascunho; o
+        # `target` nomeia o que foi gravado: o `validate` grava o rascunho; o
         # `publish`, a revisão de um ambiente.
-        motivos = [m for m in (motivos or []) if m]
-        if motivos:
-            listados = "\n".join(f"  - {motivo}" for motivo in motivos)
-            corpo = (
-                f"O Manager recusou a gravação {alvo}:\n\n{listados}\n\n"
+        reasons = [m for m in (reasons or []) if m]
+        if reasons:
+            listed = "\n".join(f"  - {reason}" for reason in reasons)
+            body = (
+                f"O Manager recusou a gravação {target}:\n\n{listed}\n\n"
                 "Corrija o repositório conforme o motivo acima e rode o comando de novo."
             )
         else:
-            corpo = mensagem_padrao
-        super().__init__(f"{corpo}\n\nNada foi publicado.")
-        self.motivos = motivos
+            body = default_message
+        super().__init__(f"{body}\n\nNada foi publicado.")
+        self.reasons = reasons

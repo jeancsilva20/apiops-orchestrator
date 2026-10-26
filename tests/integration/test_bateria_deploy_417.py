@@ -45,14 +45,14 @@ def manager():
     )
 
 
-def _ativo(api, ambiente):
-    ativos = [
+def _ativo(api, environment):
+    active = [
         d
         for r in api["revisions"]
         for d in r.get("deployments") or []
-        if d["status"] == "DEPLOYED" and d["environmentId"] == ambiente
+        if d["status"] == "DEPLOYED" and d["environmentId"] == environment
     ]
-    return max(ativos, key=lambda d: d["deployDate"]) if ativos else None
+    return max(active, key=lambda d: d["deployDate"]) if active else None
 
 
 def _registros(api):
@@ -70,8 +70,8 @@ def inicial(manager):
 @pytest.fixture(scope="module")
 def repo(tmp_path_factory, inicial):
     api = inicial["api"]
-    pasta = tmp_path_factory.mktemp("repo-417")
-    (pasta / "api-basic-info.yaml").write_text(
+    folder = tmp_path_factory.mktemp("repo-417")
+    (folder / "api-basic-info.yaml").write_text(
         textwrap.dedent(
             f"""\
             apiVersion: api-management.sensedia.com/v1
@@ -84,33 +84,33 @@ def repo(tmp_path_factory, inicial):
         ),
         encoding="utf-8",
     )
-    return pasta
+    return folder
 
 
-def _servico(manager, revisao, ambiente):
+def _servico(manager, revision, environment):
     return DeployService(
         manager_api=manager,
         importer=LocalFileImporterAdapter(),
         settings=SimpleNamespace(
             EXECUTION_MODE="pipeline",
-            modo_pipeline=True,
-            TARGET_REVISION_NUMBER=revisao,
-            TARGET_ENVIRONMENT_ID=ambiente,
+            pipeline_mode=True,
+            TARGET_REVISION_NUMBER=revision,
+            TARGET_ENVIRONMENT_ID=environment,
         ),
     )
 
 
 def test_D01_redeploy_da_revisao_no_ar_e_conferido(manager, repo, inicial):
-    numero = inicial["ativo"]["revisionNumber"]
-    view = _servico(manager, numero, AMBIENTE).deploy(repo)
+    number = inicial["ativo"]["revisionNumber"]
+    view = _servico(manager, number, AMBIENTE).deploy(repo)
 
     assert view.deployment.verified is True
     assert view.previous_state.deployment_id == inicial["ativo"]["id"]
     assert view.new_state.deployment_id != inicial["ativo"]["id"]
-    assert view.new_state.revision_number == numero
+    assert view.new_state.revision_number == number
 
-    depois = manager.get_api_by_id(API_ID)
-    assert _ativo(depois, AMBIENTE)["id"] == view.new_state.deployment_id
+    after = manager.get_api_by_id(API_ID)
+    assert _ativo(after, AMBIENTE)["id"] == view.new_state.deployment_id
 
 
 @pytest.mark.sem_escrita

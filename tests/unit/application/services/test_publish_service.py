@@ -14,20 +14,20 @@ from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_import
     LocalFileImporterAdapter,
 )
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
-    CustomInexistenteError,
+    CustomNotFoundError,
     GovernanceBlockedError,
-    IdentidadeDivergenteError,
+    IdentityMismatchError,
     InvalidContractError,
-    LayoutInvalidoError,
-    PublicacaoDivergenteError,
-    PublicacaoRecusadaError,
-    TagInvalidaError,
+    InvalidLayoutError,
+    PublicationDivergenceError,
+    PublicationRejectedError,
+    InvalidTagError,
     ValidateError,
 )
 from apiops_orchestrator.application.services.publish_service import (
-    PUBLISH_SO_NA_ESTEIRA,
+    PUBLISH_PIPELINE_ONLY,
     PublishService,
-    exigir_esteira,
+    require_pipeline,
 )
 from apiops_orchestrator.domain.models.publish_view import SCHEMA_SEN_PUBLISH_V1
 from apiops_orchestrator.domain.ports.manager_api_port import (
@@ -49,10 +49,10 @@ API = {
 }
 
 
-def _revisao(revision_id, numero):
+def _revision(revision_id, number):
     return {
         "id": revision_id,
-        "revisionNumber": numero,
+        "revisionNumber": number,
         "workflowId": 500,
         "workflowStageId": 1402,
         "api": {"name": "Servico de Letras", "description": "antes", "apiTags": []},
@@ -63,9 +63,9 @@ def _revisao(revision_id, numero):
 
 
 REVISOES = {
-    9161: _revisao(9161, 1),
-    9175: _revisao(9175, 2),
-    9180: _revisao(9180, 3),
+    9161: _revision(9161, 1),
+    9175: _revision(9175, 2),
+    9180: _revision(9180, 3),
 }
 
 WORKFLOW = {
@@ -109,11 +109,11 @@ def _swagger_of(revision):
 class ManagerFake:
     """Port fake que grava a sequência exata de chamadas e os ids tocados."""
 
-    def __init__(self, api=None, workflow=None, customs=None, publicado=None, erro_put=None):
+    def __init__(self, api=None, workflow=None, customs=None, published=None, erro_put=None):
         self.api = api or API
         self.workflow = workflow or WORKFLOW
         self.customs = customs if customs is not None else {}
-        self._publicado = publicado
+        self._publicado = published
         self._erro_put = erro_put
         self.chamadas = []
         self.ids_lidos = []
@@ -176,12 +176,12 @@ class ManagerFake:
         raise AssertionError("o orquestrador nunca usa POST /revisions (D-005 §9)")
 
 
-def _settings(modo="pipeline", revisao=2):
+def _settings(mode="pipeline", revision=2):
     return SimpleNamespace(
-        EXECUTION_MODE=modo,
-        modo_pipeline=(modo == "pipeline"),
-        TEMPLATE_API_ID=414 if modo == "pipeline" else None,
-        TARGET_REVISION_NUMBER=revisao,
+        EXECUTION_MODE=mode,
+        pipeline_mode=(mode == "pipeline"),
+        TEMPLATE_API_ID=414 if mode == "pipeline" else None,
+        TARGET_REVISION_NUMBER=revision,
     )
 
 
@@ -190,18 +190,18 @@ def _repo(tmp_path, basic_info=BASIC_INFO, extras=None):
         textwrap.dedent(basic_info), encoding="utf-8"
     )
     (tmp_path / "all.yaml").write_text(ALL_YAML, encoding="utf-8")
-    for caminho, conteudo in (extras or {}).items():
-        destino = tmp_path / caminho
-        destino.parent.mkdir(parents=True, exist_ok=True)
-        destino.write_text(textwrap.dedent(conteudo), encoding="utf-8")
+    for file_path, conteudo in (extras or {}).items():
+        destination = tmp_path / file_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(textwrap.dedent(conteudo), encoding="utf-8")
     return tmp_path
 
 
-def _servico(manager, modo="pipeline", revisao=2):
+def _servico(manager, mode="pipeline", revision=2):
     return PublishService(
         manager_api=manager,
         importer=LocalFileImporterAdapter(),
-        settings=_settings(modo, revisao),
+        settings=_settings(mode, revision),
     )
 
 
@@ -217,43 +217,43 @@ NOMES_DA_ESTEIRA = (
 # --- só na esteira (V-24 §6) -------------------------------------------------
 
 
-@pytest.mark.parametrize("numero", [None, 1, 2])
-def test_fora_da_esteira_recusa_antes_de_qualquer_chamada(tmp_path, numero):
+@pytest.mark.parametrize("number", [None, 1, 2])
+def test_fora_da_esteira_recusa_antes_de_qualquer_chamada(tmp_path, number):
     manager = ManagerFake()
     with pytest.raises(ValidateError) as capturado:
-        _servico(manager, modo="local", revisao=numero).publish(_repo(tmp_path))
+        _servico(manager, mode="local", revision=number).publish(_repo(tmp_path))
 
-    mensagem = capturado.value.message
-    assert mensagem == PUBLISH_SO_NA_ESTEIRA
-    assert "sen validate" in mensagem
-    assert not any(nome in mensagem for nome in NOMES_DA_ESTEIRA)
+    message = capturado.value.message
+    assert message == PUBLISH_PIPELINE_ONLY
+    assert "sen validate" in message
+    assert not any(name in message for name in NOMES_DA_ESTEIRA)
     assert capturado.value.exit_code == 1
     assert manager.chamadas == []
 
 
 def test_exigir_esteira_aceita_a_esteira():
-    exigir_esteira(_settings())
+    require_pipeline(_settings())
 
 
 # --- revisão alvo (V-24) ------------------------------------------------------
 
 
-@pytest.mark.parametrize("numero,revision_id", [(1, 9161), (2, 9175), (3, 9180)])
-def test_esteira_grava_na_revisao_de_target_revision_number(tmp_path, numero, revision_id):
+@pytest.mark.parametrize("number,revision_id", [(1, 9161), (2, 9175), (3, 9180)])
+def test_esteira_grava_na_revisao_de_target_revision_number(tmp_path, number, revision_id):
     manager = ManagerFake()
-    view = _servico(manager, revisao=numero).publish(_repo(tmp_path))
+    view = _servico(manager, revision=number).publish(_repo(tmp_path))
 
     assert set(manager.ids_lidos) == {revision_id}
     assert manager.id_gravado == revision_id
-    assert view.revision.revision_number == numero
-    assert view.publicacao.verified is True
+    assert view.revision.revision_number == number
+    assert view.publication.verified is True
 
 
 def test_esteira_sem_a_variavel_falha_antes_de_qualquer_chamada(tmp_path):
     """P-1: na esteira, ausente não é 1."""
     manager = ManagerFake()
     with pytest.raises(ValidateError) as capturado:
-        _servico(manager, revisao=None).publish(_repo(tmp_path))
+        _servico(manager, revision=None).publish(_repo(tmp_path))
 
     assert "TARGET_REVISION_NUMBER" in capturado.value.message
     assert capturado.value.exit_code == 1
@@ -264,7 +264,7 @@ def test_revisao_inexistente_nomeia_as_disponiveis_e_nao_escreve(tmp_path):
     """P-3: criar revisão é ato humano."""
     manager = ManagerFake()
     with pytest.raises(ValidateError) as capturado:
-        _servico(manager, revisao=4).publish(_repo(tmp_path))
+        _servico(manager, revision=4).publish(_repo(tmp_path))
 
     assert "número 4" in capturado.value.message
     assert "1, 2, 3" in capturado.value.message
@@ -288,7 +288,7 @@ def test_layout_invalido_aborta_sem_tocar_a_rede(tmp_path):
     """P-8."""
     (tmp_path / "api-basic-info.yaml").write_text(BASIC_INFO, encoding="utf-8")
     manager = ManagerFake()
-    with pytest.raises(LayoutInvalidoError):
+    with pytest.raises(InvalidLayoutError):
         _servico(manager).publish(tmp_path)
 
     assert manager.chamadas == []
@@ -298,7 +298,7 @@ def test_identidade_divergente_aborta_antes_de_escrever(tmp_path):
     """P-4 / D-11."""
     divergente = BASIC_INFO.replace('basePath: "/letras/v2"', 'basePath: "/letras/v9"')
     manager = ManagerFake()
-    with pytest.raises(IdentidadeDivergenteError):
+    with pytest.raises(IdentityMismatchError):
         _servico(manager).publish(_repo(tmp_path, divergente))
 
     assert "update_revision" not in manager.chamadas
@@ -313,7 +313,7 @@ def test_custom_inexistente_aborta_antes_de_escrever(tmp_path):
         ),
     }
     manager = ManagerFake(customs={})
-    with pytest.raises(CustomInexistenteError) as capturado:
+    with pytest.raises(CustomNotFoundError) as capturado:
         _servico(manager).publish(_repo(tmp_path, extras=extras))
 
     assert "178" in capturado.value.message
@@ -331,7 +331,7 @@ BASIC_INFO_COM_TAGS = BASIC_INFO + """\
 def test_tag_fora_do_atributo_aborta_antes_de_escrever(tmp_path):
     manager = ManagerFake()
     repo = _repo(tmp_path, basic_info=BASIC_INFO_COM_TAGS.format(tag="TagInexistente"))
-    with pytest.raises(TagInvalidaError):
+    with pytest.raises(InvalidTagError):
         _servico(manager).publish(repo)
 
     assert "update_revision" not in manager.chamadas
@@ -378,8 +378,8 @@ def test_um_unico_put_depois_de_todas_as_leituras_e_nenhum_post(tmp_path):
     assert manager.chamadas.count("update_revision") == 1
     assert "publish_api_changes" not in manager.chamadas
     escrita = manager.chamadas.index("update_revision")
-    for leitura in ("get_api_by_id:417", "get_workflow"):
-        assert manager.chamadas.index(leitura) < escrita
+    for reading in ("get_api_by_id:417", "get_workflow"):
+        assert manager.chamadas.index(reading) < escrita
     # a releitura de conferência vem depois da escrita
     assert "get_revision" in manager.chamadas[escrita + 1:]
 
@@ -387,7 +387,7 @@ def test_um_unico_put_depois_de_todas_as_leituras_e_nenhum_post(tmp_path):
 def test_workflow_e_stage_da_revisao_alvo_viajam_intactos(tmp_path):
     """D-020: lidos em runtime, nunca configurados nem avançados."""
     manager = ManagerFake()
-    _servico(manager, revisao=3).publish(_repo(tmp_path))
+    _servico(manager, revision=3).publish(_repo(tmp_path))
 
     assert manager.payload_enviado["workflowId"] == 500
     assert manager.payload_enviado["workflowStageId"] == 1402
@@ -396,20 +396,20 @@ def test_workflow_e_stage_da_revisao_alvo_viajam_intactos(tmp_path):
 
 def test_200_com_perda_e_falha(tmp_path):
     """W-8: HTTP 200 não é prova de sucesso."""
-    publicado = dict(REVISOES[9175], resources=[{"name": "sumiu", "operations": []}])
-    manager = ManagerFake(publicado=publicado)
+    published = dict(REVISOES[9175], resources=[{"name": "sumiu", "operations": []}])
+    manager = ManagerFake(published=published)
 
-    with pytest.raises(PublicacaoDivergenteError) as capturado:
+    with pytest.raises(PublicationDivergenceError) as capturado:
         _servico(manager).publish(_repo(tmp_path))
 
     assert capturado.value.exit_code == 1
 
 
 def test_412_no_put_e_exit_3_com_o_motivo_literal(tmp_path):
-    motivo = "Actual Completeness is 50.0 but expected greater than or equal to 70.0"
+    reason = "Actual Completeness is 50.0 but expected greater than or equal to 70.0"
     erro = ManagerApiGovernanceBlockedError(
         status_code=412, title="PRECONDITION_FAILED", workflow_id=500,
-        raw={"status": 412}, messages=[motivo],
+        raw={"status": 412}, messages=[reason],
     )
     manager = ManagerFake(erro_put=erro)
 
@@ -417,7 +417,7 @@ def test_412_no_put_e_exit_3_com_o_motivo_literal(tmp_path):
         _servico(manager).publish(_repo(tmp_path))
 
     assert capturado.value.exit_code == 3
-    assert motivo in capturado.value.message
+    assert reason in capturado.value.message
     assert "apiTags" not in capturado.value.message
 
 
@@ -427,13 +427,13 @@ def test_recusa_do_put_nomeia_a_revisao_alvo(tmp_path):
     )
     manager = ManagerFake(erro_put=erro)
 
-    with pytest.raises(PublicacaoRecusadaError) as capturado:
+    with pytest.raises(PublicationRejectedError) as capturado:
         _servico(manager).publish(_repo(tmp_path))
 
-    mensagem = capturado.value.message
-    assert "gravação da revisão 2" in mensagem
-    assert "basePath must start with /" in mensagem
-    assert "rascunho" not in mensagem
+    message = capturado.value.message
+    assert "gravação da revisão 2" in message
+    assert "basePath must start with /" in message
+    assert "rascunho" not in message
     assert capturado.value.exit_code == 1
 
 
@@ -443,7 +443,7 @@ def test_sessao_ou_acesso_negado_no_put_orienta_sen_login(tmp_path, status):
     erro = ManagerApiTransportRejectedError(status_code=status, title="x", messages=[])
     manager = ManagerFake(erro_put=erro)
 
-    with pytest.raises(PublicacaoRecusadaError) as capturado:
+    with pytest.raises(PublicationRejectedError) as capturado:
         _servico(manager).publish(_repo(tmp_path))
 
     assert "sen login" in capturado.value.message
@@ -472,7 +472,7 @@ def test_documento_segue_o_contrato_v1(tmp_path):
 def test_etapas_narradas_na_ordem(tmp_path):
     etapas = []
     _servico(ManagerFake()).publish(
-        _repo(tmp_path), progresso=etapas.append
+        _repo(tmp_path), progress=etapas.append
     )
 
     assert etapas == [
@@ -491,14 +491,14 @@ def test_etapas_narradas_na_ordem(tmp_path):
 
 
 def test_alterar_content_de_interceptor_existente_chega_ao_put(tmp_path, monkeypatch):
-    revisao = dict(
+    revision = dict(
         REVISOES[9175],
         interceptors=[
             {"id": 11, "idTemp": 11, "type": "Rate limit", "executionPoint": "FIRST",
              "position": 4, "status": "REFERENCE", "content": '{"quota": "1000"}'},
         ],
     )
-    monkeypatch.setitem(REVISOES, 9175, revisao)
+    monkeypatch.setitem(REVISOES, 9175, revision)
     all_yaml = (
         "destination:\n  url: https://backend\n\n"
         "interceptors_request:\n  - type: Rate limit\n    content:\n      quota: \"500\"\n"
@@ -509,10 +509,10 @@ def test_alterar_content_de_interceptor_existente_chega_ao_put(tmp_path, monkeyp
     manager = ManagerFake()
     view = _servico(manager).publish(repo)
 
-    enviado = manager.payload_enviado["interceptors"][0]
-    assert enviado["id"] == 11
-    assert '"quota": "500"' in enviado["content"]
-    assert view.publicacao.verified is True
+    sent = manager.payload_enviado["interceptors"][0]
+    assert sent["id"] == 11
+    assert '"quota": "500"' in sent["content"]
+    assert view.publication.verified is True
 
 
 def test_content_perdido_pela_plataforma_falha_a_conferencia(tmp_path):
@@ -521,7 +521,7 @@ def test_content_perdido_pela_plataforma_falha_a_conferencia(tmp_path):
         "destination:\n  url: https://backend\n\n"
         "interceptors_request:\n  - type: Rate limit\n    content:\n      quota: \"500\"\n"
     )
-    publicado = dict(
+    published = dict(
         REVISOES[9175],
         destination="https://backend",
         interceptors=[
@@ -532,8 +532,8 @@ def test_content_perdido_pela_plataforma_falha_a_conferencia(tmp_path):
     repo = _repo(tmp_path)
     (repo / "all.yaml").write_text(all_yaml, encoding="utf-8")
 
-    with pytest.raises(PublicacaoDivergenteError) as capturado:
-        _servico(ManagerFake(publicado=publicado)).publish(repo)
+    with pytest.raises(PublicationDivergenceError) as capturado:
+        _servico(ManagerFake(published=published)).publish(repo)
 
     assert "`quota` declarado" in capturado.value.message
 
@@ -541,18 +541,18 @@ def test_content_perdido_pela_plataforma_falha_a_conferencia(tmp_path):
 # --- avisos de remoção: sempre no resultado -----------------------------------
 
 def _revisao_com_recurso_extra(monkeypatch, numero_id):
-    revisao = dict(
+    revision = dict(
         REVISOES[numero_id],
         resources=[{"name": "Saude", "operations": [{"id": 3, "method": "GET", "path": "/health"}]}],
     )
-    monkeypatch.setitem(REVISOES, numero_id, revisao)
+    monkeypatch.setitem(REVISOES, numero_id, revision)
 
 
 def test_esteira_mostra_a_remocao_no_resultado(tmp_path, monkeypatch):
     _revisao_com_recurso_extra(monkeypatch, 9175)
     view = _servico(ManagerFake()).publish(_repo(tmp_path))
 
-    assert any("serão apagados do Manager" in a and "Saude" in a for a in view.avisos)
+    assert any("serão apagados do Manager" in a and "Saude" in a for a in view.warnings)
 
 
 # --- ambientes com a revisão alvo no ar (só informativo) ---------------------
@@ -563,23 +563,23 @@ _DIA_19 = 1792368000000
 
 
 def _api_com_deploys(deployments_da_rev_2, environments=None):
-    revisoes = [dict(r) for r in API["revisions"]]
-    revisoes[1]["deployments"] = deployments_da_rev_2
+    revisions = [dict(r) for r in API["revisions"]]
+    revisions[1]["deployments"] = deployments_da_rev_2
     return dict(
         API,
-        revisions=revisoes,
+        revisions=revisions,
         environments=environments
         if environments is not None
         else [{"id": 7, "name": "DEV-APIOPS"}, {"id": 8, "name": "HML-APIOPS"}],
     )
 
 
-def _deploy(deployment_id, ambiente, status="DEPLOYED", data=_DIA_19):
+def _deploy(deployment_id, environment, status="DEPLOYED", data=_DIA_19):
     return {
         "id": deployment_id,
         "revisionId": 9175,
         "revisionNumber": 2,
-        "environmentId": ambiente,
+        "environmentId": environment,
         "status": status,
         "deployDate": data,
     }
@@ -633,9 +633,9 @@ def test_revisao_fora_do_ar_vem_como_lista_vazia(tmp_path):
 
 
 def test_deploy_de_outra_revisao_nao_conta(tmp_path):
-    revisoes = [dict(r) for r in API["revisions"]]
-    revisoes[2]["deployments"] = [dict(_deploy(270, 7), revisionId=9180, revisionNumber=3)]
-    manager = ManagerFake(api=dict(API, revisions=revisoes))
+    revisions = [dict(r) for r in API["revisions"]]
+    revisions[2]["deployments"] = [dict(_deploy(270, 7), revisionId=9180, revisionNumber=3)]
+    manager = ManagerFake(api=dict(API, revisions=revisions))
     view = _servico(manager).publish(_repo(tmp_path))
 
     assert view.deployments == []
@@ -672,12 +672,12 @@ def test_contract_is_written_after_the_flow(tmp_path):
 
     assert manager.chamadas.index("update_revision") < manager.chamadas.index("update_revision_swagger")
     assert manager.written_swagger["paths"]["/x"]["get"]["operationId"] == "consultarX"
-    assert view.publicacao.verified is True
-    assert view.avisos == []
+    assert view.publication.verified is True
+    assert view.warnings == []
 
 
 def test_rejected_swagger_keeps_the_published_flow_and_warns(tmp_path):
     view = _servico(_ManagerRejectingTheSwagger()).publish(_repo(tmp_path, extras=ROUTE_X))
 
-    assert view.publicacao.verified is True
-    assert any("recusou a gravação do contrato" in a and "Swagger inválido" in a for a in view.avisos)
+    assert view.publication.verified is True
+    assert any("recusou a gravação do contrato" in a and "Swagger inválido" in a for a in view.warnings)

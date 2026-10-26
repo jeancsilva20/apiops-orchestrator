@@ -255,7 +255,7 @@ def test_target_revision_number_vem_da_variavel_da_esteira(monkeypatch):
 
     settings = Settings()
 
-    assert settings.modo_pipeline is True
+    assert settings.pipeline_mode is True
     assert settings.TARGET_REVISION_NUMBER == 3
 
 

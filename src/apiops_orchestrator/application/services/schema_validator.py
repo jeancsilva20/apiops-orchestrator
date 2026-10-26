@@ -66,8 +66,8 @@ import fnmatch as _fnmatch
 from typing import Any as _Any, Dict as _Dict, List as _List, Optional as _Optional, Tuple as _Tuple
 
 
-def escolher_schema(
-    caminho_relativo: str, catalogo: _Dict[str, _Any]
+def select_schema(
+    relative_path: str, catalog: _Dict[str, _Any]
 ) -> _Optional[str]:
     """Schema que valida um arquivo, pelo seu caminho. Primeira correspondência vence.
 
@@ -75,48 +75,48 @@ def escolher_schema(
     precisa vir antes de `resources/*/*.yaml`, senão todo recurso seria validado
     como operação.
     """
-    alvo = caminho_relativo.replace("\\", "/").strip("/")
-    segmentos = alvo.split("/")
-    for regra in catalogo.get("layout") or []:
-        padrao = regra.get("pattern")
-        if not padrao:
+    target = relative_path.replace("\\", "/").strip("/")
+    segments = target.split("/")
+    for rule in catalog.get("layout") or []:
+        default = rule.get("pattern")
+        if not default:
             continue
-        partes = padrao.split("/")
+        parts = default.split("/")
         # `fnmatch` deixa `*` atravessar `/`, o que faria `resources/*/*.yaml`
         # casar com `resources/a/b/c.yaml`. O layout é de profundidade fixa, então
         # o casamento é segmento a segmento.
-        if len(partes) != len(segmentos):
+        if len(parts) != len(segments):
             continue
-        if all(_fnmatch.fnmatchcase(s, p) for s, p in zip(segmentos, partes)):
-            return regra.get("schema")
+        if all(_fnmatch.fnmatchcase(s, p) for s, p in zip(segments, parts)):
+            return rule.get("schema")
     return None
 
 
 class CatalogSchemaValidator:
     """Valida um repositório inteiro contra o layout declarado no catálogo."""
 
-    def __init__(self, validator: "SchemaValidator", catalogo: _Dict[str, _Any]):
+    def __init__(self, validator: "SchemaValidator", catalog: _Dict[str, _Any]):
         self._validator = validator
-        self._catalogo = catalogo
+        self._catalog = catalog
 
-    def validar(
-        self, arquivos: _List[_Tuple[str, _Dict[str, _Any]]]
+    def validate(
+        self, files: _List[_Tuple[str, _Dict[str, _Any]]]
     ) -> _List[str]:
         """Devolve a lista de problemas; vazia significa conforme.
 
-        Recebe pares `(caminho_relativo, conteúdo já lido)` — não toca disco, para
+        Recebe pares `(relative_path, conteúdo já loaded)` — não toca disco, para
         que a E1 continue sendo uma leitura só.
         """
-        problemas: _List[str] = []
-        for caminho, dados in arquivos:
-            schema = escolher_schema(caminho, self._catalogo)
+        problems: _List[str] = []
+        for file_path, data in files:
+            schema = select_schema(file_path, self._catalog)
             if schema is None:
                 # Sem schema não é erro: é arquivo que o layout não governa.
                 continue
             try:
                 self._validator.validate(
-                    yaml_data=dados, schema_name=schema, target_path=Path(caminho)
+                    yaml_data=data, schema_name=schema, target_path=Path(file_path)
                 )
             except Exception as exc:
-                problemas.append(f"{caminho}: {exc}")
-        return problemas
+                problems.append(f"{file_path}: {exc}")
+        return problems

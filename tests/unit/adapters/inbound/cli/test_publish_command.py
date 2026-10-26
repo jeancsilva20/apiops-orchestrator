@@ -12,11 +12,11 @@ from typer.testing import CliRunner
 from apiops_orchestrator.adapters.inbound.cli.cli_adapter import app
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
     GovernanceBlockedError,
-    IdentidadeDivergenteError,
+    IdentityMismatchError,
     ValidateError,
 )
 from apiops_orchestrator.application.services.publish_service import (
-    PUBLISH_SO_NA_ESTEIRA,
+    PUBLISH_PIPELINE_ONLY,
 )
 from apiops_orchestrator.domain.models.deploy_model import DeployEnvironment
 from apiops_orchestrator.domain.models.publish_view import (
@@ -25,9 +25,9 @@ from apiops_orchestrator.domain.models.publish_view import (
     RevisionDeployment,
 )
 from apiops_orchestrator.domain.models.validate_view import (
-    AtributoExigido,
-    GovernancaResultado,
-    PublicacaoResultado,
+    RequiredAttribute,
+    GovernanceResult,
+    PublicationResult,
     ValidateApi,
     ValidateRevision,
 )
@@ -44,13 +44,13 @@ def _view(**overrides) -> PublishView:
             manager_id=417, name="Servico de Letras", version="1.0.0", base_path="/letras/v2"
         ),
         revision=ValidateRevision(manager_id=9175, revision_number=2),
-        governanca=GovernancaResultado(
+        governance=GovernanceResult(
             workflow_id=500,
             stage_id=1402,
-            required=[AtributoExigido(149, "My new")],
+            required=[RequiredAttribute(149, "My new")],
         ),
-        publicacao=PublicacaoResultado(attempted=True, accepted=True, verified=True),
-        avisos=["O `timeout` da raiz passa a 30000 ms."],
+        publication=PublicationResult(attempted=True, accepted=True, verified=True),
+        warnings=["O `timeout` da raiz passa a 30000 ms."],
     )
     base.update(overrides)
     return PublishView(**base)
@@ -62,12 +62,12 @@ class _ServicoFake:
         self._erro = erro
         self.chamado_com = None
 
-    def publish(self, repo_path, *, progresso=None):
-        self.chamado_com = {"repo_path": repo_path, "progresso": progresso}
+    def publish(self, repo_path, *, progress=None):
+        self.chamado_com = {"repo_path": repo_path, "progresso": progress}
         if self._erro is not None:
             raise self._erro
-        if progresso is not None:
-            progresso("Lendo o repositório")
+        if progress is not None:
+            progress("Lendo o repositório")
         return self._resultado
 
 
@@ -135,14 +135,14 @@ def test_progresso_nao_contamina_saida_legivel_por_maquina(formato):
 def test_texto_mostra_a_revisao_alvo_e_o_resultado():
     servico = _ServicoFake(resultado=_view())
     resultado = runner.invoke(app, ["sen", "publish"], obj=_ctx(servico))
-    saida = " ".join(resultado.output.split())
+    output = " ".join(resultado.output.split())
 
     assert resultado.exit_code == 0
-    assert "Publicação" in saida
-    assert "#2" in saida and "9175" in saida
-    assert "Revisão 2 gravada" in saida
-    assert "30000 ms" in saida
-    assert "Modo" not in saida and "pipeline" not in saida
+    assert "Publicação" in output
+    assert "#2" in output and "9175" in output
+    assert "Revisão 2 gravada" in output
+    assert "30000 ms" in output
+    assert "Modo" not in output and "pipeline" not in output
 
 
 
@@ -171,36 +171,36 @@ def test_json_traz_os_ambientes_com_a_revisao_no_ar():
 def test_texto_mostra_onde_a_revisao_esta_deployada():
     servico = _ServicoFake(resultado=_view(deployments=_NO_AR))
     resultado = runner.invoke(app, ["sen", "publish"], obj=_ctx(servico))
-    saida = " ".join(resultado.output.split())
+    output = " ".join(resultado.output.split())
 
-    assert "deployada em DEV-APIOPS (id 7) · deploy em 2026-10-19T14:02:11Z" in saida
+    assert "deployada em DEV-APIOPS (id 7) · deploy em 2026-10-19T14:02:11Z" in output
 
 
 def test_texto_ambiente_sem_nome_mostra_so_o_id():
     sem_nome = [RevisionDeployment(deployment_id=271, environment=DeployEnvironment(9))]
     servico = _ServicoFake(resultado=_view(deployments=sem_nome))
     resultado = runner.invoke(app, ["sen", "publish"], obj=_ctx(servico))
-    saida = " ".join(resultado.output.split())
+    output = " ".join(resultado.output.split())
 
-    assert "deployada em (id 9)" in saida
+    assert "deployada em (id 9)" in output
 
 
 def test_texto_revisao_fora_do_ar_avisa():
     servico = _ServicoFake(resultado=_view())
     resultado = runner.invoke(app, ["sen", "publish"], obj=_ctx(servico))
-    saida = " ".join(resultado.output.split())
+    output = " ".join(resultado.output.split())
 
-    assert "não está deployada em nenhum ambiente" in saida
+    assert "não está deployada em nenhum ambiente" in output
 
 
 def test_recusa_fora_da_esteira_encerra_com_1():
-    erro = ValidateError(PUBLISH_SO_NA_ESTEIRA)
+    erro = ValidateError(PUBLISH_PIPELINE_ONLY)
     resultado = runner.invoke(app, ["sen", "publish"], obj=_ctx(_ServicoFake(erro=erro)))
-    saida = " ".join(resultado.output.split())
+    output = " ".join(resultado.output.split())
 
     assert resultado.exit_code == 1
-    assert "A publicação é feita só pela esteira" in saida
-    assert "Deseja prosseguir?" not in saida
+    assert "A publicação é feita só pela esteira" in output
+    assert "Deseja prosseguir?" not in output
 
 
 # --- exit codes ----------------------------------------------------------------
@@ -210,7 +210,7 @@ def test_recusa_fora_da_esteira_encerra_com_1():
     "erro",
     [
         ValidateError("TARGET_REVISION_NUMBER não está definida."),
-        IdentidadeDivergenteError("basePath", "/letras/v9", "/letras/v2", 417),
+        IdentityMismatchError("basePath", "/letras/v9", "/letras/v2", 417),
     ],
 )
 def test_exit_1_para_falha_de_configuracao_ou_tecnica(erro):

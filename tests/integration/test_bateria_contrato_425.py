@@ -26,7 +26,7 @@ from apiops_orchestrator.application.services.validate_service import ValidateSe
 from apiops_orchestrator.domain.services import openapi_contract
 from apiops_orchestrator.domain.services import repo_layout as layout
 from apiops_orchestrator.domain.services import revision_payload
-from apiops_orchestrator.domain.services.repo_materializer import materializar
+from apiops_orchestrator.domain.services.repo_materializer import materialize
 
 API_ID = 425
 TEMPLATE_ID = 414
@@ -161,14 +161,14 @@ def validate(manager):
     from apiops_orchestrator.main import _load_settings
 
     settings = _load_settings()
-    assert not settings.modo_pipeline, "the battery runs in local mode, on the Draft"
+    assert not settings.pipeline_mode, "the battery runs in local mode, on the Draft"
     service = ValidateService(
         manager_api=manager, importer=LocalFileImporterAdapter(), settings=settings
     )
 
     def run(path):
         questions = []
-        view = service.validate(path, confirmar=lambda q: questions.append(q) or True)
+        view = service.validate(path, confirm=lambda q: questions.append(q) or True)
         return view, questions
 
     return run
@@ -184,14 +184,14 @@ def _read_yaml(path):
 
 
 def _resource_folder(repo, name):
-    for resource_file in (repo / layout.PASTA_RECURSOS).glob(f"*/{layout.ARQUIVO_RECURSO}"):
+    for resource_file in (repo / layout.RESOURCES_FOLDER).glob(f"*/{layout.RESOURCE_FILE}"):
         if _read_yaml(resource_file).get("name") == name:
             return resource_file.parent
     raise AssertionError(f"resource {name} not materialized")
 
 
 def _operation_file(repo, path, method="get"):
-    for operation_file in (repo / layout.PASTA_RECURSOS).glob(f"*/{method}_*.yaml"):
+    for operation_file in (repo / layout.RESOURCES_FOLDER).glob(f"*/{method}_*.yaml"):
         if _read_yaml(operation_file).get("path") == path:
             return operation_file
     raise AssertionError(f"{method.upper()} {path} not materialized")
@@ -206,15 +206,15 @@ def _repository(
     changed_payload=False,
 ):
     """The Draft flow, materialized from the backup, with the contract on top."""
-    for file in materializar(lab["api"], lab["revision"]).arquivos:
-        target = tmp_path / file.caminho
+    for file in materialize(lab["api"], lab["revision"]).files:
+        target = tmp_path / file.file_path
         target.parent.mkdir(parents=True, exist_ok=True)
-        text = file.texto
-        if file.caminho == layout.ARQUIVO_BASIC_INFO:
+        text = file.text
+        if file.file_path == layout.BASIC_INFO_FILE:
             text = text.replace("template: ''", f"template: {TEMPLATE_ID}")
         target.write_text(text, encoding="utf-8")
 
-    basic_info_path = tmp_path / layout.ARQUIVO_BASIC_INFO
+    basic_info_path = tmp_path / layout.BASIC_INFO_FILE
     basic_info = _read_yaml(basic_info_path)
     basic_info["spec"].update(
         {
@@ -233,8 +233,8 @@ def _repository(
         components["requestBodies"]["NovaTarefa"]["description"] = "Corpo de criação, revisado"
     _write_yaml(tmp_path / layout.COMPONENTS_FILE, components)
 
-    for operation_path in (tmp_path / layout.PASTA_RECURSOS).glob("*/*.yaml"):
-        if operation_path.name == layout.ARQUIVO_RECURSO:
+    for operation_path in (tmp_path / layout.RESOURCES_FOLDER).glob("*/*.yaml"):
+        if operation_path.name == layout.RESOURCE_FILE:
             continue
         data = _read_yaml(operation_path)
         data["summary"] = f"Rota {data['path']} do laboratório"
@@ -281,15 +281,15 @@ def _repository(
 def _contract_failures(view):
     markers = ("não foi gravado", "não é o que foi enviado", "recusou", "Não consegui", "não respondeu")
     return [
-        a.message for a in view.achados
+        a.message for a in view.findings
         if a.scope == "repositório" and any(m in a.message for m in markers)
     ]
 
 
 def _contract_of(repo):
-    loaded = RepoCanonicalReader(LocalFileImporterAdapter()).carregar(str(repo))
+    loaded = RepoCanonicalReader(LocalFileImporterAdapter()).load(str(repo))
     contract = openapi_contract.extract_contract(
-        basic_info=loaded.basic_info, components=loaded.components, resources=loaded.recursos
+        basic_info=loaded.basic_info, components=loaded.components, resources=loaded.resources
     )
     paths = {}
     for (method, path), fields in contract.operations.items():
@@ -323,7 +323,7 @@ def test_1_contract_is_written_and_the_flow_is_kept(tmp_path, lab, validate, man
     manager.calls.clear()
     view, questions = validate(_repository(tmp_path, lab))
 
-    assert view.publicacao.verified is True
+    assert view.publication.verified is True
     [question] = questions
     assert "O swagger da revisão também recebe o contrato OpenAPI" in question
     assert _contract_failures(view) == []
@@ -342,7 +342,7 @@ def test_2_second_run_does_not_rewrite_the_swagger(tmp_path, lab, validate, mana
     manager.calls.clear()
     view, questions = validate(_repository(tmp_path, lab))
 
-    assert view.publicacao.verified is True
+    assert view.publication.verified is True
     assert "saem da documentação" not in questions[0]
     assert "update_revision_swagger" not in manager.calls
     assert _contract_failures(view) == []
@@ -362,7 +362,7 @@ def test_3_removed_documentation_is_announced_and_the_runtime_is_kept(
     assert _contract_failures(view) == []
     swagger = manager.get_revision_swagger(lab["draft_id"])
     assert "404" not in swagger["paths"][DOCUMENTED_PATH]["get"]["responses"]
-    assert revision_payload.conferir(before, manager.get_revision(lab["draft_id"])) == []
+    assert revision_payload.verify(before, manager.get_revision(lab["draft_id"])) == []
 
 
 def test_4_invalid_contract_writes_nothing(tmp_path, lab, validate, manager):
@@ -380,7 +380,7 @@ def test_5_new_documented_route_keeps_the_completeness(tmp_path, lab, validate, 
 
     view, _ = validate(_repository(tmp_path, lab, new_route="documented"))
 
-    assert view.publicacao.verified is True
+    assert view.publication.verified is True
     assert _contract_failures(view) == []
     swagger = manager.get_revision_swagger(lab["draft_id"])
     post = swagger["paths"][DOCUMENTED_PATH]["post"]
@@ -397,11 +397,11 @@ def test_6_same_route_without_documentation_lowers_the_completeness(
 ):
     view, questions = validate(_repository(tmp_path, lab, new_route="undocumented"))
 
-    assert view.publicacao.verified is True
+    assert view.publication.verified is True
     assert _contract_failures(view) == []
     for removed in ("requestBody", "operationId", "resposta 201", "resposta 400"):
         assert f"POST {DOCUMENTED_PATH} · {removed}" in questions[0]
-    assert any("abaixo do mínimo" in a.message for a in view.achados)
+    assert any("abaixo do mínimo" in a.message for a in view.findings)
     print(f"\n[completeness] undocumented new route {view.completeness.score} · documented {state['documented']}")
     assert view.completeness.score < state["documented"]
 
@@ -412,7 +412,7 @@ def test_7_changed_payload_is_written(tmp_path, lab, validate, manager, state):
 
     view, _ = validate(repo)
 
-    assert view.publicacao.verified is True
+    assert view.publication.verified is True
     assert "update_revision_swagger" in manager.calls
     assert _contract_failures(view) == []
     swagger = manager.get_revision_swagger(lab["draft_id"])
@@ -469,7 +469,7 @@ def _break_body_on_get(repo):
 
 
 def _break_resource_path_parameter(repo):
-    path = _resource_folder(repo, DOCUMENTED_RESOURCE) / layout.ARQUIVO_RECURSO
+    path = _resource_folder(repo, DOCUMENTED_RESOURCE) / layout.RESOURCE_FILE
     data = _read_yaml(path)
     data["parameters"] = [{"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}]
     _write_yaml(path, data)
@@ -532,7 +532,7 @@ def _break_extension_in_a_route(repo):
 
 
 def _break_servers_in_basic_info(repo):
-    path = repo / layout.ARQUIVO_BASIC_INFO
+    path = repo / layout.BASIC_INFO_FILE
     data = _read_yaml(path)
     data["spec"]["servers"] = [{"url": "/outro"}]
     _write_yaml(path, data)
@@ -591,7 +591,7 @@ def test_9_pulled_api_matches_what_was_uploaded(tmp_path, lab, validate, manager
 
     assert openapi_contract.verify_contract(_contract_of(state["uploaded"]), _contract_of(pulled)) == []
 
-    basic_info = pulled / layout.ARQUIVO_BASIC_INFO
+    basic_info = pulled / layout.BASIC_INFO_FILE
     basic_info.write_text(
         basic_info.read_text(encoding="utf-8").replace("template: ''", f"template: {TEMPLATE_ID}"),
         encoding="utf-8",
@@ -599,7 +599,7 @@ def test_9_pulled_api_matches_what_was_uploaded(tmp_path, lab, validate, manager
     manager.calls.clear()
     view, questions = validate(pulled)
 
-    assert view.publicacao.verified is True
+    assert view.publication.verified is True
     assert "saem da documentação" not in questions[0]
     assert "update_revision_swagger" not in manager.calls
     assert _contract_failures(view) == []

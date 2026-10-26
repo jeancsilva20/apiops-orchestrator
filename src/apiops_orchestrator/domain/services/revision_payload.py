@@ -19,143 +19,143 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from apiops_orchestrator.domain.services.interceptor_flow import (
-    FluxoDoEscopo,
-    alvo_da_marcacao,
-    fluxo_composto,
-    identidade,
-    montar_fluxo_do_escopo,
-    particionar,
-    preparar_contador_idtemp,
-    resolver_fluxo_declarado,
+    ScopeFlow,
+    tombstone_target,
+    composed_flow,
+    identity,
+    assemble_scope_flow,
+    partition,
+    prepare_idtemp_counter,
+    resolve_declared_flow,
 )
-from apiops_orchestrator.domain.services.template_conformance import normalizar_content
+from apiops_orchestrator.domain.services.template_conformance import normalize_content
 
 
 @dataclass(frozen=True)
-class PayloadMontado:
-    corpo: Dict[str, Any]
-    avisos: List[str] = field(default_factory=list)
+class AssembledPayload:
+    body: Dict[str, Any]
+    warnings: List[str] = field(default_factory=list)
     # Itens próprios que o REPOSITÓRIO declara para cada escopo que não só herda,
     # na ordem declarada. É o oráculo da conferência: comparar o publicado só com
     # o payload deixaria passar qualquer perda na própria montagem.
-    esperado: Dict[str, List[Dict[str, Any]]] = field(default_factory=dict)
+    expected: Dict[str, List[Dict[str, Any]]] = field(default_factory=dict)
 
 
-def _declarados(bloco: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _declared(block: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Itens declarados no YAML, já com o execution point derivado da chave."""
-    saida = []
-    for chave, ponto in (
+    output = []
+    for key, point in (
         ("interceptors_request", "FIRST"),
         ("interceptors_response", "SECOND"),
     ):
-        for item in bloco.get(chave) or []:
-            tipo = item.get("type")
-            saida.append(
+        for item in block.get(key) or []:
+            kind = item.get("type")
+            output.append(
                 {
-                    "type": tipo,
-                    "executionPoint": ponto,
+                    "type": kind,
+                    "executionPoint": point,
                     "content": item.get("content"),
-                    "customInterceptorId": item.get("id") if tipo == "Custom" else None,
+                    "customInterceptorId": item.get("id") if kind == "Custom" else None,
                 }
             )
-    return saida
+    return output
 
 
-def _destino(bloco: Dict[str, Any]) -> Tuple[Optional[str], Optional[Any]]:
-    destino = bloco.get("destination") or {}
-    if not isinstance(destino, dict):
+def _destination(block: Dict[str, Any]) -> Tuple[Optional[str], Optional[Any]]:
+    destination = block.get("destination") or {}
+    if not isinstance(destination, dict):
         return None, None
-    return destino.get("url") or None, destino.get("timeout")
+    return destination.get("url") or None, destination.get("timeout")
 
 
-def _vivos(remoto: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _live(remote: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Itens governados que o escopo tem de fato na plataforma, sem tombstones."""
-    proprios = particionar((remoto or {}).get("interceptors"))[0]
-    return [i for i in proprios if i.get("status") != "REMOVED"]
+    own = partition((remote or {}).get("interceptors"))[0]
+    return [i for i in own if i.get("status") != "REMOVED"]
 
 
-def _rotular(itens: Sequence[Dict[str, Any]]) -> str:
+def _label(items: Sequence[Dict[str, Any]]) -> str:
     return ", ".join(
         f"{i.get('type')}#{i['customInterceptorId']}"
         if i.get("customInterceptorId")
         else str(i.get("type"))
-        for i in itens
+        for i in items
     )
 
 
-def _avisos_do_escopo(
-    fluxo: FluxoDoEscopo,
-    remoto: Optional[Dict[str, Any]],
-    escopo: str,
+def _scope_warnings(
+    flow: ScopeFlow,
+    remote: Optional[Dict[str, Any]],
+    scope: str,
     *,
-    raiz: bool = False,
+    root: bool = False,
 ) -> List[str]:
     """Itens próprios que a publicação remove do escopo, que não podem sair calados."""
-    avisos: List[str] = []
-    proprios = _vivos(remoto)
+    warnings: List[str] = []
+    own = _live(remote)
 
-    if raiz:
+    if root:
         # A raiz não herda de ninguém: `[]` ali não significa "herda", significa
         # "sem fluxo". É a remoção mais cara que o comando pode provocar — e o
         # rótulo do escopo ("raiz da revision") não ajuda ninguém, então a
         # mensagem fala do `all.yaml` diretamente.
-        if not fluxo.efetivo and proprios:
-            avisos.append(
+        if not flow.effective and own:
+            warnings.append(
                 "O `all.yaml` não declara nenhum interceptor, e a API tem "
-                f"{len(proprios)} hoje no Manager ({_rotular(proprios)}). O "
+                f"{len(own)} hoje no Manager ({_label(own)}). O "
                 "`all.yaml` é o nível mais alto e não herda de ninguém, então ao "
                 "publicar esses interceptors saem — e com eles o fluxo de todos os "
                 "recursos e rotas que os herdavam.\n"
                 "Se a intenção era mantê-los, declare-os no `all.yaml`."
             )
-    elif fluxo.heranca_pura and proprios:
-        avisos.append(
-            f"{escopo}: hoje tem {len(proprios)} interceptor(es) próprio(s) no "
-            f"Manager ({_rotular(proprios)}), mas o repositório declara que este "
+    elif flow.pure_inheritance and own:
+        warnings.append(
+            f"{scope}: hoje tem {len(own)} interceptor(es) próprio(s) no "
+            f"Manager ({_label(own)}), mas o repositório declara que este "
             "ponto apenas herda. Ao publicar, esses interceptors saem e o fluxo "
             "passa a ser o do nível acima.\n"
             "Se a intenção era mantê-los, liste-os no arquivo."
         )
 
-    return avisos
+    return warnings
 
 
-def _avisos_de_herdado_cortado(
-    fluxo: FluxoDoEscopo,
-    remoto: Optional[Dict[str, Any]],
-    herdado_remoto: Sequence[Dict[str, Any]],
-    herdado: Sequence[Dict[str, Any]],
-    escopo: str,
+def _cut_inherited_warnings(
+    flow: ScopeFlow,
+    remote: Optional[Dict[str, Any]],
+    remote_inherited: Sequence[Dict[str, Any]],
+    inherited: Sequence[Dict[str, Any]],
+    scope: str,
 ) -> List[str]:
     """Herdado que o escopo executa hoje e deixa de executar porque quebra a
-    herança. `herdado_remoto` e `herdado` são o que o pai executa hoje e depois
+    herança. `remote_inherited` e `inherited` são o que o pai executa hoje e depois
     desta publicação."""
-    if not fluxo.quebra or not remoto:
+    if not flow.breaks_inheritance or not remote:
         return []
-    executa_hoje = {
-        identidade(i) for i in fluxo_composto(remoto.get("interceptors"), herdado_remoto)
+    currently_runs = {
+        identity(i) for i in composed_flow(remote.get("interceptors"), remote_inherited)
     }
-    continua_no_pai = {i.get("id") for i in herdado if i.get("id") is not None}
-    cortados = [
-        i for i in herdado_remoto
-        if i.get("id") in executa_hoje and i.get("id") in continua_no_pai
+    continues_in_parent = {i.get("id") for i in inherited if i.get("id") is not None}
+    cut = [
+        i for i in remote_inherited
+        if i.get("id") in currently_runs and i.get("id") in continues_in_parent
     ]
-    if not cortados:
+    if not cut:
         return []
     return [
-        f"{escopo}: o arquivo declara `inherit: false`, e ao publicar este ponto deixa "
-        f"de executar {len(cortados)} interceptor(es) herdado(s) que executa hoje "
-        f"({_rotular(cortados)}).\n"
+        f"{scope}: o arquivo declara `inherit: false`, e ao publicar este ponto deixa "
+        f"de executar {len(cut)} interceptor(es) herdado(s) que executa hoje "
+        f"({_label(cut)}).\n"
         "Se a intenção era mantê-los, use `inherit: true` para seguir herdando, ou "
         "liste-os no arquivo."
     ]
 
 
-def _herda(bloco: Dict[str, Any]) -> bool:
+def _inherits(block: Dict[str, Any]) -> bool:
     """`inherit` ausente equivale a `true` (V-26: a herança é sempre declarada,
     e a ausência não é quebra)."""
-    valor = bloco.get("inherit")
-    return True if valor is None else bool(valor)
+    value = block.get("inherit")
+    return True if value is None else bool(value)
 
 
 # --- identidade do recurso: as rotas, não o nome (V-12a) ---------------------
@@ -165,67 +165,67 @@ def _herda(bloco: Dict[str, Any]) -> bool:
 # pasta e o recurso remoto é o conjunto de rotas — e cada rota pertence a um só
 # recurso, lá (W-6) e aqui (I-6).
 
-Rota = Tuple[str, Optional[str]]
+Route = Tuple[str, Optional[str]]
 
 
-def _rota(metodo: Any, path: Any) -> Rota:
-    return (str(metodo or "").upper(), path)
+def _route(method: Any, path: Any) -> Route:
+    return (str(method or "").upper(), path)
 
 
-def _rotulo_rota(rota: Rota) -> str:
-    return f"{rota[0]} {rota[1]}"
+def _route_label(route: Route) -> str:
+    return f"{route[0]} {route[1]}"
 
 
-def _rotas_do_no(recurso: Dict[str, Any]) -> List[Rota]:
-    return [_rota(o.get("method"), o.get("path")) for o in recurso.get("operations") or []]
+def _node_routes(resource: Dict[str, Any]) -> List[Route]:
+    return [_route(o.get("method"), o.get("path")) for o in resource.get("operations") or []]
 
 
-def parear_por_rotas(
-    lado: Sequence[Tuple[Optional[str], Sequence[Rota]]],
-    remotos: Sequence[Tuple[Optional[str], Sequence[Rota]]],
+def pair_by_routes(
+    side: Sequence[Tuple[Optional[str], Sequence[Route]]],
+    remote_resources: Sequence[Tuple[Optional[str], Sequence[Route]]],
 ) -> Dict[int, int]:
-    """Liga cada recurso de `lado` a no máximo um de `remotos`, 1:1, pelas rotas.
+    """Liga cada recurso de `side` a no máximo um de `remote_resources`, 1:1, pelas rotas.
 
     Ganha o par com mais rotas em comum; empatado, o de mesmo nome; ainda
-    empatado, o que vem primeiro em `lado` — as pastas, que a descoberta já
+    empatado, o que vem primeiro em `side` — as pastas, que a descoberta já
     entrega em ordem alfabética. Recurso com rotas, mas nenhuma em comum, fica
     sem par: pela V-12a é outro recurso, mesmo com nome igual.
     """
-    dono: Dict[Rota, int] = {}
-    for j, (_, rotas) in enumerate(remotos):
-        for rota in rotas:
-            dono.setdefault(rota, j)
+    owner: Dict[Route, int] = {}
+    for j, (_, routes) in enumerate(remote_resources):
+        for route in routes:
+            owner.setdefault(route, j)
 
-    candidatos = []
-    for i, (nome, rotas) in enumerate(lado):
-        em_comum = Counter(dono[r] for r in rotas if r in dono)
-        for j, quantidade in em_comum.items():
-            candidatos.append((-quantidade, remotos[j][0] != nome, i, j))
+    candidates = []
+    for i, (name, routes) in enumerate(side):
+        in_common = Counter(owner[r] for r in routes if r in owner)
+        for j, count in in_common.items():
+            candidates.append((-count, remote_resources[j][0] != name, i, j))
 
-    pares: Dict[int, int] = {}
-    tomados = set()
-    for _, _, i, j in sorted(candidatos):
-        if i in pares or j in tomados:
+    pairs: Dict[int, int] = {}
+    taken = set()
+    for _, _, i, j in sorted(candidates):
+        if i in pairs or j in taken:
             continue
-        pares[i] = j
-        tomados.add(j)
+        pairs[i] = j
+        taken.add(j)
 
     # Recurso SEM rota nenhuma, dos dois lados, não tem identidade por rotas —
     # recriá-lo perderia o que o Manager preserva nele (V-22). Só aqui o nome
     # decide, e só quando é único entre os que sobraram sem rota.
-    sem_rota_a = [i for i, (_, rotas) in enumerate(lado) if not rotas and i not in pares]
-    sem_rota_b = [j for j, (_, rotas) in enumerate(remotos) if not rotas and j not in tomados]
-    for i in sem_rota_a:
-        nome = lado[i][0]
-        iguais_a = [k for k in sem_rota_a if lado[k][0] == nome]
-        iguais_b = [k for k in sem_rota_b if remotos[k][0] == nome]
-        if len(iguais_a) == 1 and len(iguais_b) == 1:
-            pares[i] = iguais_b[0]
-    return pares
+    routeless_a = [i for i, (_, routes) in enumerate(side) if not routes and i not in pairs]
+    routeless_b = [j for j, (_, routes) in enumerate(remote_resources) if not routes and j not in taken]
+    for i in routeless_a:
+        name = side[i][0]
+        equal_a = [k for k in routeless_a if side[k][0] == name]
+        equal_b = [k for k in routeless_b if remote_resources[k][0] == name]
+        if len(equal_a) == 1 and len(equal_b) == 1:
+            pairs[i] = equal_b[0]
+    return pairs
 
 
-def _rotulos_de_recursos(
-    recursos: Sequence[Tuple[Optional[str], Sequence[Rota]]],
+def _resource_labels(
+    resources: Sequence[Tuple[Optional[str], Sequence[Route]]],
 ) -> List[str]:
     """Como cada recurso é nomeado nas mensagens e nos escopos.
 
@@ -234,396 +234,396 @@ def _rotulos_de_recursos(
     Manager (V-12a); sem ela, dois `Letras` virariam o mesmo escopo e as
     contagens se misturariam.
     """
-    repeticoes = Counter(nome for nome, _ in recursos)
-    rotulos = []
-    for nome, rotas in recursos:
-        if repeticoes[nome] > 1 and rotas:
-            primeira = min(rotas, key=lambda r: (r[1] or "", r[0]))
-            rotulos.append(f"{nome} (rota {_rotulo_rota(primeira)})")
+    repetitions = Counter(name for name, _ in resources)
+    labels = []
+    for name, routes in resources:
+        if repetitions[name] > 1 and routes:
+            first = min(routes, key=lambda r: (r[1] or "", r[0]))
+            labels.append(f"{name} (rota {_route_label(first)})")
         else:
-            rotulos.append(str(nome))
-    return rotulos
+            labels.append(str(name))
+    return labels
 
 
-def _avisos_de_homonimos(recursos: Sequence[Any]) -> List[str]:
+def _homonym_warnings(resources: Sequence[Any]) -> List[str]:
     """Pastas diferentes com o mesmo `name`: aceito, mas quase sempre engano."""
-    pastas_por_nome: Dict[str, List[str]] = {}
-    for recurso in recursos:
-        nome = (recurso.dados or {}).get("name")
-        if nome:
-            pastas_por_nome.setdefault(nome, []).append(recurso.slug)
+    folders_by_name: Dict[str, List[str]] = {}
+    for resource in resources:
+        name = (resource.data or {}).get("name")
+        if name:
+            folders_by_name.setdefault(name, []).append(resource.slug)
 
-    avisos = []
-    for nome, pastas in pastas_por_nome.items():
-        if len(pastas) < 2:
+    warnings = []
+    for name, folders in folders_by_name.items():
+        if len(folders) < 2:
             continue
-        lista = ", ".join(f"`{p}`" for p in pastas[:-1]) + f" e `{pastas[-1]}`"
-        avisos.append(
-            f"As pastas {lista} declaram recursos com o mesmo nome, \"{nome}\". O "
+        listing = ", ".join(f"`{p}`" for p in folders[:-1]) + f" e `{folders[-1]}`"
+        warnings.append(
+            f"As pastas {listing} declaram recursos com o mesmo nome, \"{name}\". O "
             "Manager aceita, mas quem olha a API vê recursos iguais e não sabe qual é "
             "qual.\n"
             "Se são o mesmo recurso, junte as rotas em uma pasta só. Se não são, dê a "
             "cada um um nome diferente no `resource.yaml`."
         )
-    return avisos
+    return warnings
 
 
-def montar(
+def assemble(
     *,
     draft: Dict[str, Any],
     basic_info: Dict[str, Any],
-    raiz: Dict[str, Any],
-    recursos: Sequence[Any],
+    root: Dict[str, Any],
+    resources: Sequence[Any],
     resolver_custom: Optional[Callable[[int], Optional[Dict[str, Any]]]] = None,
-) -> PayloadMontado:
+) -> AssembledPayload:
     """Monta o corpo do `PUT` a partir do estado remoto e do repositório.
 
     `resolver_custom` é injetado pela camada de aplicação: um `Custom` novo
     precisa do `{id, name, script}` do catálogo no `content`, e buscá-lo é rede —
     que não entra aqui. Sem o resolvedor, um `Custom` novo vai sem conteúdo.
     """
-    corpo = copy.deepcopy(draft)
-    avisos: List[str] = []
-    esperado: Dict[str, List[Dict[str, Any]]] = {}
-    contador: Iterator[int] = preparar_contador_idtemp(draft)
+    body = copy.deepcopy(draft)
+    warnings: List[str] = []
+    expected: Dict[str, List[Dict[str, Any]]] = {}
+    counter: Iterator[int] = prepare_idtemp_counter(draft)
 
-    def _esperar(escopo: str, fluxo: FluxoDoEscopo) -> None:
+    def _expect(scope: str, flow: ScopeFlow) -> None:
         # Herança pura vai como `[]`: a contagem por escopo já cobre esse caso.
-        if not fluxo.heranca_pura:
-            esperado[escopo] = list(fluxo.proprios)
+        if not flow.pure_inheritance:
+            expected[scope] = list(flow.own)
 
-    def _content(declarado: Dict[str, Any]) -> Any:
-        """O wire quer `content` como string JSON (ver `construir_item_novo`)."""
-        if declarado.get("type") == "Custom":
-            custom_id = declarado.get("customInterceptorId")
-            vivo = resolver_custom(custom_id) if (resolver_custom and custom_id) else None
-            if vivo is None:
+    def _content(declared: Dict[str, Any]) -> Any:
+        """O wire quer `content` como string JSON (ver `build_new_item`)."""
+        if declared.get("type") == "Custom":
+            custom_id = declared.get("customInterceptorId")
+            live = resolver_custom(custom_id) if (resolver_custom and custom_id) else None
+            if live is None:
                 return None
             return json.dumps(
                 {
-                    "id": vivo.get("id"),
-                    "name": vivo.get("name"),
-                    "script": vivo.get("script"),
+                    "id": live.get("id"),
+                    "name": live.get("name"),
+                    "script": live.get("script"),
                 },
                 ensure_ascii=False,
             )
-        return declarado.get("content")
+        return declared.get("content")
 
     # --- basic info viaja no `api` aninhado; é ali que o AG atua (W-7) -------
     spec = basic_info.get("spec") or {}
-    if isinstance(corpo.get("api"), dict):
-        for campo in ("name", "description"):
-            if spec.get(campo) is not None:
-                corpo["api"][campo] = spec[campo]
+    if isinstance(body.get("api"), dict):
+        for field_name in ("name", "description"):
+            if spec.get(field_name) is not None:
+                body["api"][field_name] = spec[field_name]
         if spec.get("apiTags") is not None:
-            corpo["api"]["apiTags"] = spec["apiTags"]
+            body["api"]["apiTags"] = spec["apiTags"]
 
     # --- escopo raiz ---------------------------------------------------------
     # A decisão desce daqui: o efetivo da raiz alimenta os recursos, e o de cada
     # recurso alimenta suas operações. A raiz não herda — seu fluxo é exatamente
     # o que o `all.yaml` declara.
-    fluxo_raiz = resolver_fluxo_declarado(_declarados(raiz), raiz=True)
-    avisos.extend(_avisos_do_escopo(fluxo_raiz, draft, "raiz da revision", raiz=True))
-    _esperar("raiz", fluxo_raiz)
-    url, timeout = _destino(raiz)
-    corpo["destination"] = url
-    corpo["timeout"] = timeout
-    corpo["interceptors"] = montar_fluxo_do_escopo(
-        fluxo_raiz,
+    root_flow = resolve_declared_flow(_declared(root), root=True)
+    warnings.extend(_scope_warnings(root_flow, draft, "raiz da revision", root=True))
+    _expect("raiz", root_flow)
+    url, timeout = _destination(root)
+    body["destination"] = url
+    body["timeout"] = timeout
+    body["interceptors"] = assemble_scope_flow(
+        root_flow,
         draft.get("interceptors"),
-        gerar_idtemp=contador,
+        generate_idtemp=counter,
         resolver_content=_content,
     )
-    composto_raiz = fluxo_composto(corpo["interceptors"])
-    composto_raiz_remoto = fluxo_composto(draft.get("interceptors"))
+    composed_root = composed_flow(body["interceptors"])
+    remote_composed_root = composed_flow(draft.get("interceptors"))
 
     # --- recursos e operações ------------------------------------------------
     # Cada pasta é ligada ao recurso remoto pelas rotas, não pelo nome (V-12a):
     # pelo nome, dois homônimos caíam no mesmo remoto e um deles sumia calado.
-    remotos: List[Dict[str, Any]] = list(draft.get("resources") or [])
-    rotas_remotas = [_rotas_do_no(r) for r in remotos]
-    lado_remoto = [(r.get("name"), rotas) for r, rotas in zip(remotos, rotas_remotas)]
-    lado_repo = [
+    remote_resources: List[Dict[str, Any]] = list(draft.get("resources") or [])
+    remote_routes = [_node_routes(r) for r in remote_resources]
+    remote_side = [(r.get("name"), routes) for r, routes in zip(remote_resources, remote_routes)]
+    repo_side = [
         (
-            (recurso.dados or {}).get("name"),
-            [_rota(op.metodo, (op.dados or {}).get("path")) for op in recurso.operacoes],
+            (resource.data or {}).get("name"),
+            [_route(op.method, (op.data or {}).get("path")) for op in resource.operations],
         )
-        for recurso in recursos
+        for resource in resources
     ]
-    pares = parear_por_rotas(lado_repo, lado_remoto)
-    rotulos_repo = _rotulos_de_recursos(lado_repo)
-    rotulos_remotos = _rotulos_de_recursos(lado_remoto)
-    dono_remoto: Dict[Rota, int] = {}
-    for j, rotas in enumerate(rotas_remotas):
-        for rota in rotas:
-            dono_remoto.setdefault(rota, j)
-    no_repositorio = {rota for _, rotas in lado_repo for rota in rotas}
+    pairs = pair_by_routes(repo_side, remote_side)
+    repo_labels = _resource_labels(repo_side)
+    remote_labels = _resource_labels(remote_side)
+    remote_owner: Dict[Route, int] = {}
+    for j, routes in enumerate(remote_routes):
+        for route in routes:
+            remote_owner.setdefault(route, j)
+    in_repository = {route for _, routes in repo_side for route in routes}
 
-    avisos.extend(_avisos_de_homonimos(recursos))
-    saida_recursos: List[Dict[str, Any]] = []
-    rotas_movidas: List[str] = []
+    warnings.extend(_homonym_warnings(resources))
+    output_resources: List[Dict[str, Any]] = []
+    moved_routes: List[str] = []
 
-    for i, recurso in enumerate(recursos):
-        dados = recurso.dados or {}
-        nome = dados.get("name")
-        rotulo = rotulos_repo[i]
-        indice_remoto = pares.get(i)
-        remoto = remotos[indice_remoto] if indice_remoto is not None else {}
-        bloco = copy.deepcopy(remoto) if remoto else {}
+    for i, resource in enumerate(resources):
+        data = resource.data or {}
+        name = data.get("name")
+        label = repo_labels[i]
+        remote_index = pairs.get(i)
+        remote = remote_resources[remote_index] if remote_index is not None else {}
+        block = copy.deepcopy(remote) if remote else {}
         # Ligado pelas rotas, o recurso pode ter trocado de nome: o repositório
         # prevalece, e o `id` fica — trocar o nome não recria o recurso.
-        bloco["name"] = nome if nome is not None else bloco.get("name")
+        block["name"] = name if name is not None else block.get("name")
 
-        fluxo_recurso = resolver_fluxo_declarado(
-            _declarados(dados), fluxo_raiz.efetivo, inherit=_herda(dados)
+        resource_flow = resolve_declared_flow(
+            _declared(data), root_flow.effective, inherit=_inherits(data)
         )
-        avisos.extend(_avisos_do_escopo(fluxo_recurso, remoto, f"resource {rotulo}"))
-        avisos.extend(
-            _avisos_de_herdado_cortado(
-                fluxo_recurso, remoto, composto_raiz_remoto, composto_raiz,
-                f"resource {rotulo}",
+        warnings.extend(_scope_warnings(resource_flow, remote, f"resource {label}"))
+        warnings.extend(
+            _cut_inherited_warnings(
+                resource_flow, remote, remote_composed_root, composed_root,
+                f"resource {label}",
             )
         )
-        _esperar(f"resource {rotulo}", fluxo_recurso)
-        if dados.get("description") is not None:
-            bloco["description"] = dados.get("description")
-        url, timeout = _destino(dados)
-        bloco["destination"] = url
-        bloco["timeout"] = timeout
-        bloco["interceptors"] = montar_fluxo_do_escopo(
-            fluxo_recurso,
-            remoto.get("interceptors"),
-            gerar_idtemp=contador,
+        _expect(f"resource {label}", resource_flow)
+        if data.get("description") is not None:
+            block["description"] = data.get("description")
+        url, timeout = _destination(data)
+        block["destination"] = url
+        block["timeout"] = timeout
+        block["interceptors"] = assemble_scope_flow(
+            resource_flow,
+            remote.get("interceptors"),
+            generate_idtemp=counter,
             resolver_content=_content,
-            herdado=composto_raiz,
+            inherited=composed_root,
         )
-        composto_recurso = fluxo_composto(bloco["interceptors"], composto_raiz)
-        composto_recurso_remoto = fluxo_composto(
-            remoto.get("interceptors"), composto_raiz_remoto
+        composed_resource = composed_flow(block["interceptors"], composed_root)
+        remote_composed_resource = composed_flow(
+            remote.get("interceptors"), remote_composed_root
         )
 
-        remotas_por_chave = {
-            _rota(o.get("method"), o.get("path")): o
-            for o in (remoto.get("operations") or [])
+        remote_by_key = {
+            _route(o.get("method"), o.get("path")): o
+            for o in (remote.get("operations") or [])
         }
-        operacoes: List[Dict[str, Any]] = []
-        for op in recurso.operacoes:
-            od = op.dados or {}
-            chave = _rota(op.metodo, od.get("path"))
+        operations: List[Dict[str, Any]] = []
+        for op in resource.operations:
+            od = op.data or {}
+            key = _route(op.method, od.get("path"))
             # Só reaproveita o remoto se a rota estiver no recurso ligado ao seu
-            # dono: `remotas_por_chave` é do recurso pareado, e só dele (W-6).
-            remota = remotas_por_chave.get(chave) or {}
-            origem = dono_remoto.get(chave)
-            if origem is not None and origem != indice_remoto:
-                rotas_movidas.append(
-                    f"{_rotulo_rota(chave)}: sai do recurso {rotulos_remotos[origem]} e "
-                    f"vai para o recurso {nome} (pasta `{recurso.slug}`)"
-                    + (", que será criado" if indice_remoto is None else "")
+            # dono: `remote_by_key` é do recurso pareado, e só dele (W-6).
+            remote_op = remote_by_key.get(key) or {}
+            origin = remote_owner.get(key)
+            if origin is not None and origin != remote_index:
+                moved_routes.append(
+                    f"{_route_label(key)}: sai do recurso {remote_labels[origin]} e "
+                    f"vai para o recurso {name} (pasta `{resource.slug}`)"
+                    + (", que será criado" if remote_index is None else "")
                 )
-            item = copy.deepcopy(remota) if remota else {}
-            fluxo_op = resolver_fluxo_declarado(
-                _declarados(od), fluxo_recurso.efetivo, inherit=_herda(od)
+            item = copy.deepcopy(remote_op) if remote_op else {}
+            op_flow = resolve_declared_flow(
+                _declared(od), resource_flow.effective, inherit=_inherits(od)
             )
-            avisos.extend(
-                _avisos_do_escopo(fluxo_op, remota, f"{op.metodo} {od.get('path')}")
+            warnings.extend(
+                _scope_warnings(op_flow, remote_op, f"{op.method} {od.get('path')}")
             )
-            avisos.extend(
-                _avisos_de_herdado_cortado(
-                    fluxo_op, remota, composto_recurso_remoto, composto_recurso,
-                    f"{op.metodo} {od.get('path')}",
+            warnings.extend(
+                _cut_inherited_warnings(
+                    op_flow, remote_op, remote_composed_resource, composed_resource,
+                    f"{op.method} {od.get('path')}",
                 )
             )
-            _esperar(_rotulo_rota(chave), fluxo_op)
-            item["method"] = op.metodo
+            _expect(_route_label(key), op_flow)
+            item["method"] = op.method
             item["path"] = od.get("path")
             if od.get("description") is not None:
                 item["description"] = od.get("description")
-            url, timeout = _destino(od)
+            url, timeout = _destination(od)
             item["destination"] = url
             item["timeout"] = timeout
-            item["interceptors"] = montar_fluxo_do_escopo(
-                fluxo_op,
-                remota.get("interceptors"),
-                gerar_idtemp=contador,
+            item["interceptors"] = assemble_scope_flow(
+                op_flow,
+                remote_op.get("interceptors"),
+                generate_idtemp=counter,
                 resolver_content=_content,
-                herdado=composto_recurso,
+                inherited=composed_resource,
             )
-            if not remota:
+            if not remote_op:
                 # W-6: a operação PERTENCE ao recurso. Reaproveitar o `id` de
                 # uma operação de outro recurso faz o Manager DESCARTÁ-LA, com
                 # HTTP 200 — operação nova vai sem `id`.
                 item.pop("id", None)
-            operacoes.append(item)
+            operations.append(item)
 
-        bloco["operations"] = operacoes
-        saida_recursos.append(bloco)
+        block["operations"] = operations
+        output_resources.append(block)
 
-    corpo["resources"] = saida_recursos
+    body["resources"] = output_resources
 
     # O PUT grava a revisão inteira: o que está no Manager e não no repositório
     # é apagado. Não bloqueia — remover pode ser a intenção —, mas é avisado.
     # A comparação é por recurso e por rota, nunca por nome: um homônimo que
     # some precisa aparecer aqui mesmo com o nome ainda presente.
-    pareados = set(pares.values())
-    sumidos = [rotulos_remotos[j] for j in range(len(remotos)) if j not in pareados]
+    paired = set(pairs.values())
+    vanished = [remote_labels[j] for j in range(len(remote_resources)) if j not in paired]
     # Só para recurso que continua: o que some junto com o recurso inteiro já é
     # nomeado no aviso de recursos. Rota que está em outra pasta não sumiu —
     # mudou de recurso, e é avisada à parte.
-    rotas_sumidas = [
-        f"{_rotulo_rota(rota)} (recurso {rotulos_remotos[j]})"
-        for j in sorted(pareados)
-        for rota in sorted(rotas_remotas[j], key=str)
-        if rota not in no_repositorio
+    vanished_routes = [
+        f"{_route_label(route)} (recurso {remote_labels[j]})"
+        for j in sorted(paired)
+        for route in sorted(remote_routes[j], key=str)
+        if route not in in_repository
     ]
-    if sumidos:
-        avisos.append(
+    if vanished:
+        warnings.append(
             "Os recursos abaixo existem no Manager mas não estão no repositório. Ao "
             "publicar, eles serão apagados do Manager:\n"
-            + "\n".join(f"  - {s}" for s in sorted(sumidos))
+            + "\n".join(f"  - {s}" for s in sorted(vanished))
             + "\n\nSe não era essa a intenção, adicione-os ao repositório antes de "
             "publicar."
         )
-    if rotas_movidas:
-        avisos.append(
+    if moved_routes:
+        warnings.append(
             "As rotas abaixo estão no repositório em um recurso diferente do que têm "
             "hoje no Manager. Ao publicar, elas saem do recurso de origem e passam "
             "para o de destino:\n"
-            + "\n".join(f"  - {r}" for r in rotas_movidas)
+            + "\n".join(f"  - {r}" for r in moved_routes)
             + "\n\nSe não era essa a intenção, devolva-as à pasta do recurso de origem."
         )
-    if rotas_sumidas:
-        avisos.append(
+    if vanished_routes:
+        warnings.append(
             "As rotas abaixo existem no Manager mas não estão no repositório. Ao "
             "publicar, elas serão apagadas do Manager:\n"
-            + "\n".join(f"  - {r}" for r in rotas_sumidas)
+            + "\n".join(f"  - {r}" for r in vanished_routes)
             + "\n\nSe não era essa a intenção, adicione-as ao repositório antes de "
             "publicar."
         )
 
-    return PayloadMontado(corpo=corpo, avisos=avisos, esperado=esperado)
+    return AssembledPayload(body=body, warnings=warnings, expected=expected)
 
 
 # --------------------------------------------------------------------------- E3.1
 
 
-def _lado(no: Dict[str, Any]) -> List[Tuple[Optional[str], List[Rota]]]:
-    return [(r.get("name"), _rotas_do_no(r)) for r in no.get("resources") or []]
+def _side(no: Dict[str, Any]) -> List[Tuple[Optional[str], List[Route]]]:
+    return [(r.get("name"), _node_routes(r)) for r in no.get("resources") or []]
 
 
-def _rotulos_da_conferencia(
-    enviado: Dict[str, Any], publicado: Dict[str, Any]
+def _verification_labels(
+    sent: Dict[str, Any], published: Dict[str, Any]
 ) -> Tuple[List[str], List[str], Dict[int, int]]:
     """Rótulos dos recursos dos dois lados, ligados pelas rotas.
 
     O recurso publicado herda o rótulo do enviado com quem foi ligado — é a
-    mesma regra do `montar`, então os escopos do `esperado` batem. O que fica
+    mesma regra do `assemble`, então os escopos do `expected` batem. O que fica
     sem par é divergência.
     """
-    lado_enviado, lado_publicado = _lado(enviado), _lado(publicado)
-    pares = parear_por_rotas(lado_enviado, lado_publicado)
+    sent_side, published_side = _side(sent), _side(published)
+    pairs = pair_by_routes(sent_side, published_side)
 
-    rotulos_enviados = _rotulos_de_recursos(lado_enviado)
-    proprios = _rotulos_de_recursos(lado_publicado)
-    por_publicado = {j: i for i, j in pares.items()}
-    rotulos_publicados = []
-    for j, proprio in enumerate(proprios):
-        if j in por_publicado:
-            rotulos_publicados.append(rotulos_enviados[por_publicado[j]])
-        elif proprio in rotulos_enviados:
+    sent_labels = _resource_labels(sent_side)
+    own = _resource_labels(published_side)
+    by_published = {j: i for i, j in pairs.items()}
+    published_labels = []
+    for j, own_label in enumerate(own):
+        if j in by_published:
+            published_labels.append(sent_labels[by_published[j]])
+        elif own_label in sent_labels:
             # Não pode colidir com um escopo enviado: os itens se misturariam.
-            rotulos_publicados.append(f"{proprio} (só no Manager)")
+            published_labels.append(f"{own_label} (só no Manager)")
         else:
-            rotulos_publicados.append(proprio)
-    return rotulos_enviados, rotulos_publicados, pares
+            published_labels.append(own_label)
+    return sent_labels, published_labels, pairs
 
 
-def _escopos(
-    no: Dict[str, Any], rotulos: Sequence[str]
+def _scopes(
+    no: Dict[str, Any], labels: Sequence[str]
 ) -> Iterator[Tuple[str, Dict[str, Any]]]:
     """Cada escopo da árvore com o seu rótulo.
 
     A rota basta como rótulo da operação: é única na revisão (W-6 e I-6).
     """
     yield "raiz", no
-    for recurso, rotulo in zip(no.get("resources") or [], rotulos):
-        yield f"resource {rotulo}", recurso
-        for op in recurso.get("operations") or []:
-            yield _rotulo_rota(_rota(op.get("method"), op.get("path"))), op
+    for resource, label in zip(no.get("resources") or [], labels):
+        yield f"resource {label}", resource
+        for op in resource.get("operations") or []:
+            yield _route_label(_route(op.get("method"), op.get("path"))), op
 
 
-def _assinatura_operacoes(no: Dict[str, Any], rotulos: Sequence[str]) -> set:
+def _operations_signature(no: Dict[str, Any], labels: Sequence[str]) -> set:
     return {
-        (rotulo, *_rota(op.get("method"), op.get("path")))
-        for recurso, rotulo in zip(no.get("resources") or [], rotulos)
-        for op in recurso.get("operations") or []
+        (label, *_route(op.get("method"), op.get("path")))
+        for resource, label in zip(no.get("resources") or [], labels)
+        for op in resource.get("operations") or []
     }
 
 
-def _por_escopo(
-    no: Dict[str, Any], rotulos: Sequence[str]
+def _by_scope(
+    no: Dict[str, Any], labels: Sequence[str]
 ) -> Dict[str, List[Dict[str, Any]]]:
     """Itens governados de cada escopo da árvore, indexados pelo rótulo."""
     return {
-        escopo: particionar(nodo.get("interceptors"))[0]
-        for escopo, nodo in _escopos(no, rotulos)
+        scope: partition(node.get("interceptors"))[0]
+        for scope, node in _scopes(no, labels)
     }
 
 
-def _assinatura_do_alvo(item: Dict[str, Any]) -> Tuple[Any, ...]:
+def _target_signature(item: Dict[str, Any]) -> Tuple[Any, ...]:
     """Tipo, Custom, ponto de execução e `content` normalizado de um item."""
     content = (
         None
         if item.get("type") == "Custom"
-        else json.dumps(normalizar_content(item.get("content")), sort_keys=True, default=str)
+        else json.dumps(normalize_content(item.get("content")), sort_keys=True, default=str)
     )
-    ponto = str(item.get("executionPoint") or "").upper()
-    return (item.get("type"), _custom_id(item), ponto, content)
+    point = str(item.get("executionPoint") or "").upper()
+    return (item.get("type"), _custom_id(item), point, content)
 
 
-def _marcacoes_por_escopo(
-    no: Dict[str, Any], rotulos: Sequence[str]
+def _tombstones_by_scope(
+    no: Dict[str, Any], labels: Sequence[str]
 ) -> Dict[str, Dict[Tuple[Any, ...], List[Dict[str, Any]]]]:
     """Marcações de remoção de cada escopo, agrupadas pelo item herdado que
     removem, resolvido no fluxo que o pai executa do mesmo lado."""
-    saida: Dict[str, Dict[Tuple[Any, ...], List[Dict[str, Any]]]] = {}
+    output: Dict[str, Dict[Tuple[Any, ...], List[Dict[str, Any]]]] = {}
 
-    def agrupar(escopo: str, itens: Any, herdado: Sequence[Dict[str, Any]]) -> None:
-        por_identidade = {identidade(i): i for i in herdado if identidade(i) is not None}
-        grupos: Dict[Tuple[Any, ...], List[Dict[str, Any]]] = {}
-        for marcacao in particionar(itens)[0]:
-            if marcacao.get("status") != "REMOVED":
+    def group(scope: str, items: Any, inherited: Sequence[Dict[str, Any]]) -> None:
+        by_identity = {identity(i): i for i in inherited if identity(i) is not None}
+        groups: Dict[Tuple[Any, ...], List[Dict[str, Any]]] = {}
+        for tombstone in partition(items)[0]:
+            if tombstone.get("status") != "REMOVED":
                 continue
-            alvo = por_identidade.get(alvo_da_marcacao(marcacao), marcacao)
-            grupos.setdefault(_assinatura_do_alvo(alvo), []).append(marcacao)
-        saida[escopo] = grupos
+            target = by_identity.get(tombstone_target(tombstone), tombstone)
+            groups.setdefault(_target_signature(target), []).append(tombstone)
+        output[scope] = groups
 
-    raiz = fluxo_composto(no.get("interceptors"))
-    agrupar("raiz", no.get("interceptors"), [])
-    for recurso, rotulo in zip(no.get("resources") or [], rotulos):
-        agrupar(f"resource {rotulo}", recurso.get("interceptors"), raiz)
-        composto = fluxo_composto(recurso.get("interceptors"), raiz)
-        for op in recurso.get("operations") or []:
-            agrupar(
-                _rotulo_rota(_rota(op.get("method"), op.get("path"))),
+    root = composed_flow(no.get("interceptors"))
+    group("raiz", no.get("interceptors"), [])
+    for resource, label in zip(no.get("resources") or [], labels):
+        group(f"resource {label}", resource.get("interceptors"), root)
+        composed = composed_flow(resource.get("interceptors"), root)
+        for op in resource.get("operations") or []:
+            group(
+                _route_label(_route(op.get("method"), op.get("path"))),
                 op.get("interceptors"),
-                composto,
+                composed,
             )
-    return saida
+    return output
 
 
-def _contagem_por_escopo(no: Dict[str, Any], rotulos: Sequence[str]) -> Dict[str, int]:
+def _count_by_scope(no: Dict[str, Any], labels: Sequence[str]) -> Dict[str, int]:
     """Quantos itens **vivos** cada escopo tem.
 
     Tombstones ficam de fora porque não são fluxo: contá-los faria um escopo com
     8 itens e 1 supressão parecer ter 9. Eles são conferidos à parte.
     """
     return {
-        escopo: len([i for i in itens if i.get("status") != "REMOVED"])
-        for escopo, itens in _por_escopo(no, rotulos).items()
+        scope: len([i for i in items if i.get("status") != "REMOVED"])
+        for scope, items in _by_scope(no, labels).items()
     }
 
 
-def _destinos_por_escopo(no: Dict[str, Any], rotulos: Sequence[str]) -> Dict[str, Any]:
+def _destinations_by_scope(no: Dict[str, Any], labels: Sequence[str]) -> Dict[str, Any]:
     """`destination` e `timeout` de cada escopo, para a conferência.
 
     Entram aqui porque `''` e `null` **não** são equivalentes na escrita: a
@@ -631,15 +631,15 @@ def _destinos_por_escopo(no: Dict[str, Any], rotulos: Sequence[str]) -> Dict[str
     a P-8). Sem conferi-los, uma troca silenciosa de um pelo outro passaria.
     """
     return {
-        escopo: (nodo.get("destination"), nodo.get("timeout"))
-        for escopo, nodo in _escopos(no, rotulos)
+        scope: (node.get("destination"), node.get("timeout"))
+        for scope, node in _scopes(no, labels)
     }
 
 
-def conferir(
-    enviado: Dict[str, Any],
-    publicado: Dict[str, Any],
-    esperado: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+def verify(
+    sent: Dict[str, Any],
+    published: Dict[str, Any],
+    expected: Optional[Dict[str, List[Dict[str, Any]]]] = None,
 ) -> List[str]:
     """Compara enviado × publicado e devolve as divergências.
 
@@ -647,133 +647,133 @@ def conferir(
     silenciosas distintas sob 200 — `idTemp` colidido, operação migrada de
     recurso e item descartado por dedupe. A releitura é o veredito.
 
-    `esperado` é o fluxo que o repositório declara (`PayloadMontado.esperado`).
+    `expected` é o fluxo que o repositório declara (`AssembledPayload.expected`).
     Com ele, o fluxo publicado é comparado também com o **declarado** — tipo,
     ordem e `content` —, e não só com o payload: uma perda na própria montagem
     passaria intacta por uma comparação com o enviado.
     """
-    divergencias: List[str] = []
-    # Os recursos dos dois lados são ligados pelas rotas, como no `montar`:
+    divergences: List[str] = []
+    # Os recursos dos dois lados são ligados pelas rotas, como no `assemble`:
     # pelo nome, dois homônimos virariam um só escopo e a contagem mentiria.
-    rotulos_e, rotulos_p, pares = _rotulos_da_conferencia(enviado, publicado)
-    if esperado:
-        divergencias.extend(
-            _divergencias_do_fluxo_declarado(esperado, publicado, rotulos_p)
+    sent_labels, published_labels, pairs = _verification_labels(sent, published)
+    if expected:
+        divergences.extend(
+            _declared_flow_divergences(expected, published, published_labels)
         )
 
-    ops_enviadas = _assinatura_operacoes(enviado, rotulos_e)
-    ops_publicadas = _assinatura_operacoes(publicado, rotulos_p)
-    for faltando in sorted(ops_enviadas - ops_publicadas):
-        divergencias.append(
-            f"a operação {faltando[1]} {faltando[2]}, do recurso {faltando[0]}, foi "
+    sent_ops = _operations_signature(sent, sent_labels)
+    published_ops = _operations_signature(published, published_labels)
+    for missing in sorted(sent_ops - published_ops):
+        divergences.append(
+            f"a operação {missing[1]} {missing[2]}, do recurso {missing[0]}, foi "
             "enviada mas não está no Manager"
         )
-    for sobrando in sorted(ops_publicadas - ops_enviadas):
-        divergencias.append(
-            f"a operação {sobrando[1]} {sobrando[2]}, do recurso {sobrando[0]}, está "
+    for leftover in sorted(published_ops - sent_ops):
+        divergences.append(
+            f"a operação {leftover[1]} {leftover[2]}, do recurso {leftover[0]}, está "
             "no Manager mas não foi enviada"
         )
 
-    enviadas = _contagem_por_escopo(enviado, rotulos_e)
-    publicadas = _contagem_por_escopo(publicado, rotulos_p)
-    for escopo, quantidade in sorted(enviadas.items()):
-        presente = publicadas.get(escopo)
-        if presente is None:
-            divergencias.append(f"{escopo} foi enviado mas não está no Manager")
-        elif presente != quantidade:
-            divergencias.append(
-                f"{escopo}: foram enviados {quantidade} interceptor(es) e o Manager "
-                f"gravou {presente}"
+    sent_items = _count_by_scope(sent, sent_labels)
+    published_items = _count_by_scope(published, published_labels)
+    for scope, count in sorted(sent_items.items()):
+        present = published_items.get(scope)
+        if present is None:
+            divergences.append(f"{scope} foi enviado mas não está no Manager")
+        elif present != count:
+            divergences.append(
+                f"{scope}: foram enviados {count} interceptor(es) e o Manager "
+                f"gravou {present}"
             )
 
-    for faltando in sorted(r for i, r in enumerate(rotulos_e) if i not in pares):
-        divergencias.append(f"o recurso {faltando} foi enviado mas não está no Manager")
+    for missing in sorted(r for i, r in enumerate(sent_labels) if i not in pairs):
+        divergences.append(f"o recurso {missing} foi enviado mas não está no Manager")
     # O T10 provou que o que não está no repositório é removido. Um recurso que
     # sobrevive sem ter sido enviado é divergência na direção oposta — e sem esta
     # conferência ele passaria despercebido.
-    ligados = set(pares.values())
-    for sobrando in sorted(r for j, r in enumerate(rotulos_p) if j not in ligados):
-        divergencias.append(
-            f"o recurso {sobrando} está no Manager mas não foi enviado"
+    linked = set(pairs.values())
+    for leftover in sorted(r for j, r in enumerate(published_labels) if j not in linked):
+        divergences.append(
+            f"o recurso {leftover} está no Manager mas não foi enviado"
         )
 
     # Pelo item que removem, e não pelo `parent.id`: a marcação enviada por
     # `idTemp` volta gravada com o id que o Manager gerou.
-    marcacoes_enviadas = _marcacoes_por_escopo(enviado, rotulos_e)
-    marcacoes_gravadas = _marcacoes_por_escopo(publicado, rotulos_p)
-    for escopo in sorted(set(marcacoes_enviadas) | set(marcacoes_gravadas)):
-        enviadas = marcacoes_enviadas.get(escopo, {})
-        gravadas = marcacoes_gravadas.get(escopo, {})
-        sobrando: List[Dict[str, Any]] = []
-        faltando: List[Dict[str, Any]] = []
-        for alvo in sorted(set(enviadas) | set(gravadas), key=str):
-            diferenca = len(gravadas.get(alvo, [])) - len(enviadas.get(alvo, []))
-            if diferenca > 0:
-                sobrando += gravadas[alvo][:diferenca]
-            elif diferenca < 0:
-                faltando += enviadas[alvo][:-diferenca]
-        if sobrando:
-            divergencias.append(
-                f"{escopo}: o Manager ainda tem {len(sobrando)} marcação(ões) de "
-                f"interceptor removido ({_rotular(sobrando)}) que não foram "
+    sent_tombstones = _tombstones_by_scope(sent, sent_labels)
+    written_tombstones = _tombstones_by_scope(published, published_labels)
+    for scope in sorted(set(sent_tombstones) | set(written_tombstones)):
+        sent_items = sent_tombstones.get(scope, {})
+        written = written_tombstones.get(scope, {})
+        leftover: List[Dict[str, Any]] = []
+        missing: List[Dict[str, Any]] = []
+        for target in sorted(set(sent_items) | set(written), key=str):
+            difference = len(written.get(target, [])) - len(sent_items.get(target, []))
+            if difference > 0:
+                leftover += written[target][:difference]
+            elif difference < 0:
+                missing += sent_items[target][:-difference]
+        if leftover:
+            divergences.append(
+                f"{scope}: o Manager ainda tem {len(leftover)} marcação(ões) de "
+                f"interceptor removido ({_label(leftover)}) que não foram "
                 "enviadas; elas continuam suprimindo itens do fluxo herdado"
             )
-        if faltando:
-            divergencias.append(
-                f"{escopo}: foram enviadas {len(faltando)} marcação(ões) de interceptor "
-                f"removido ({_rotular(faltando)}) que o Manager não gravou; esses itens "
+        if missing:
+            divergences.append(
+                f"{scope}: foram enviadas {len(missing)} marcação(ões) de interceptor "
+                f"removido ({_label(missing)}) que o Manager não gravou; esses itens "
                 "herdados continuam executando aqui"
             )
 
-    destinos_enviados = _destinos_por_escopo(enviado, rotulos_e)
-    destinos_publicados = _destinos_por_escopo(publicado, rotulos_p)
-    for escopo, enviado_par in sorted(destinos_enviados.items()):
-        publicado_par = destinos_publicados.get(escopo)
-        if publicado_par is None:
+    sent_destinations = _destinations_by_scope(sent, sent_labels)
+    published_destinations = _destinations_by_scope(published, published_labels)
+    for scope, sent_pair in sorted(sent_destinations.items()):
+        published_pair = published_destinations.get(scope)
+        if published_pair is None:
             continue  # a ausência do escopo já foi reportada acima
-        if enviado_par != publicado_par:
-            divergencias.append(
-                f"{escopo}: destination/timeout foi enviado como {enviado_par!r} e "
-                f"gravado como {publicado_par!r}"
+        if sent_pair != published_pair:
+            divergences.append(
+                f"{scope}: destination/timeout foi enviado como {sent_pair!r} e "
+                f"gravado como {published_pair!r}"
             )
 
-    divergencias.extend(_divergencias_do_basic_info(enviado, publicado))
-    return divergencias
+    divergences.extend(_basic_info_divergences(sent, published))
+    return divergences
 
 
-_NOME_DO_PONTO = {"FIRST": "request", "SECOND": "response"}
+_POINT_NAME = {"FIRST": "request", "SECOND": "response"}
 
 
 def _custom_id(item: Dict[str, Any]) -> Optional[int]:
-    valor = item.get("customInterceptorId")
-    if valor is None and item.get("type") == "Custom":
-        valor = item.get("id")
-    return valor
+    value = item.get("customInterceptorId")
+    if value is None and item.get("type") == "Custom":
+        value = item.get("id")
+    return value
 
 
-def _rotulo_item(item: Dict[str, Any]) -> str:
+def _item_label(item: Dict[str, Any]) -> str:
     custom_id = _custom_id(item)
     return f"Custom#{custom_id}" if item.get("type") == "Custom" else str(item.get("type"))
 
 
-def _chaves_diferentes(declarado: Any, gravado: Any) -> str:
+def _different_keys(declared: Any, written: Any) -> str:
     """Quais campos do `content` mudaram — o valor inteiro seria ilegível."""
-    if isinstance(declarado, dict) and isinstance(gravado, dict):
-        chaves = sorted(
-            k for k in set(declarado) | set(gravado) if declarado.get(k) != gravado.get(k)
+    if isinstance(declared, dict) and isinstance(written, dict):
+        keys = sorted(
+            k for k in set(declared) | set(written) if declared.get(k) != written.get(k)
         )
-        if chaves:
+        if keys:
             return ", ".join(
-                f"`{k}` declarado {declarado.get(k)!r}, gravado {gravado.get(k)!r}"
-                for k in chaves
+                f"`{k}` declarado {declared.get(k)!r}, gravado {written.get(k)!r}"
+                for k in keys
             )
-    return f"declarado {declarado!r}, gravado {gravado!r}"
+    return f"declarado {declared!r}, gravado {written!r}"
 
 
-def _divergencias_do_fluxo_declarado(
-    esperado: Dict[str, List[Dict[str, Any]]],
-    publicado: Dict[str, Any],
-    rotulos: Sequence[str],
+def _declared_flow_divergences(
+    expected: Dict[str, List[Dict[str, Any]]],
+    published: Dict[str, Any],
+    labels: Sequence[str],
 ) -> List[str]:
     """Fluxo publicado × fluxo declarado, por escopo e execution point.
 
@@ -781,49 +781,49 @@ def _divergencias_do_fluxo_declarado(
     lido. O `content` só é comparado nos tipos nativos — no `Custom` o id
     identifica o objeto (V-11 §4) —, e pela mesma normalização da conformidade.
     """
-    divergencias: List[str] = []
-    publicados = _por_escopo(publicado, rotulos)
-    for escopo, declarados in sorted(esperado.items()):
-        gravados_do_escopo = publicados.get(escopo)
-        if gravados_do_escopo is None:
+    divergences: List[str] = []
+    published_by_scope = _by_scope(published, labels)
+    for scope, declared in sorted(expected.items()):
+        written_in_scope = published_by_scope.get(scope)
+        if written_in_scope is None:
             continue  # a ausência do escopo é reportada pela contagem
-        for ponto, nome_do_ponto in _NOME_DO_PONTO.items():
-            quer = [
-                d for d in declarados
-                if str(d.get("executionPoint") or "").upper() == ponto
+        for point, point_name in _POINT_NAME.items():
+            wanted = [
+                d for d in declared
+                if str(d.get("executionPoint") or "").upper() == point
             ]
-            tem = sorted(
+            actual = sorted(
                 (
-                    i for i in gravados_do_escopo
-                    if str(i.get("executionPoint") or "").upper() == ponto
+                    i for i in written_in_scope
+                    if str(i.get("executionPoint") or "").upper() == point
                     and i.get("status") != "REMOVED"
                 ),
                 key=lambda i: i.get("position") or 0,
             )
-            assinatura_quer = [(d.get("type"), _custom_id(d)) for d in quer]
-            assinatura_tem = [(i.get("type"), _custom_id(i)) for i in tem]
-            if assinatura_quer != assinatura_tem:
-                divergencias.append(
-                    f"{escopo}: o {nome_do_ponto} foi declarado como "
-                    f"[{', '.join(_rotulo_item(d) for d in quer)}] e gravado como "
-                    f"[{', '.join(_rotulo_item(i) for i in tem)}]"
+            wanted_signature = [(d.get("type"), _custom_id(d)) for d in wanted]
+            actual_signature = [(i.get("type"), _custom_id(i)) for i in actual]
+            if wanted_signature != actual_signature:
+                divergences.append(
+                    f"{scope}: o {point_name} foi declarado como "
+                    f"[{', '.join(_item_label(d) for d in wanted)}] e gravado como "
+                    f"[{', '.join(_item_label(i) for i in actual)}]"
                 )
                 continue
-            for posicao, (d, i) in enumerate(zip(quer, tem), start=1):
+            for position, (d, i) in enumerate(zip(wanted, actual), start=1):
                 if d.get("type") == "Custom":
                     continue
-                quer_content = normalizar_content(d.get("content"))
-                tem_content = normalizar_content(i.get("content"))
-                if quer_content != tem_content:
-                    divergencias.append(
-                        f"{escopo}: o {d.get('type')} (item {posicao} do "
-                        f"{nome_do_ponto}) não foi gravado como declarado — "
-                        f"{_chaves_diferentes(quer_content, tem_content)}"
+                wanted_content = normalize_content(d.get("content"))
+                actual_content = normalize_content(i.get("content"))
+                if wanted_content != actual_content:
+                    divergences.append(
+                        f"{scope}: o {d.get('type')} (item {position} do "
+                        f"{point_name}) não foi gravado como declarado — "
+                        f"{_different_keys(wanted_content, actual_content)}"
                     )
-    return divergencias
+    return divergences
 
 
-def _assinatura_api_tags(api: Dict[str, Any]) -> Dict[str, frozenset]:
+def _api_tags_signature(api: Dict[str, Any]) -> Dict[str, frozenset]:
     """`attributeName` → conjunto de tags; a ordem não é contrato da plataforma."""
     return {
         str(item.get("attributeName")): frozenset(str(t) for t in (item.get("tags") or []))
@@ -832,41 +832,41 @@ def _assinatura_api_tags(api: Dict[str, Any]) -> Dict[str, frozenset]:
     }
 
 
-def _divergencias_do_basic_info(
-    enviado: Dict[str, Any], publicado: Dict[str, Any]
+def _basic_info_divergences(
+    sent: Dict[str, Any], published: Dict[str, Any]
 ) -> List[str]:
     """Confere o `api` aninhado — onde o basic info viaja (W-7).
 
     Uma tag inexistente no atributo é aceita com 200 e o Manager apaga
     **todas** as `apiTags`. Sem esta conferência, o comando reportava sucesso.
     """
-    api_enviada = enviado.get("api") if isinstance(enviado.get("api"), dict) else {}
-    api_publicada = publicado.get("api") if isinstance(publicado.get("api"), dict) else {}
-    divergencias: List[str] = []
+    sent_api = sent.get("api") if isinstance(sent.get("api"), dict) else {}
+    published_api = published.get("api") if isinstance(published.get("api"), dict) else {}
+    divergences: List[str] = []
 
-    for campo in ("name", "description"):
-        if campo in api_enviada and api_enviada.get(campo) != api_publicada.get(campo):
-            divergencias.append(
-                f"o campo `{campo}` foi enviado como {api_enviada.get(campo)!r} e "
-                f"gravado como {api_publicada.get(campo)!r}"
+    for field_name in ("name", "description"):
+        if field_name in sent_api and sent_api.get(field_name) != published_api.get(field_name):
+            divergences.append(
+                f"o campo `{field_name}` foi enviado como {sent_api.get(field_name)!r} e "
+                f"gravado como {published_api.get(field_name)!r}"
             )
 
-    if "apiTags" not in api_enviada:
-        return divergencias
-    enviadas = _assinatura_api_tags(api_enviada)
-    publicadas = _assinatura_api_tags(api_publicada)
-    for nome in sorted(enviadas.keys() - publicadas.keys()):
-        divergencias.append(
-            f"o atributo `{nome}` foi enviado em `apiTags` mas não está no Manager"
+    if "apiTags" not in sent_api:
+        return divergences
+    sent_items = _api_tags_signature(sent_api)
+    published_items = _api_tags_signature(published_api)
+    for name in sorted(sent_items.keys() - published_items.keys()):
+        divergences.append(
+            f"o atributo `{name}` foi enviado em `apiTags` mas não está no Manager"
         )
-    for nome in sorted(publicadas.keys() - enviadas.keys()):
-        divergencias.append(
-            f"o atributo `{nome}` está nas `apiTags` do Manager mas não foi enviado"
+    for name in sorted(published_items.keys() - sent_items.keys()):
+        divergences.append(
+            f"o atributo `{name}` está nas `apiTags` do Manager mas não foi enviado"
         )
-    for nome in sorted(enviadas.keys() & publicadas.keys()):
-        if enviadas[nome] != publicadas[nome]:
-            divergencias.append(
-                f"o atributo `{nome}` foi enviado com as tags {sorted(enviadas[nome])} "
-                f"e gravado com {sorted(publicadas[nome])}"
+    for name in sorted(sent_items.keys() & published_items.keys()):
+        if sent_items[name] != published_items[name]:
+            divergences.append(
+                f"o atributo `{name}` foi enviado com as tags {sorted(sent_items[name])} "
+                f"e gravado com {sorted(published_items[name])}"
             )
-    return divergencias
+    return divergences

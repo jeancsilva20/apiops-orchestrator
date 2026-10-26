@@ -12,7 +12,7 @@ INTERNAL_ERROR_MESSAGE = (
 
 UNAUTHORIZED_MESSAGE = "Sessão inválida ou expirada. Faça `sen login` novamente."
 
-# The platform also answers 403 for an expired session (see ReguaInalcancavelError),
+# The platform also answers 403 for an expired session (see RulerUnreachableError),
 # so the message names re-login first, the only cause the user fixes alone.
 FORBIDDEN_MESSAGE = (
     "Acesso negado pelo Manager. Rode `sen login` e tente de novo; "

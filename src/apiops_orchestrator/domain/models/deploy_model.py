@@ -4,10 +4,10 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from apiops_orchestrator.domain.models.validate_view import (
-    AtributoExigido,
+    RequiredAttribute,
     ValidateApi,
     ValidateRevision,
-    sem_modo_fora_da_esteira,
+    drop_mode_outside_pipeline,
 )
 
 SCHEMA_SEN_DEPLOY_V1 = "apiops.sen-deploy/v1"
@@ -39,8 +39,8 @@ class DeployGovernance:
     deployable_environments: List[int] = field(default_factory=list)
     completeness_required: Optional[float] = None
     completeness_actual: Optional[float] = None
-    required: List[AtributoExigido] = field(default_factory=list)
-    missing: List[AtributoExigido] = field(default_factory=list)
+    required: List[RequiredAttribute] = field(default_factory=list)
+    missing: List[RequiredAttribute] = field(default_factory=list)
     violations: List[str] = field(default_factory=list)
 
     @property
@@ -49,7 +49,7 @@ class DeployGovernance:
 
 
 @dataclass(frozen=True)
-class DeploymentResultado:
+class DeploymentResult:
     attempted: bool = False
     accepted: bool = False
     deployment_id: Optional[int] = None
@@ -58,11 +58,11 @@ class DeploymentResultado:
     reason: Optional[str] = None
 
 
-def _atributo(a: AtributoExigido) -> Dict[str, Any]:
+def _attribute(a: RequiredAttribute) -> Dict[str, Any]:
     return {"attributeId": a.attribute_id, "name": a.name, "tagId": a.tag_id}
 
 
-def _estado(s: Optional[DeployState]) -> Optional[Dict[str, Any]]:
+def _state(s: Optional[DeployState]) -> Optional[Dict[str, Any]]:
     if s is None:
         return None
     return {
@@ -83,16 +83,16 @@ class DeployView:
     api: ValidateApi
     revision: ValidateRevision
     environment: DeployEnvironment
-    governanca: DeployGovernance = field(default_factory=DeployGovernance)
+    governance: DeployGovernance = field(default_factory=DeployGovernance)
     previous_state: Optional[DeployState] = None
     new_state: Optional[DeployState] = None
-    deployment: DeploymentResultado = field(default_factory=DeploymentResultado)
-    avisos: List[str] = field(default_factory=list)
+    deployment: DeploymentResult = field(default_factory=DeploymentResult)
+    warnings: List[str] = field(default_factory=list)
 
     def to_document(self) -> Dict[str, Any]:
         """Árvore do contrato v1, na ordem declarada."""
-        gov = self.governanca
-        return sem_modo_fora_da_esteira({
+        gov = self.governance
+        return drop_mode_outside_pipeline({
             "schema": self.schema,
             "generatedAt": self.generated_at,
             "executionMode": self.execution_mode,
@@ -118,13 +118,13 @@ class DeployView:
                     "required": gov.completeness_required,
                     "actual": gov.completeness_actual,
                 },
-                "required": [_atributo(r) for r in gov.required],
-                "missing": [_atributo(m) for m in gov.missing],
+                "required": [_attribute(r) for r in gov.required],
+                "missing": [_attribute(m) for m in gov.missing],
                 "violations": list(gov.violations),
                 "blocked": gov.blocked,
             },
-            "previousState": _estado(self.previous_state),
-            "newState": _estado(self.new_state),
+            "previousState": _state(self.previous_state),
+            "newState": _state(self.new_state),
             "deployment": {
                 "attempted": self.deployment.attempted,
                 "accepted": self.deployment.accepted,
@@ -133,5 +133,5 @@ class DeployView:
                 "status": self.deployment.status,
                 "reason": self.deployment.reason,
             },
-            "warnings": list(self.avisos),
+            "warnings": list(self.warnings),
         })

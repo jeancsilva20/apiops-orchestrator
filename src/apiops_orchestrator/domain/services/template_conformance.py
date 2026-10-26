@@ -27,24 +27,24 @@ import json
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from apiops_orchestrator.domain.services.repo_layout import eh_governado
+from apiops_orchestrator.domain.services.repo_layout import is_governed
 
-SEVERIDADE_INFO = "INFO"
-SEVERIDADE_WARNING = "WARNING"
+SEVERITY_INFO = "INFO"
+SEVERITY_WARNING = "WARNING"
 
-PONTOS = ("FIRST", "SECOND")
+POINTS = ("FIRST", "SECOND")
 
 
 @dataclass(frozen=True)
-class Achado:
-    severidade: str
-    escopo: str
-    mensagem: str
-    tipo: Optional[str] = None
+class Finding:
+    severity: str
+    scope: str
+    message: str
+    kind: Optional[str] = None
     custom_interceptor_id: Optional[int] = None
 
 
-def _normalizar_escalar(valor: Any) -> Any:
+def _normalize_scalar(value: Any) -> Any:
     """Forma canônica para COMPARAÇÃO (não para escrita).
 
     O wire devolve `"quota": "1000"` como string e o repositório pode trazer o
@@ -52,52 +52,52 @@ def _normalizar_escalar(valor: Any) -> Any:
     campo idêntico. A escrita continua preservando a string — são decisões
     independentes.
     """
-    if isinstance(valor, bool) or valor is None:
-        return valor
-    if isinstance(valor, (int, float)):
-        return float(valor)
-    if isinstance(valor, str):
-        texto = valor.strip()
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        text = value.strip()
         try:
-            return float(texto)
+            return float(text)
         except ValueError:
-            return valor
-    return valor
+            return value
+    return value
 
 
-def _normalizar_content(content: Any) -> Any:
+def _normalize_content(content: Any) -> Any:
     """Normaliza recursivamente, aceitando `content` como JSON serializado."""
     if isinstance(content, str):
         try:
             content = json.loads(content)
         except (TypeError, ValueError):
-            return _normalizar_escalar(content)
+            return _normalize_scalar(content)
     if isinstance(content, dict):
-        return {k: _normalizar_content(v) for k, v in sorted(content.items())}
+        return {k: _normalize_content(v) for k, v in sorted(content.items())}
     if isinstance(content, list):
-        return [_normalizar_content(v) for v in content]
-    return _normalizar_escalar(content)
+        return [_normalize_content(v) for v in content]
+    return _normalize_scalar(content)
 
 
 # Pública para a conferência pós-publicação comparar `content` pela mesma regra.
-normalizar_content = _normalizar_content
+normalize_content = _normalize_content
 
 
 def _custom_id(item: Dict[str, Any]) -> Optional[int]:
-    valor = item.get("customInterceptorId")
-    if valor is None and item.get("type") == "Custom":
-        valor = item.get("id")
-    return valor
+    value = item.get("customInterceptorId")
+    if value is None and item.get("type") == "Custom":
+        value = item.get("id")
+    return value
 
 
-def _chave(item: Dict[str, Any]) -> Tuple[str, Optional[int]]:
+def _key(item: Dict[str, Any]) -> Tuple[str, Optional[int]]:
     """Identidade para alinhamento. O `content` fica de fora de propósito:
     um `Log` alterado ainda É o mesmo `Log`, e a diferença é `WARNING` de
     alteração, não um par remoção+append."""
     return (str(item.get("type") or ""), _custom_id(item))
 
 
-def _nome_do_custom(item: Dict[str, Any]) -> Optional[str]:
+def _custom_name(item: Dict[str, Any]) -> Optional[str]:
     """Nome legível de um `Custom`, materializado no `content` do wire.
 
     O wire guarda `{"id": 33, "name": "CyberArk and OAuth Autentication",
@@ -111,178 +111,178 @@ def _nome_do_custom(item: Dict[str, Any]) -> Optional[str]:
         except (TypeError, ValueError):
             return None
     if isinstance(content, dict):
-        nome = content.get("name")
-        return str(nome) if nome else None
+        name = content.get("name")
+        return str(name) if name else None
     return None
 
 
-def _rotulo(item: Dict[str, Any]) -> str:
+def _label(item: Dict[str, Any]) -> str:
     """Identificação do interceptor para o relatório (V-11 §5).
 
     `Custom #33 — CyberArk and OAuth Autentication` quando o nome é conhecido;
     `Custom #33` quando não é. Tipos nativos saem pelo próprio tipo.
     """
-    tipo = item.get("type") or "?"
+    kind = item.get("type") or "?"
     cid = _custom_id(item)
     if not cid:
-        return str(tipo)
-    nome = _nome_do_custom(item)
-    return f"{tipo} #{cid} — {nome}" if nome else f"{tipo} #{cid}"
+        return str(kind)
+    name = _custom_name(item)
+    return f"{kind} #{cid} — {name}" if name else f"{kind} #{cid}"
 
 
-def _governados(itens: Optional[Sequence[Dict[str, Any]]], ponto: str) -> List[Dict[str, Any]]:
+def _governed(items: Optional[Sequence[Dict[str, Any]]], point: str) -> List[Dict[str, Any]]:
     return [
         i
-        for i in (itens or [])
-        if eh_governado(i.get("executionPoint"))
-        and (i.get("executionPoint") or "").upper() == ponto
+        for i in (items or [])
+        if is_governed(i.get("executionPoint"))
+        and (i.get("executionPoint") or "").upper() == point
         and i.get("status") != "REMOVED"
     ]
 
 
-def comparar(
-    fluxo_efetivo: Optional[Sequence[Dict[str, Any]]],
-    regua: Optional[Sequence[Dict[str, Any]]],
-    escopo: str,
-) -> List[Achado]:
+def compare(
+    effective_flow: Optional[Sequence[Dict[str, Any]]],
+    ruler: Optional[Sequence[Dict[str, Any]]],
+    scope: str,
+) -> List[Finding]:
     """Compara um escopo com a régua e devolve os achados.
 
     Nunca levanta exceção e nunca bloqueia: a saída é sempre uma lista.
     """
-    achados: List[Achado] = []
-    for ponto in PONTOS:
-        achados.extend(
-            _comparar_ponto(
-                _governados(fluxo_efetivo, ponto),
-                _governados(regua, ponto),
-                escopo,
-                _NOME_DO_PONTO[ponto],
+    findings: List[Finding] = []
+    for point in POINTS:
+        findings.extend(
+            _compare_point(
+                _governed(effective_flow, point),
+                _governed(ruler, point),
+                scope,
+                _POINT_NAME[point],
             )
         )
-    return achados
+    return findings
 
 
-_NOME_DO_PONTO = {"FIRST": "request", "SECOND": "response"}
+_POINT_NAME = {"FIRST": "request", "SECOND": "response"}
 
 
-def _comparar_ponto(
-    efetivo: Sequence[Dict[str, Any]],
-    regua: Sequence[Dict[str, Any]],
-    escopo: str,
-    nome_do_ponto: str,
-) -> List[Achado]:
-    achados: List[Achado] = []
-    chaves_efetivo = [_chave(i) for i in efetivo]
-    chaves_regua = [_chave(i) for i in regua]
+def _compare_point(
+    effective: Sequence[Dict[str, Any]],
+    ruler: Sequence[Dict[str, Any]],
+    scope: str,
+    point_name: str,
+) -> List[Finding]:
+    findings: List[Finding] = []
+    effective_keys = [_key(i) for i in effective]
+    ruler_keys = [_key(i) for i in ruler]
 
-    ausentes: List[Tuple[int, Dict[str, Any]]] = []
-    acrescimos: List[Tuple[int, Dict[str, Any]]] = []
-    matcher = difflib.SequenceMatcher(a=chaves_regua, b=chaves_efetivo, autojunk=False)
+    missing: List[Tuple[int, Dict[str, Any]]] = []
+    additions: List[Tuple[int, Dict[str, Any]]] = []
+    matcher = difflib.SequenceMatcher(a=ruler_keys, b=effective_keys, autojunk=False)
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag == "equal":
-            for item_regua, item_efetivo in zip(regua[i1:i2], efetivo[j1:j2]):
-                achados.extend(_comparar_content(item_regua, item_efetivo, escopo))
+            for ruler_item, effective_item in zip(ruler[i1:i2], effective[j1:j2]):
+                findings.extend(_compare_content(ruler_item, effective_item, scope))
             continue
         if tag in ("delete", "replace"):
-            ausentes.extend((i, regua[i]) for i in range(i1, i2))
+            missing.extend((i, ruler[i]) for i in range(i1, i2))
         if tag in ("insert", "replace"):
-            acrescimos.extend((j, efetivo[j]) for j in range(j1, j2))
+            additions.extend((j, effective[j]) for j in range(j1, j2))
 
     # Um item que só mudou de lugar sai do alinhamento como "falta aqui" mais
     # "sobra ali" — duas afirmações falsas sobre um item que existe dos dois
     # lados. O par vira um achado só, de posição; a ordem muda o comportamento.
-    for indice_regua, item_regua in list(ausentes):
-        par = next(
-            ((j, e) for j, e in acrescimos if _chave(e) == _chave(item_regua)), None
+    for ruler_index, ruler_item in list(missing):
+        pair = next(
+            ((j, e) for j, e in additions if _key(e) == _key(ruler_item)), None
         )
-        if par is None:
+        if pair is None:
             continue
-        ausentes.remove((indice_regua, item_regua))
-        acrescimos.remove(par)
-        achados.append(
-            _achado_de_posicao(item_regua, indice_regua, par[0], escopo, nome_do_ponto)
+        missing.remove((ruler_index, ruler_item))
+        additions.remove(pair)
+        findings.append(
+            _position_finding(ruler_item, ruler_index, pair[0], scope, point_name)
         )
-        achados.extend(_comparar_content(item_regua, par[1], escopo))
+        findings.extend(_compare_content(ruler_item, pair[1], scope))
 
-    achados.extend(_achados_ausente([i for _, i in ausentes], escopo))
-    achados.extend(_achados_append([i for _, i in acrescimos], escopo))
-    return achados
+    findings.extend(_missing_findings([i for _, i in missing], scope))
+    findings.extend(_append_findings([i for _, i in additions], scope))
+    return findings
 
 
-def _achado_de_posicao(
-    item: Dict[str, Any], na_regua: int, aqui: int, escopo: str, nome_do_ponto: str
-) -> Achado:
-    return Achado(
-        severidade=SEVERIDADE_WARNING,
-        escopo=escopo,
-        mensagem=(
-            f'"{_rotulo(item)}" executa em outra posição: na template é o '
-            f"{na_regua + 1}º do {nome_do_ponto}, aqui é o {aqui + 1}º"
+def _position_finding(
+    item: Dict[str, Any], in_ruler: int, here: int, scope: str, point_name: str
+) -> Finding:
+    return Finding(
+        severity=SEVERITY_WARNING,
+        scope=scope,
+        message=(
+            f'"{_label(item)}" executa em outra posição: na template é o '
+            f"{in_ruler + 1}º do {point_name}, aqui é o {here + 1}º"
         ),
-        tipo=item.get("type"),
+        kind=item.get("type"),
         custom_interceptor_id=_custom_id(item),
     )
 
 
-def _comparar_content(
-    item_regua: Dict[str, Any], item_efetivo: Dict[str, Any], escopo: str
-) -> List[Achado]:
+def _compare_content(
+    ruler_item: Dict[str, Any], effective_item: Dict[str, Any], scope: str
+) -> List[Finding]:
     # Custom casa por id: mesmo id, mesmo objeto no tenant.
-    if item_regua.get("type") == "Custom":
+    if ruler_item.get("type") == "Custom":
         return []
-    esperado = _normalizar_content(item_regua.get("content"))
-    obtido = _normalizar_content(item_efetivo.get("content"))
-    if esperado == obtido:
+    expected = _normalize_content(ruler_item.get("content"))
+    actual = _normalize_content(effective_item.get("content"))
+    if expected == actual:
         return []
     return [
-        Achado(
-            severidade=SEVERIDADE_WARNING,
-            escopo=escopo,
-            mensagem=(
-                f'"{_rotulo(item_regua)}" está configurado diferente da template '
-                f"({_resumir_diferenca(esperado, obtido)})"
+        Finding(
+            severity=SEVERITY_WARNING,
+            scope=scope,
+            message=(
+                f'"{_label(ruler_item)}" está configurado diferente da template '
+                f"({_summarize_difference(expected, actual)})"
             ),
-            tipo=item_regua.get("type"),
+            kind=ruler_item.get("type"),
         )
     ]
 
 
-def _resumir_diferenca(esperado: Any, obtido: Any) -> str:
+def _summarize_difference(expected: Any, actual: Any) -> str:
     """Nomeia os campos divergentes, em vez de despejar os dois `content`."""
-    if isinstance(esperado, dict) and isinstance(obtido, dict):
-        campos = [
-            f"{c}: {obtido.get(c)!r}, na template {esperado.get(c)!r}"
-            for c in sorted(set(esperado) | set(obtido))
-            if esperado.get(c) != obtido.get(c)
+    if isinstance(expected, dict) and isinstance(actual, dict):
+        field_names = [
+            f"{c}: {actual.get(c)!r}, na template {expected.get(c)!r}"
+            for c in sorted(set(expected) | set(actual))
+            if expected.get(c) != actual.get(c)
         ]
-        if campos:
-            return "; ".join(campos)
-    return f"{obtido!r}, na template {esperado!r}"
+        if field_names:
+            return "; ".join(field_names)
+    return f"{actual!r}, na template {expected!r}"
 
 
-def _achados_append(itens: Sequence[Dict[str, Any]], escopo: str) -> List[Achado]:
+def _append_findings(items: Sequence[Dict[str, Any]], scope: str) -> List[Finding]:
     return [
-        Achado(
-            severidade=SEVERIDADE_INFO,
-            escopo=escopo,
-            mensagem=f'"{_rotulo(i)}" não existe na template — é um acréscimo desta API',
-            tipo=i.get("type"),
+        Finding(
+            severity=SEVERITY_INFO,
+            scope=scope,
+            message=f'"{_label(i)}" não existe na template — é um acréscimo desta API',
+            kind=i.get("type"),
             custom_interceptor_id=_custom_id(i),
         )
-        for i in itens
+        for i in items
     ]
 
 
-def _achados_ausente(itens: Sequence[Dict[str, Any]], escopo: str) -> List[Achado]:
+def _missing_findings(items: Sequence[Dict[str, Any]], scope: str) -> List[Finding]:
     return [
-        Achado(
-            severidade=SEVERIDADE_WARNING,
-            escopo=escopo,
-            mensagem=(
-                f'"{_rotulo(i)}" está na template, mas não é executado aqui'
+        Finding(
+            severity=SEVERITY_WARNING,
+            scope=scope,
+            message=(
+                f'"{_label(i)}" está na template, mas não é executado aqui'
             ),
-            tipo=i.get("type"),
+            kind=i.get("type"),
             custom_interceptor_id=_custom_id(i),
         )
-        for i in itens
+        for i in items
     ]

@@ -1,6 +1,6 @@
 """Materializa o layout canônico a partir do estado do Manager.
 
-Lógica pura: recebe os dicts já lidos por GET e devolve `(caminho, texto)`. Não
+Lógica pura: recebe os dicts já lidos por GET e devolve `(file_path, text)`. Não
 toca disco nem rede — quem escreve é a camada de aplicação.
 
 Opera sobre o **wire cru**, sem modelos intermediários.
@@ -21,157 +21,157 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from apiops_orchestrator.domain.services import repo_layout as layout
-from apiops_orchestrator.domain.services.interceptor_flow import particionar
-from apiops_orchestrator.domain.services.yaml_serialization import escalar
+from apiops_orchestrator.domain.services.interceptor_flow import partition
+from apiops_orchestrator.domain.services.yaml_serialization import scalar
 
-LARGURA_DESCRICAO = 92
-STATUS_REMOVIDO = "REMOVED"
-
-
-@dataclass(frozen=True)
-class ArquivoMaterializado:
-    caminho: str
-    texto: str
+DESCRIPTION_WIDTH = 92
+STATUS_REMOVED = "REMOVED"
 
 
 @dataclass(frozen=True)
-class ResultadoMaterializacao:
-    arquivos: List[ArquivoMaterializado]
-    avisos: List[str]
+class MaterializedFile:
+    file_path: str
+    text: str
+
+
+@dataclass(frozen=True)
+class MaterializationResult:
+    files: List[MaterializedFile]
+    warnings: List[str]
 
     @property
-    def caminhos(self) -> List[str]:
-        return [a.caminho for a in self.arquivos]
+    def paths(self) -> List[str]:
+        return [a.file_path for a in self.files]
 
 
 # --------------------------------------------------------------------------- YAML
 
 
-def _bloco(dados: Any, recuo: int) -> List[str]:
+def _block(data: Any, indent: int) -> List[str]:
     """Serializa dict/list em YAML de bloco, com os reparos de escalar."""
-    linhas: List[str] = []
-    pad = " " * recuo
-    if isinstance(dados, dict):
-        for chave, valor in dados.items():
-            if isinstance(valor, (dict, list)) and valor:
-                linhas.append(f"{pad}{chave}:")
-                linhas.extend(_bloco(valor, recuo + 2))
-            elif isinstance(valor, dict):
-                linhas.append(f"{pad}{chave}: {{}}")
-            elif isinstance(valor, list):
-                linhas.append(f"{pad}{chave}: []")
+    lines: List[str] = []
+    pad = " " * indent
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if isinstance(value, (dict, list)) and value:
+                lines.append(f"{pad}{key}:")
+                lines.extend(_block(value, indent + 2))
+            elif isinstance(value, dict):
+                lines.append(f"{pad}{key}: {{}}")
+            elif isinstance(value, list):
+                lines.append(f"{pad}{key}: []")
             else:
-                linhas.append(f"{pad}{chave}: {escalar(valor)}")
-    elif isinstance(dados, list):
-        for item in dados:
+                lines.append(f"{pad}{key}: {scalar(value)}")
+    elif isinstance(data, list):
+        for item in data:
             if isinstance(item, dict) and item:
-                sub = _bloco(item, recuo + 2)
-                linhas.append(f"{pad}- {sub[0].strip()}")
-                linhas.extend(sub[1:])
+                sub = _block(item, indent + 2)
+                lines.append(f"{pad}- {sub[0].strip()}")
+                lines.extend(sub[1:])
             else:
-                linhas.append(f"{pad}- {escalar(item)}")
-    return linhas
+                lines.append(f"{pad}- {scalar(item)}")
+    return lines
 
 
-def _descricao(valor: Optional[str], recuo: int = 0) -> List[str]:
+def _description(value: Optional[str], indent: int = 0) -> List[str]:
     """Descrição curta em uma linha; longa vira bloco dobrado `>-`."""
     import re
 
-    bruto = re.sub(r"\s+", " ", str(valor or "").strip())
-    pad = " " * recuo
-    if not bruto:
+    raw = re.sub(r"\s+", " ", str(value or "").strip())
+    pad = " " * indent
+    if not raw:
         return []
-    if len(bruto) <= 90:
-        return [f"{pad}description: {escalar(bruto)}"]
-    linhas = [f"{pad}description: >-"]
-    atual = ""
-    for palavra in bruto.split(" "):
-        if len(atual) + len(palavra) + 1 > LARGURA_DESCRICAO:
-            linhas.append(f"{pad}  {atual}")
-            atual = palavra
+    if len(raw) <= 90:
+        return [f"{pad}description: {scalar(raw)}"]
+    lines = [f"{pad}description: >-"]
+    current = ""
+    for word in raw.split(" "):
+        if len(current) + len(word) + 1 > DESCRIPTION_WIDTH:
+            lines.append(f"{pad}  {current}")
+            current = word
         else:
-            atual = f"{atual} {palavra}".strip()
-    if atual:
-        linhas.append(f"{pad}  {atual}")
-    return linhas
+            current = f"{current} {word}".strip()
+    if current:
+        lines.append(f"{pad}  {current}")
+    return lines
 
 
-def _bloco_destination(url: Any, timeout: Any) -> List[str]:
-    linhas = ["destination:"]
+def _destination_block(url: Any, timeout: Any) -> List[str]:
+    lines = ["destination:"]
     if url:
-        linhas.append(f"  url: {escalar(url)}")
+        lines.append(f"  url: {scalar(url)}")
     else:
-        linhas.append("  url: ''            # vazio = herda do escopo acima")
+        lines.append("  url: ''            # vazio = herda do escopo acima")
     if timeout not in (None, ""):
-        linhas.append(f"  timeout: {escalar(str(timeout))}")
-    return linhas
+        lines.append(f"  timeout: {scalar(str(timeout))}")
+    return lines
 
 
-def _bloco_interceptors(itens: Sequence[Dict[str, Any]], titulo: str) -> List[str]:
-    if not itens:
+def _interceptors_block(items: Sequence[Dict[str, Any]], title: str) -> List[str]:
+    if not items:
         return []
-    linhas = ["", f"{titulo}:"]
-    for item in itens:
+    lines = ["", f"{title}:"]
+    for item in items:
         if item.get("type") == "Custom" and item.get("customInterceptorId"):
-            linhas.append("  - type: Custom")
-            linhas.append(f"    id: {item['customInterceptorId']}")
+            lines.append("  - type: Custom")
+            lines.append(f"    id: {item['customInterceptorId']}")
             continue
-        linhas.append(f"  - type: {escalar(item.get('type'))}")
-        bruto = item.get("content")
-        dados = bruto
-        if isinstance(bruto, str):
+        lines.append(f"  - type: {scalar(item.get('type'))}")
+        raw = item.get("content")
+        data = raw
+        if isinstance(raw, str):
             try:
-                dados = json.loads(bruto)
+                data = json.loads(raw)
             except (TypeError, ValueError):
-                dados = bruto
-        if isinstance(dados, (dict, list)) and dados:
-            linhas.append("    content:")
-            linhas.extend(_bloco(dados, 6))
-        elif dados not in (None, "", {}, []):
-            linhas.append(f"    content: {escalar(dados)}")
-    return linhas
+                data = raw
+        if isinstance(data, (dict, list)) and data:
+            lines.append("    content:")
+            lines.extend(_block(data, 6))
+        elif data not in (None, "", {}, []):
+            lines.append(f"    content: {scalar(data)}")
+    return lines
 
 
-def _por_ponto(itens: Iterable[Dict[str, Any]], ponto: str) -> List[Dict[str, Any]]:
-    return [i for i in itens if (i.get("executionPoint") or "").upper() == ponto]
+def _by_point(items: Iterable[Dict[str, Any]], point: str) -> List[Dict[str, Any]]:
+    return [i for i in items if (i.get("executionPoint") or "").upper() == point]
 
 
-def _fluxo(itens: Sequence[Dict[str, Any]]) -> List[str]:
-    return _bloco_interceptors(_por_ponto(itens, "FIRST"), "interceptors_request") + (
-        _bloco_interceptors(_por_ponto(itens, "SECOND"), "interceptors_response")
+def _flow(items: Sequence[Dict[str, Any]]) -> List[str]:
+    return _interceptors_block(_by_point(items, "FIRST"), "interceptors_request") + (
+        _interceptors_block(_by_point(items, "SECOND"), "interceptors_response")
     )
 
 
 # --------------------------------------------------------------------------- escopos
 
 
-def _separar(itens: Optional[Sequence[Dict[str, Any]]]) -> Tuple[list, list, list]:
+def _split(items: Optional[Sequence[Dict[str, Any]]]) -> Tuple[list, list, list]:
     """Governados presentes, tombstones e preservados.
 
     O tombstone (`status: REMOVED`) NÃO é item do fluxo: é a marca de um item
     herdado que foi suprimido. Tratá-lo como presente publicaria de volta o que
     se queria remover.
     """
-    governados, preservados = particionar(itens)
-    presentes = [i for i in governados if i.get("status") != STATUS_REMOVIDO]
-    tombstones = [i for i in governados if i.get("status") == STATUS_REMOVIDO]
-    return presentes, tombstones, preservados
+    governed, preserved = partition(items)
+    present = [i for i in governed if i.get("status") != STATUS_REMOVED]
+    tombstones = [i for i in governed if i.get("status") == STATUS_REMOVED]
+    return present, tombstones, preserved
 
 
-def _suprimir(herdado: Sequence[Dict[str, Any]], tombstones: Sequence[Dict[str, Any]]):
+def _suppress(inherited: Sequence[Dict[str, Any]], tombstones: Sequence[Dict[str, Any]]):
     """Fluxo herdado menos os itens apontados por `parent.id` (V-25 §2.1)."""
-    alvos = {
+    targets = {
         (t.get("parent") or {}).get("id")
         for t in tombstones
         if (t.get("parent") or {}).get("id") is not None
     }
-    return [i for i in herdado if i.get("id") not in alvos], alvos
+    return [i for i in inherited if i.get("id") not in targets], targets
 
 
-def materializar(api: Dict[str, Any], revision: Dict[str, Any]) -> ResultadoMaterializacao:
+def materialize(api: Dict[str, Any], revision: Dict[str, Any]) -> MaterializationResult:
     """Produz a árvore canônica inteira a partir do estado remoto."""
-    avisos: List[str] = []
-    arquivos: List[ArquivoMaterializado] = []
+    warnings: List[str] = []
+    files: List[MaterializedFile] = []
 
     # --- api-basic-info.yaml -------------------------------------------------
     spec = {
@@ -180,100 +180,100 @@ def materializar(api: Dict[str, Any], revision: Dict[str, Any]) -> ResultadoMate
         "version": api.get("version"),
         "basePath": api.get("basePath"),
     }
-    linhas = [
+    lines = [
         "apiVersion: api-management.sensedia.com/v1",
         "kind: ApiBasicInfo",
         "spec:",
-        f"  id: {escalar(spec['id'])}",
-        f"  name: {escalar(spec['name'])}",
-        f"  version: {escalar(spec['version'])}",
-        f"  basePath: {escalar(spec['basePath'])}",
+        f"  id: {scalar(spec['id'])}",
+        f"  name: {scalar(spec['name'])}",
+        f"  version: {scalar(spec['version'])}",
+        f"  basePath: {scalar(spec['basePath'])}",
     ]
-    linhas.extend(_descricao(api.get("description"), recuo=2))
+    lines.extend(_description(api.get("description"), indent=2))
     # `template` não vem do wire: a plataforma não tem esta chave (D-12).
-    linhas.append("  template: ''")
-    responsavel = api.get("apiResponsible") or {}
-    linhas.append("  apiResponsible:")
-    linhas.append(f"    username: {escalar(responsavel.get('username') or '')}")
-    linhas.append(f"    groupName: {escalar(responsavel.get('groupName') or '')}")
+    lines.append("  template: ''")
+    responsible = api.get("apiResponsible") or {}
+    lines.append("  apiResponsible:")
+    lines.append(f"    username: {scalar(responsible.get('username') or '')}")
+    lines.append(f"    groupName: {scalar(responsible.get('groupName') or '')}")
     tags = api.get("apiTags")
     if tags is not None:
-        linhas.append("  apiTags:")
+        lines.append("  apiTags:")
         for t in tags:
-            linhas.append(f"    - attributeName: {escalar(t.get('attributeName'))}")
-            valores = t.get("tags") or []
-            if valores:
-                linhas.append("      tags:")
-                linhas.extend(_bloco(valores, 8))
+            lines.append(f"    - attributeName: {scalar(t.get('attributeName'))}")
+            values = t.get("tags") or []
+            if values:
+                lines.append("      tags:")
+                lines.extend(_block(values, 8))
             else:
-                linhas.append("      tags: []")
-    arquivos.append(_arquivo(layout.ARQUIVO_BASIC_INFO, linhas))
+                lines.append("      tags: []")
+    files.append(_file(layout.BASIC_INFO_FILE, lines))
 
     # --- all.yaml (escopo raiz) ---------------------------------------------
-    raiz_presentes, raiz_tombstones, raiz_preservados = _separar(
+    root_present, root_tombstones, root_preserved = _split(
         revision.get("interceptors")
     )
-    if raiz_tombstones:
-        avisos.append(
+    if root_tombstones:
+        warnings.append(
             "a raiz da revision tem item com status REMOVED, o que não deveria "
             "acontecer: a raiz não herda de nenhum escopo acima"
         )
-    linhas = [
+    lines = [
         f"# escopo `all` — raiz da revision {revision.get('id')} "
         f"(revisionNumber {revision.get('revisionNumber')})",
         f"# API {api.get('id')} · {api.get('name')} · {api.get('basePath')}",
     ]
-    linhas += _bloco_destination(revision.get("destination"), revision.get("timeout"))
-    linhas += _fluxo(raiz_presentes)
-    if raiz_preservados:
-        linhas += [
+    lines += _destination_block(revision.get("destination"), revision.get("timeout"))
+    lines += _flow(root_present)
+    if root_preserved:
+        lines += [
             "",
-            f"# {len(raiz_preservados)} interceptor(es) fora de FIRST/SECOND — "
+            f"# {len(root_preserved)} interceptor(es) fora de FIRST/SECOND — "
             "estado não governado, preservado por GET no publish",
         ]
-    arquivos.append(_arquivo(layout.ARQUIVO_RAIZ, linhas))
+    files.append(_file(layout.ROOT_FILE, lines))
 
     # --- recursos e operações ------------------------------------------------
-    recursos = revision.get("resources") or []
-    for recurso in recursos:
-        pasta = layout.nome_pasta(recurso, recursos, avisos)
-        base = f"{layout.PASTA_RECURSOS}/{pasta}"
+    resources = revision.get("resources") or []
+    for resource in resources:
+        folder = layout.folder_name(resource, resources, warnings)
+        base = f"{layout.RESOURCES_FOLDER}/{folder}"
 
-        rec_presentes, rec_tombstones, _ = _separar(recurso.get("interceptors"))
-        herdado_do_recurso, _ = _suprimir(raiz_presentes, rec_tombstones)
-        efetivo_do_recurso = herdado_do_recurso + rec_presentes
+        rec_present, rec_tombstones, _ = _split(resource.get("interceptors"))
+        resource_inherited, _ = _suppress(root_present, rec_tombstones)
+        resource_effective = resource_inherited + rec_present
 
-        linhas = [f"name: {escalar(recurso.get('name'))}"]
-        linhas.extend(_descricao(recurso.get("description")))
-        linhas += _bloco_destination(recurso.get("destination"), recurso.get("timeout"))
-        linhas += _declarar_heranca(
-            presentes=rec_presentes,
+        lines = [f"name: {scalar(resource.get('name'))}"]
+        lines.extend(_description(resource.get("description")))
+        lines += _destination_block(resource.get("destination"), resource.get("timeout"))
+        lines += _declare_inheritance(
+            present=rec_present,
             tombstones=rec_tombstones,
-            herdado=raiz_presentes,
+            inherited=root_present,
         )
-        arquivos.append(_arquivo(f"{base}/{layout.ARQUIVO_RECURSO}", linhas))
+        files.append(_file(f"{base}/{layout.RESOURCE_FILE}", lines))
 
-        for op in recurso.get("operations") or []:
-            op_presentes, op_tombstones, _ = _separar(op.get("interceptors"))
-            linhas = [f"path: {escalar(op.get('path'))}"]
-            linhas += _bloco_destination(op.get("destination"), op.get("timeout"))
-            linhas.extend(_descricao(op.get("description")))
-            linhas += _declarar_heranca(
-                presentes=op_presentes,
+        for op in resource.get("operations") or []:
+            op_present, op_tombstones, _ = _split(op.get("interceptors"))
+            lines = [f"path: {scalar(op.get('path'))}"]
+            lines += _destination_block(op.get("destination"), op.get("timeout"))
+            lines.extend(_description(op.get("description")))
+            lines += _declare_inheritance(
+                present=op_present,
                 tombstones=op_tombstones,
-                herdado=efetivo_do_recurso,
+                inherited=resource_effective,
             )
-            nome = layout.nome_arquivo(op, avisos)
-            arquivos.append(_arquivo(f"{base}/{nome}", linhas))
+            name = layout.file_name(op, warnings)
+            files.append(_file(f"{base}/{name}", lines))
 
-    return ResultadoMaterializacao(arquivos=arquivos, avisos=avisos)
+    return MaterializationResult(files=files, warnings=warnings)
 
 
-def _declarar_heranca(
+def _declare_inheritance(
     *,
-    presentes: Sequence[Dict[str, Any]],
+    present: Sequence[Dict[str, Any]],
     tombstones: Sequence[Dict[str, Any]],
-    herdado: Sequence[Dict[str, Any]],
+    inherited: Sequence[Dict[str, Any]],
 ) -> List[str]:
     """Decide entre herança pura, append e supressão — e escreve o bloco.
 
@@ -282,26 +282,26 @@ def _declarar_heranca(
     marcações, os itens próprios executam depois do herdado: é append (V-28).
     """
     if tombstones:
-        restante, alvos = _suprimir(herdado, tombstones)
-        nomes = ", ".join(sorted({str(t.get("type")) for t in tombstones}))
-        nao_resolvidos = len(tombstones) - len(
-            [a for a in alvos if any(i.get("id") == a for i in herdado)]
+        remaining, targets = _suppress(inherited, tombstones)
+        names = ", ".join(sorted({str(t.get("type")) for t in tombstones}))
+        unresolved = len(tombstones) - len(
+            [a for a in targets if any(i.get("id") == a for i in inherited)]
         )
-        linhas = ["", "inherit: false", f"# este ponto deixa de executar, do herdado: {nomes}"]
-        fluxo = list(restante) + list(presentes)
-        if fluxo:
-            linhas.append("# a lista abaixo é o fluxo completo que vale aqui")
+        lines = ["", "inherit: false", f"# este ponto deixa de executar, do herdado: {names}"]
+        flow = list(remaining) + list(present)
+        if flow:
+            lines.append("# a lista abaixo é o fluxo completo que vale aqui")
         else:
-            linhas.append("# não executa nenhum interceptor")
-        if nao_resolvidos:
-            linhas.append(
-                f"# atenção: {nao_resolvidos} remoção(ões) apontam para um "
+            lines.append("# não executa nenhum interceptor")
+        if unresolved:
+            lines.append(
+                f"# atenção: {unresolved} remoção(ões) apontam para um "
                 "interceptor que não está no fluxo herdado deste ponto"
             )
-        return linhas + _fluxo(fluxo)
+        return lines + _flow(flow)
 
-    if not presentes:
-        # Sem artigo: `escopo` ora é "recurso", ora "operação", e qualquer
+    if not present:
+        # Sem artigo: `scope` ora é "recurso", ora "operação", e qualquer
         # artigo fixo erra a concordância num dos dois.
         return [
             "",
@@ -313,9 +313,9 @@ def _declarar_heranca(
         "",
         "inherit: true",
         "# os interceptors abaixo executam depois do fluxo herdado",
-    ] + _fluxo(presentes)
+    ] + _flow(present)
 
 
-def _arquivo(caminho: str, linhas: Sequence[Optional[str]]) -> ArquivoMaterializado:
-    texto = "\n".join(l for l in linhas if l is not None).rstrip() + "\n"
-    return ArquivoMaterializado(caminho=caminho, texto=texto)
+def _file(file_path: str, lines: Sequence[Optional[str]]) -> MaterializedFile:
+    text = "\n".join(l for l in lines if l is not None).rstrip() + "\n"
+    return MaterializedFile(file_path=file_path, text=text)

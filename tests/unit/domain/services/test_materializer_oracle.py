@@ -23,7 +23,7 @@ from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_import
 from apiops_orchestrator.application.services.repo_importer_service import (
     RepoCanonicalReader,
 )
-from apiops_orchestrator.domain.services.repo_materializer import materializar
+from apiops_orchestrator.domain.services.repo_materializer import materialize
 
 RAIZ = pathlib.Path(__file__).parents[3]
 FIXTURES = RAIZ / "fixtures" / "manager"
@@ -39,90 +39,90 @@ EXEMPLOS = (
 CASOS = [("api-417-rev2", 4, 7, 13), ("api-400-rev4", 2, 4, 8)]
 
 
-def _carregar_fixture(nome):
-    return json.loads((FIXTURES / f"{nome}.json").read_text(encoding="utf-8"))
+def _carregar_fixture(name):
+    return json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
 
 
-def _arvore_commitada(nome):
-    base = EXEMPLOS / nome
+def _arvore_commitada(name):
+    base = EXEMPLOS / name
     return {
         str(p.relative_to(base)).replace("\\", "/"): p.read_text(encoding="utf-8")
         for p in base.rglob("*.yaml")
     }
 
 
-@pytest.mark.parametrize("nome,recursos,operacoes,arquivos", CASOS)
+@pytest.mark.parametrize("name,resources,operations,files", CASOS)
 @pytest.mark.skipif(not FIXTURES.is_dir(), reason="fixtures do Manager ausentes")
-def test_materializacao_reproduz_a_arvore_commitada(nome, recursos, operacoes, arquivos):
-    dados = _carregar_fixture(nome)
-    resultado = materializar(dados["api"], dados["revision"])
+def test_materializacao_reproduz_a_arvore_commitada(name, resources, operations, files):
+    data = _carregar_fixture(name)
+    resultado = materialize(data["api"], data["revision"])
 
-    gerado = {a.caminho: a.texto for a in resultado.arquivos}
-    assert len(gerado) == arquivos
-    assert gerado == _arvore_commitada(nome), (
-        f"{nome}: a materialização divergiu da árvore de referência"
+    gerado = {a.file_path: a.text for a in resultado.files}
+    assert len(gerado) == files
+    assert gerado == _arvore_commitada(name), (
+        f"{name}: a materialização divergiu da árvore de referência"
     )
 
 
-@pytest.mark.parametrize("nome,recursos,operacoes,arquivos", CASOS)
+@pytest.mark.parametrize("name,resources,operations,files", CASOS)
 @pytest.mark.skipif(not FIXTURES.is_dir(), reason="fixtures do Manager ausentes")
-def test_materializacao_e_deterministica(nome, recursos, operacoes, arquivos):
-    dados = _carregar_fixture(nome)
-    a = materializar(dados["api"], dados["revision"])
-    b = materializar(dados["api"], dados["revision"])
-    assert [(x.caminho, x.texto) for x in a.arquivos] == [
-        (x.caminho, x.texto) for x in b.arquivos
+def test_materializacao_e_deterministica(name, resources, operations, files):
+    data = _carregar_fixture(name)
+    a = materialize(data["api"], data["revision"])
+    b = materialize(data["api"], data["revision"])
+    assert [(x.file_path, x.text) for x in a.files] == [
+        (x.file_path, x.text) for x in b.files
     ]
 
 
-@pytest.mark.parametrize("nome,recursos,operacoes,arquivos", CASOS)
+@pytest.mark.parametrize("name,resources,operations,files", CASOS)
 @pytest.mark.skipif(not EXEMPLOS.is_dir(), reason="exemplos gerados ausentes")
-def test_todo_arquivo_commitado_parseia(nome, recursos, operacoes, arquivos):
+def test_todo_arquivo_commitado_parseia(name, resources, operations, files):
     """O README afirmava isso e estava errado: dois arquivos de `api-400-rev4`
     emitiam `replaceChar: *****` sem aspas e não eram parseáveis."""
-    for caminho, texto in _arvore_commitada(nome).items():
+    for file_path, text in _arvore_commitada(name).items():
         try:
-            yaml.safe_load(texto)
+            yaml.safe_load(text)
         except yaml.YAMLError as exc:
-            pytest.fail(f"{nome}/{caminho} não parseia: {exc}")
+            pytest.fail(f"{name}/{file_path} não parseia: {exc}")
 
 
-@pytest.mark.parametrize("nome,recursos,operacoes,arquivos", CASOS)
+@pytest.mark.parametrize("name,resources,operations,files", CASOS)
 @pytest.mark.skipif(not EXEMPLOS.is_dir(), reason="exemplos gerados ausentes")
-def test_round_trip_materializar_e_reler(nome, recursos, operacoes, arquivos):
+def test_round_trip_materializar_e_reler(name, resources, operations, files):
     """A árvore materializada é lida de volta pela E1 sem perda."""
-    lido = RepoCanonicalReader(LocalFileImporterAdapter()).carregar(
-        str(EXEMPLOS / nome)
+    loaded = RepoCanonicalReader(LocalFileImporterAdapter()).load(
+        str(EXEMPLOS / name)
     )
-    assert lido.completo, f"{nome}: faltando={lido.faltando} ilegiveis={lido.ilegiveis}"
-    assert len(lido.recursos) == recursos
-    assert lido.total_operacoes == operacoes
+    assert loaded.complete, f"{name}: faltando={loaded.missing} ilegiveis={loaded.unreadable}"
+    assert len(loaded.resources) == resources
+    assert loaded.total_operations == operations
 
 
 @pytest.mark.skipif(not FIXTURES.is_dir(), reason="fixtures do Manager ausentes")
 def test_fixtures_nao_carregam_script_de_custom():
     """Guarda de privacidade: o script de um `Custom` é código interno do tenant."""
-    for nome, *_ in CASOS:
-        bruto = (FIXTURES / f"{nome}.json").read_text(encoding="utf-8")
-        assert '"script"' not in bruto
+    for name, *_ in CASOS:
+        raw = (FIXTURES / f"{name}.json").read_text(encoding="utf-8")
+        assert '"script"' not in raw
 
 
 @pytest.mark.skipif(not EXEMPLOS.is_dir(), reason="exemplos gerados ausentes")
 def test_supressao_sobrevive_ao_round_trip():
     """V-25 ponta a ponta: a raiz mantém o item, a operação que o suprime não."""
-    lido = RepoCanonicalReader(LocalFileImporterAdapter()).carregar(
+    loaded = RepoCanonicalReader(LocalFileImporterAdapter()).load(
         str(EXEMPLOS / "api-417-rev2")
     )
-    tipos_raiz = [i["type"] for i in lido.raiz["interceptors_request"]]
+    tipos_raiz = [i["type"] for i in loaded.root["interceptors_request"]]
     assert "XSS threat protection" in tipos_raiz
 
     operacao = next(
         o
-        for r in lido.recursos
-        for o in r.operacoes
-        if o.arquivo == "get_tarefas.yaml"
+        for r in loaded.resources
+        for o in r.operations
+        if o.file == "get_tarefas.yaml"
     )
-    assert operacao.dados["inherit"] is False
-    tipos_op = [i["type"] for i in operacao.dados["interceptors_request"]]
+    assert operacao.data["inherit"] is False
+    tipos_op = [i["type"] for i in operacao.data["interceptors_request"]]
     assert "XSS threat protection" not in tipos_op
     assert len(tipos_op) == len(tipos_raiz) - 1

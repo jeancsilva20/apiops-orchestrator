@@ -81,10 +81,10 @@ def _prepared(contract=None, write=True):
 
 
 def _loaded(operation_data, components=None, ignored=()):
-    operation = SimpleNamespace(metodo="GET", dados=operation_data, caminho="resources/t/get_t.yaml")
-    resource = SimpleNamespace(dados={"name": "T"}, operacoes=[operation], caminho="resources/t/resource.yaml")
+    operation = SimpleNamespace(method="GET", data=operation_data, file_path="resources/t/get_t.yaml")
+    resource = SimpleNamespace(data={"name": "T"}, operations=[operation], file_path="resources/t/resource.yaml")
     return SimpleNamespace(
-        basic_info={"spec": {"id": 1}}, components=components or {}, recursos=[resource], ignorados=list(ignored)
+        basic_info={"spec": {"id": 1}}, components=components or {}, resources=[resource], ignored=list(ignored)
     )
 
 

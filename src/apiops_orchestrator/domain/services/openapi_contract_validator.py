@@ -15,7 +15,7 @@ from apiops_orchestrator.domain.services.openapi_contract import (
     normalize_yaml,
 )
 from apiops_orchestrator.domain.services.repo_layout import (
-    ARQUIVO_BASIC_INFO,
+    BASIC_INFO_FILE,
     COMPONENTS_FILE,
 )
 
@@ -90,17 +90,17 @@ def validate(
     _components(v)
 
     spec = basic_info.get("spec") or {}
-    _security(v, ARQUIVO_BASIC_INFO, "spec.security", spec.get("security"))
+    _security(v, BASIC_INFO_FILE, "spec.security", spec.get("security"))
 
     operation_ids: Dict[str, List[str]] = {}
     for resource in resources:
-        resource_data = normalize_yaml(resource.dados or {})
-        _file_extensions(v, resource.caminho, resource_data, ("parameters",))
+        resource_data = normalize_yaml(resource.data or {})
+        _file_extensions(v, resource.file_path, resource_data, ("parameters",))
         resource_parameters = resource_data.get("parameters") or []
-        _parameter_list(v, resource.caminho, resource_parameters)
-        operations = [(op, normalize_yaml(op.dados or {})) for op in resource.operacoes]
+        _parameter_list(v, resource.file_path, resource_parameters)
+        operations = [(op, normalize_yaml(op.data or {})) for op in resource.operations]
         _resource_parameters(
-            v, resource.caminho, resource_parameters, [d.get("path") or "" for _, d in operations]
+            v, resource.file_path, resource_parameters, [d.get("path") or "" for _, d in operations]
         )
         for operation, data in operations:
             _operation(v, operation, data, resource_parameters, operation_ids)
@@ -158,12 +158,12 @@ def _out_of_model(v: _Validation, basic_info: Dict[str, Any], ignored: Sequence[
     for name in ("servers", "info"):
         if name in spec:
             v.error(
-                ARQUIVO_BASIC_INFO,
+                BASIC_INFO_FILE,
                 f"spec.{name}",
                 f"`{name}` não é declarado no repositório: vem do Manager",
             )
-    _file_extensions(v, ARQUIVO_BASIC_INFO, basic_info, ())
-    _file_extensions(v, ARQUIVO_BASIC_INFO, spec, ROOT_FIELDS)
+    _file_extensions(v, BASIC_INFO_FILE, basic_info, ())
+    _file_extensions(v, BASIC_INFO_FILE, spec, ROOT_FIELDS)
 
     for section in v.components:
         if section == "parameters":
@@ -514,8 +514,8 @@ def _operation(
     resource_parameters: Any,
     operation_ids: Dict[str, List[str]],
 ) -> None:
-    file = operation.caminho
-    method = str(operation.metodo or "").upper()
+    file = operation.file_path
+    method = str(operation.method or "").upper()
     path = data.get("path") or ""
     _file_extensions(v, file, data, OPERATION_FIELDS)
 

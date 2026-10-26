@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, List, Optional
 if TYPE_CHECKING:  # pragma: no cover
     from apiops_orchestrator.domain.models.deploy_model import DeployView
 
-NENHUM_DEPLOY = "Nenhum deploy foi feito."
+NO_DEPLOYMENT = "Nenhum deploy foi feito."
 
 
 class DeployError(Exception):
@@ -27,22 +27,22 @@ class DeployGovernanceBlockedError(DeployError):
         self,
         workflow_id: Optional[int],
         stage_id: Optional[int],
-        violacoes: List[str],
+        violations: List[str],
     ):
-        listadas = "\n".join(f"  - {v}" for v in violacoes) or "  - motivo não informado"
-        onde = f"workflow {workflow_id}" + (
+        listed = "\n".join(f"  - {v}" for v in violations) or "  - motivo não informado"
+        where = f"workflow {workflow_id}" + (
             f", stage {stage_id}" if stage_id is not None else ""
         )
         super().__init__(
             "A governança do Manager não libera este deploy:\n\n"
-            f"{listadas}\n\n{NENHUM_DEPLOY} ({onde})"
+            f"{listed}\n\n{NO_DEPLOYMENT} ({where})"
         )
         self.workflow_id = workflow_id
         self.stage_id = stage_id
-        self.violacoes = list(violacoes)
+        self.violations = list(violations)
 
 
-class DeployFalhouError(DeployError):
+class DeployFailedError(DeployError):
     """O deploy foi tentado e não terminou conferido; carrega o resultado com `FAILED`."""
 
     def __init__(self, message: str, view: "DeployView"):

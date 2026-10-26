@@ -15,14 +15,14 @@ def _op(method, path, **fields):
     data = {"path": path, "summary": GOOD_SUMMARY, "responses": OK}
     data.update(fields)
     file = f"resources/t/{method.lower()}_{path.strip('/').replace('/', '_')}.yaml"
-    return SimpleNamespace(metodo=method, dados=data, caminho=file)
+    return SimpleNamespace(method=method, data=data, file_path=file)
 
 
 def _resource(*operations, **data):
     return SimpleNamespace(
-        dados=dict({"name": "Tarefas"}, **data),
-        operacoes=list(operations),
-        caminho="resources/t/resource.yaml",
+        data=dict({"name": "Tarefas"}, **data),
+        operations=list(operations),
+        file_path="resources/t/resource.yaml",
     )
 
 
@@ -281,9 +281,9 @@ def test_valid_status(status):
 @pytest.mark.parametrize("responses", [None, {}])
 def test_operation_must_declare_responses(responses):
     operation = _op("GET", "/tarefas")
-    operation.dados.pop("responses")
+    operation.data.pop("responses")
     if responses is not None:
-        operation.dados["responses"] = responses
+        operation.data["responses"] = responses
     error = _single_error(_resource(operation))
     assert "não declara `responses`" in error
 
@@ -367,7 +367,7 @@ def test_short_descriptions_become_a_single_warning():
 
 def test_summary_falls_back_to_the_description():
     operation = _op("GET", "/tarefas", summary=None, description="Lista as tarefas abertas")
-    operation.dados.pop("summary")
+    operation.data.pop("summary")
     assert _run(_resource(operation)).warnings == []
 
 

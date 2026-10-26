@@ -12,12 +12,12 @@ from typing import Any, Dict, List, Optional
 
 from apiops_orchestrator.domain.models.deploy_model import DeployEnvironment
 from apiops_orchestrator.domain.models.validate_view import (
-    AtributoExigido,
-    GovernancaResultado,
-    PublicacaoResultado,
+    RequiredAttribute,
+    GovernanceResult,
+    PublicationResult,
     ValidateApi,
     ValidateRevision,
-    sem_modo_fora_da_esteira,
+    drop_mode_outside_pipeline,
 )
 
 SCHEMA_SEN_PUBLISH_V1 = "apiops.sen-publish/v1"
@@ -32,7 +32,7 @@ class RevisionDeployment:
     deployed_at: Optional[str] = None
 
 
-def _atributo(a: AtributoExigido) -> Dict[str, Any]:
+def _attribute(a: RequiredAttribute) -> Dict[str, Any]:
     return {"attributeId": a.attribute_id, "name": a.name, "tagId": a.tag_id}
 
 
@@ -56,16 +56,16 @@ class PublishView:
     execution_mode: str
     api: ValidateApi
     revision: ValidateRevision
-    governanca: GovernancaResultado = field(default_factory=GovernancaResultado)
-    publicacao: PublicacaoResultado = field(default_factory=PublicacaoResultado)
+    governance: GovernanceResult = field(default_factory=GovernanceResult)
+    publication: PublicationResult = field(default_factory=PublicationResult)
     # Avisos da montagem do payload e do pré-check: dizem o que vai mudar na
     # plataforma, ou quando o veredito da governança ficou para a gravação.
-    avisos: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
     deployments: List[RevisionDeployment] = field(default_factory=list)
 
     def to_document(self) -> Dict[str, Any]:
         """Árvore do contrato v1, na ordem declarada — sem token e sem wire cru."""
-        return sem_modo_fora_da_esteira({
+        return drop_mode_outside_pipeline({
             "schema": self.schema,
             "generatedAt": self.generated_at,
             "executionMode": self.execution_mode,
@@ -81,17 +81,17 @@ class PublishView:
                 "deployments": [_deployment(d) for d in self.deployments],
             },
             "governance": {
-                "workflowId": self.governanca.workflow_id,
-                "stageId": self.governanca.stage_id,
-                "required": [_atributo(r) for r in self.governanca.required],
-                "missing": [_atributo(m) for m in self.governanca.missing],
-                "blocked": self.governanca.blocked,
+                "workflowId": self.governance.workflow_id,
+                "stageId": self.governance.stage_id,
+                "required": [_attribute(r) for r in self.governance.required],
+                "missing": [_attribute(m) for m in self.governance.missing],
+                "blocked": self.governance.blocked,
             },
             "publication": {
-                "attempted": self.publicacao.attempted,
-                "accepted": self.publicacao.accepted,
-                "verified": self.publicacao.verified,
-                "divergences": list(self.publicacao.divergences),
+                "attempted": self.publication.attempted,
+                "accepted": self.publication.accepted,
+                "verified": self.publication.verified,
+                "divergences": list(self.publication.divergences),
             },
-            "warnings": list(self.avisos),
+            "warnings": list(self.warnings),
         })

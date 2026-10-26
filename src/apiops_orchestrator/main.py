@@ -30,13 +30,13 @@ from apiops_orchestrator.application.services.api_listing_service import (
 )
 from apiops_orchestrator.application.services.deploy_service import (
     DeployService,
-    exigir_esteira as exigir_esteira_no_deploy,
+    require_pipeline as exigir_esteira_no_deploy,
 )
 from apiops_orchestrator.application.services.publish_service import (
     PublishService,
-    exigir_esteira as exigir_esteira_no_publish,
+    require_pipeline as exigir_esteira_no_publish,
 )
-from apiops_orchestrator.application.services.regua_service import ReguaService
+from apiops_orchestrator.application.services.ruler_service import RulerService
 from apiops_orchestrator.application.services.validate_service import (
     ValidateService,
 )
@@ -62,20 +62,20 @@ def _mute_unconfigured_logging() -> None:
 
 # Chaves que só a esteira configura: fora dela nenhuma saída as nomeia, e o modo
 # não é nomeado nem na esteira.
-_CHAVES_DA_ESTEIRA = frozenset(
+_PIPELINE_KEYS = frozenset(
     {"TEMPLATE_API_ID", "TARGET_REVISION_NUMBER", "TARGET_ENVIRONMENT_ID"}
 )
-_CHAVE_DO_MODO = "EXECUTION_MODE"
+_MODE_KEY = "EXECUTION_MODE"
 
-CONFIGURACAO_INVALIDA = "A configuração do sen é inválida. Fale com o time da plataforma."
-OUTRA_CONFIGURACAO_INVALIDA = (
+INVALID_CONFIGURATION = "A configuração do sen é inválida. Fale com o time da plataforma."
+OTHER_INVALID_CONFIGURATION = (
     "Há outra configuração inválida. Fale com o time da plataforma."
 )
 
 
-def _na_esteira() -> bool:
+def _in_pipeline() -> bool:
     """Modo lido do ambiente bruto, já com `.sen` e `.env` carregados: as settings não carregaram."""
-    return (os.environ.get(_CHAVE_DO_MODO) or "").strip().lower() == "pipeline"
+    return (os.environ.get(_MODE_KEY) or "").strip().lower() == "pipeline"
 
 
 def _load_settings() -> Settings:
@@ -88,20 +88,20 @@ def _load_settings() -> Settings:
     try:
         return Settings()  # type: ignore[call-arg]
     except pydantic.ValidationError as e:
-        chaves = [str(err.get("loc", ("<unknown>",))[0]).upper() for err in e.errors()]
-        ocultas = {_CHAVE_DO_MODO} if _na_esteira() else _CHAVES_DA_ESTEIRA | {_CHAVE_DO_MODO}
-        nomeaveis = [c for c in chaves if c not in ocultas]
-        if not nomeaveis:
-            raise CliError(CONFIGURACAO_INVALIDA, exit_code=1) from e
-        mensagem = (
-            f"Configuração incompleta (ausente/inválida): {', '.join(nomeaveis)}. "
+        keys = [str(err.get("loc", ("<unknown>",))[0]).upper() for err in e.errors()]
+        hidden = {_MODE_KEY} if _in_pipeline() else _PIPELINE_KEYS | {_MODE_KEY}
+        nameable = [c for c in keys if c not in hidden]
+        if not nameable:
+            raise CliError(INVALID_CONFIGURATION, exit_code=1) from e
+        message = (
+            f"Configuração incompleta (ausente/inválida): {', '.join(nameable)}. "
             "Defina as variáveis no .env do repositório ou no .sen do diretório "
             "do pacote. Detalhes: consulte o sub-help do comando "
             "(ex.: sen list api --help)."
         )
-        if len(nomeaveis) < len(chaves):
-            mensagem += f" {OUTRA_CONFIGURACAO_INVALIDA}"
-        raise CliError(mensagem, exit_code=1) from e
+        if len(nameable) < len(keys):
+            message += f" {OTHER_INVALID_CONFIGURATION}"
+        raise CliError(message, exit_code=1) from e
 
 
 def _build_session_store(settings: Settings) -> SessionStore:
@@ -252,10 +252,10 @@ def build_manager_api_factory():
     return factory
 
 
-def build_regua_service_factory():
+def build_ruler_service_factory():
     """Factory do serviço de régua, usada pelo diagnóstico `sen diag template`."""
 
-    def factory() -> ReguaService:
+    def factory() -> RulerService:
         settings = _load_settings()
         manager_adapter = ManagerApiAdapter(
             token=_build_admin_token(settings),
@@ -263,7 +263,7 @@ def build_regua_service_factory():
             max_retries=3,
             settings=settings,
         )
-        return ReguaService(manager_api=manager_adapter, settings=settings)
+        return RulerService(manager_api=manager_adapter, settings=settings)
 
     return factory
 
@@ -296,7 +296,7 @@ def main():
             "validate_service_factory": build_validate_service_factory(),
             "publish_service_factory": build_publish_service_factory(),
             "deploy_service_factory": build_deploy_service_factory(),
-            "regua_service_factory": build_regua_service_factory(),
+            "regua_service_factory": build_ruler_service_factory(),
             "manager_api_factory": build_manager_api_factory(),
         }
         app(obj=ctx_obj, prog_name=prog_name)

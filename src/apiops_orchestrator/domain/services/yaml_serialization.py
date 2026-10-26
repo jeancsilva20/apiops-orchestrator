@@ -21,49 +21,49 @@ from typing import Any
 
 # Caracteres que, no início de um escalar, mudam o significado para o parser:
 # âncora, alias, tag, blocos, diretiva, coleções em fluxo, comentário, aspas.
-INDICADORES_YAML = frozenset("-?:,[]{}#&*!|>'\"%@`")
+YAML_INDICATORS = frozenset("-?:,[]{}#&*!|>'\"%@`")
 
 # Palavras que o YAML interpreta como booleano ou nulo se não forem citadas.
-PALAVRAS_RESERVADAS = frozenset(
+RESERVED_WORDS = frozenset(
     {"true", "false", "null", "yes", "no", "on", "off", "y", "n", "~"}
 )
 
-_NUMERICO = re.compile(r"^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$")
-_EXIGE_ASPAS = re.compile(r"[:#\n]|^\s|\s$")
+_NUMERIC = re.compile(r"^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$")
+_REQUIRES_QUOTES = re.compile(r"[:#\n]|^\s|\s$")
 
 
-def parece_numero(texto: str) -> bool:
+def looks_like_number(text: str) -> bool:
     """A string seria relida como número se fosse emitida sem aspas."""
-    return bool(_NUMERICO.match(texto))
+    return bool(_NUMERIC.match(text))
 
 
-def precisa_aspas(texto: str) -> bool:
+def needs_quotes(text: str) -> bool:
     """Decide se o escalar precisa ser citado para sobreviver ao round-trip."""
-    if texto == "":
+    if text == "":
         return True
-    if texto[0] in INDICADORES_YAML:
+    if text[0] in YAML_INDICATORS:
         return True
-    if texto.lower() in PALAVRAS_RESERVADAS:
+    if text.lower() in RESERVED_WORDS:
         return True
-    if parece_numero(texto):
+    if looks_like_number(text):
         return True
-    return bool(_EXIGE_ASPAS.search(texto))
+    return bool(_REQUIRES_QUOTES.search(text))
 
 
-def escalar(valor: Any) -> str:
+def scalar(value: Any) -> str:
     """Renderiza um escalar preservando o tipo na releitura.
 
     `None` vira `null` e os booleanos viram `true`/`false` sem aspas, porque
     nesses casos o tipo YAML É o tipo pretendido. Números nativos saem crus. Só
     strings passam pela decisão de citação.
     """
-    if valor is None:
+    if value is None:
         return "null"
-    if isinstance(valor, bool):
-        return "true" if valor else "false"
-    if isinstance(valor, (int, float)):
-        return str(valor)
-    texto = str(valor)
-    if precisa_aspas(texto):
-        return json.dumps(texto, ensure_ascii=False)
-    return texto
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    text = str(value)
+    if needs_quotes(text):
+        return json.dumps(text, ensure_ascii=False)
+    return text

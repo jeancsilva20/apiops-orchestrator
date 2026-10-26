@@ -14,16 +14,16 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from apiops_orchestrator.application.exceptions.deploy_exceptions import (
-    NENHUM_DEPLOY,
+    NO_DEPLOYMENT,
     DeployError,
-    DeployFalhouError,
+    DeployFailedError,
     DeployGovernanceBlockedError,
 )
 from apiops_orchestrator.application.exceptions.manager_failure_messages import (
     INTERNAL_ERROR_MESSAGE,
 )
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
-    IdentidadeDivergenteError,
+    IdentityMismatchError,
 )
 from apiops_orchestrator.application.services.governance_precheck_service import (
     GovernancePrecheckService,
@@ -43,12 +43,12 @@ from apiops_orchestrator.domain.models.deploy_model import (
     STATUS_SUCCESS,
     DeployEnvironment,
     DeployGovernance,
-    DeploymentResultado,
+    DeploymentResult,
     DeployState,
     DeployView,
 )
 from apiops_orchestrator.domain.models.validate_view import (
-    AtributoExigido,
+    RequiredAttribute,
     ValidateApi,
     ValidateRevision,
 )
@@ -65,41 +65,41 @@ from apiops_orchestrator.domain.services import deployments
 
 logger = logging.getLogger(__name__)
 
-REVISAO_DRAFT = 1
+DRAFT_REVISION = 1
 
 # Recusas em que o motivo da plataforma diz o que corrigir.
-_STATUS_COM_MOTIVO = frozenset({400, 404, 409, 412, 422})
+_STATUS_WITH_REASON = frozenset({400, 404, 409, 412, 422})
 
 
-def exigir_esteira(settings: Settings) -> None:
+def require_pipeline(settings: Settings) -> None:
     """Recusa o deploy fora da esteira."""
-    if not settings.modo_pipeline:
+    if not settings.pipeline_mode:
         raise DeployError(
             "O deploy é feito só pela esteira: o comando não roda na sua máquina. "
             "A promoção para DEV, HML e PRD acontece no merge da branch "
-            f"correspondente.\n\n{NENHUM_DEPLOY}"
+            f"correspondente.\n\n{NO_DEPLOYMENT}"
         )
 
 
-def _agora() -> str:
+def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _numero(valor: Any) -> Optional[float]:
+def _number(value: Any) -> Optional[float]:
     try:
-        return float(valor)
+        return float(value)
     except (TypeError, ValueError):
         return None
 
 
-def _estado(registro: Optional[Dict[str, Any]]) -> Optional[DeployState]:
-    if not registro:
+def _state(record: Optional[Dict[str, Any]]) -> Optional[DeployState]:
+    if not record:
         return None
     return DeployState(
-        deployment_id=registro.get("id"),
-        revision_id=registro.get("revisionId"),
-        revision_number=registro.get("revisionNumber"),
-        deployed_at=deployments.instante(registro.get("deployDate")),
+        deployment_id=record.get("id"),
+        revision_id=record.get("revisionId"),
+        revision_number=record.get("revisionNumber"),
+        deployed_at=deployments.instant(record.get("deployDate")),
     )
 
 
@@ -113,39 +113,39 @@ class DeployService:
         self._manager_api = manager_api
         self._importer = importer
         self._settings = settings
-        self._governanca = GovernancePrecheckService(manager_api)
+        self._governance = GovernancePrecheckService(manager_api)
 
     def deploy(
         self,
         repo_path: Path,
         *,
-        progresso: Optional[Callable[[str], None]] = None,
+        progress: Optional[Callable[[str], None]] = None,
     ) -> DeployView:
         """Coloca a revisão alvo no ar no ambiente alvo e confere o resultado."""
-        etapa = progresso or (lambda _: None)
+        step = progress or (lambda _: None)
 
-        numero, ambiente_id = self._alvo()
+        number, environment_id = self._target()
 
-        etapa("Lendo o manifesto")
-        spec = self._manifesto(repo_path)
+        step("Lendo o manifesto")
+        spec = self._manifest(repo_path)
 
-        etapa("Consultando a API no Manager")
+        step("Consultando a API no Manager")
         api = self._manager_api.get_api_by_id(spec["id"]) or {}
-        self._identidade(spec, api)
-        revisao = self._revisao(api, numero)
-        ambiente = self._ambiente(api, ambiente_id)
-        anterior = _estado(deployments.ativo_no_ambiente(api, ambiente_id))
+        self._identity(spec, api)
+        revision = self._revision(api, number)
+        environment = self._environment(api, environment_id)
+        previous = _state(deployments.active_in_environment(api, environment_id))
 
-        etapa("Verificando a governança")
-        governanca, avisos = self._avaliar_governanca(api, revisao, ambiente_id)
-        if governanca.blocked:
+        step("Verificando a governança")
+        governance, warnings = self._evaluate_governance(api, revision, environment_id)
+        if governance.blocked:
             raise DeployGovernanceBlockedError(
-                governanca.workflow_id, governanca.stage_id, governanca.violations
+                governance.workflow_id, governance.stage_id, governance.violations
             )
 
         base = dict(
             schema=SCHEMA_SEN_DEPLOY_V1,
-            generated_at=_agora(),
+            generated_at=_now(),
             execution_mode=self._settings.EXECUTION_MODE,
             api=ValidateApi(
                 manager_id=spec["id"],
@@ -154,21 +154,21 @@ class DeployService:
                 base_path=api.get("basePath"),
             ),
             revision=ValidateRevision(
-                manager_id=revisao["id"], revision_number=revisao.get("revisionNumber")
+                manager_id=revision["id"], revision_number=revision.get("revisionNumber")
             ),
-            environment=ambiente,
-            governanca=governanca,
-            previous_state=anterior,
-            avisos=avisos,
+            environment=environment,
+            governance=governance,
+            previous_state=previous,
+            warnings=warnings,
         )
 
-        deployment_id = self._escrever(revisao, ambiente, base, etapa)
-        novo = self._conferir(spec["id"], deployment_id, revisao, ambiente, base, etapa)
+        deployment_id = self._write(revision, environment, base, step)
+        new = self._verify(spec["id"], deployment_id, revision, environment, base, step)
 
         return DeployView(
             **base,
-            new_state=novo,
-            deployment=DeploymentResultado(
+            new_state=new,
+            deployment=DeploymentResult(
                 attempted=True,
                 accepted=True,
                 deployment_id=deployment_id,
@@ -179,150 +179,150 @@ class DeployService:
 
     # --- E0 / E1 -------------------------------------------------------------
 
-    def _alvo(self) -> Tuple[int, int]:
+    def _target(self) -> Tuple[int, int]:
         """Modo, número da revisão e id do ambiente alvo, lidos da configuração."""
-        exigir_esteira(self._settings)
-        numero = self._settings.TARGET_REVISION_NUMBER
-        if numero is None:
+        require_pipeline(self._settings)
+        number = self._settings.TARGET_REVISION_NUMBER
+        if number is None:
             raise DeployError(
                 "TARGET_REVISION_NUMBER não está definida. Ela diz qual revisão vai "
                 "para o ar (2 = DEV, 3 = HML, 4 = PRD).\n\n"
-                f"Defina a variável na configuração da esteira.\n\n{NENHUM_DEPLOY}"
+                f"Defina a variável na configuração da esteira.\n\n{NO_DEPLOYMENT}"
             )
-        if numero == REVISAO_DRAFT:
+        if number == DRAFT_REVISION:
             raise DeployError(
                 "TARGET_REVISION_NUMBER está em 1, a revisão Draft. A Draft é "
                 "contexto de diagnóstico e não tem deploy: use o número da revisão "
-                f"do ambiente (2 = DEV, 3 = HML, 4 = PRD).\n\n{NENHUM_DEPLOY}"
+                f"do ambiente (2 = DEV, 3 = HML, 4 = PRD).\n\n{NO_DEPLOYMENT}"
             )
-        if numero < REVISAO_DRAFT:
+        if number < DRAFT_REVISION:
             raise DeployError(
-                f"TARGET_REVISION_NUMBER está em {numero}, que não é número de "
-                f"revisão.\n\n{NENHUM_DEPLOY}"
+                f"TARGET_REVISION_NUMBER está em {number}, que não é número de "
+                f"revisão.\n\n{NO_DEPLOYMENT}"
             )
-        ambiente = self._settings.TARGET_ENVIRONMENT_ID
-        if ambiente is None:
+        environment = self._settings.TARGET_ENVIRONMENT_ID
+        if environment is None:
             raise DeployError(
                 "TARGET_ENVIRONMENT_ID não está definida. Ela é o id, no Manager, do "
                 "ambiente que recebe o deploy.\n\n"
-                f"Defina a variável na configuração da esteira.\n\n{NENHUM_DEPLOY}"
+                f"Defina a variável na configuração da esteira.\n\n{NO_DEPLOYMENT}"
             )
-        return numero, ambiente
+        return number, environment
 
-    def _manifesto(self, repo_path: Path) -> Dict[str, Any]:
+    def _manifest(self, repo_path: Path) -> Dict[str, Any]:
         """`spec` do `api-basic-info.yaml`."""
-        lido = RepoCanonicalReader(self._importer).carregar(str(repo_path))
-        if not lido.basic_info:
-            ilegivel = next(
-                (i for i in lido.ilegiveis if "api-basic-info" in i.partition(": ")[0]),
+        loaded = RepoCanonicalReader(self._importer).load(str(repo_path))
+        if not loaded.basic_info:
+            unreadable = next(
+                (i for i in loaded.unreadable if "api-basic-info" in i.partition(": ")[0]),
                 None,
             )
-            if ilegivel:
-                caminho, _, motivo = ilegivel.partition(": ")
+            if unreadable:
+                file_path, _, reason = unreadable.partition(": ")
                 raise DeployError(
-                    f"O arquivo `{caminho}` não pôde ser lido: {motivo}.\n\n"
-                    f"{NENHUM_DEPLOY}"
+                    f"O arquivo `{file_path}` não pôde ser lido: {reason}.\n\n"
+                    f"{NO_DEPLOYMENT}"
                 )
             raise DeployError(
                 "Não encontrei o `api-basic-info.yaml` no repositório. É dele que "
-                f"vem o id da API.\n\n{NENHUM_DEPLOY}"
+                f"vem o id da API.\n\n{NO_DEPLOYMENT}"
             )
-        spec = lido.basic_info.get("spec") or {}
+        spec = loaded.basic_info.get("spec") or {}
         if spec.get("id") is None:
             raise DeployError(
                 "O `api-basic-info.yaml` não declara `spec.id`, o id da API no "
-                f"Manager.\n\n{NENHUM_DEPLOY}"
+                f"Manager.\n\n{NO_DEPLOYMENT}"
             )
         return spec
 
     # --- E2 ------------------------------------------------------------------
 
     @staticmethod
-    def _identidade(spec: Dict[str, Any], api: Dict[str, Any]) -> None:
+    def _identity(spec: Dict[str, Any], api: Dict[str, Any]) -> None:
         """Confere `version` e `basePath` do manifesto contra o Manager."""
         try:
-            RevisionWriter.guarda_identidade(spec, api)
-        except IdentidadeDivergenteError as exc:
+            RevisionWriter.guard_identity(spec, api)
+        except IdentityMismatchError as exc:
             raise DeployError(
                 "Este repositório parece apontar para outra API. O "
-                f"`{exc.campo}` declarado aqui é {exc.no_repo!r}, mas a API "
+                f"`{exc.field_name}` declarado aqui é {exc.no_repo!r}, mas a API "
                 f"{exc.api_id} no Manager tem {exc.no_manager!r}.\n\n"
-                f"Confira o `id` em `api-basic-info.yaml`.\n\n{NENHUM_DEPLOY}"
+                f"Confira o `id` em `api-basic-info.yaml`.\n\n{NO_DEPLOYMENT}"
             ) from exc
 
     @staticmethod
-    def _revisao(api: Dict[str, Any], numero: int) -> Dict[str, Any]:
+    def _revision(api: Dict[str, Any], number: int) -> Dict[str, Any]:
         """Revisão da API com o número informado."""
-        revisoes = api.get("revisions") or []
-        for revisao in revisoes:
-            if revisao.get("revisionNumber") == numero and revisao.get("id") is not None:
-                return revisao
-        if not revisoes:
-            disponiveis = "a API não tem nenhuma revisão"
+        revisions = api.get("revisions") or []
+        for revision in revisions:
+            if revision.get("revisionNumber") == number and revision.get("id") is not None:
+                return revision
+        if not revisions:
+            available = "a API não tem nenhuma revisão"
         else:
-            disponiveis = "Disponíveis: " + ", ".join(
-                f"{r.get('revisionNumber')} (id {r.get('id')})" for r in revisoes
+            available = "Disponíveis: " + ", ".join(
+                f"{r.get('revisionNumber')} (id {r.get('id')})" for r in revisions
             )
         raise DeployError(
-            f"A API {api.get('id')} não tem revisão de número {numero}. "
-            f"{disponiveis}.\n\nCriar revisão é ato humano, pela interface do "
-            f"Manager.\n\n{NENHUM_DEPLOY}"
+            f"A API {api.get('id')} não tem revisão de número {number}. "
+            f"{available}.\n\nCriar revisão é ato humano, pela interface do "
+            f"Manager.\n\n{NO_DEPLOYMENT}"
         )
 
     @staticmethod
-    def _ambiente(api: Dict[str, Any], ambiente_id: int) -> DeployEnvironment:
+    def _environment(api: Dict[str, Any], environment_id: int) -> DeployEnvironment:
         """Ambiente alvo, entre os ligados à API."""
-        ligados = [e for e in api.get("environments") or [] if isinstance(e, dict)]
-        for ambiente in ligados:
-            if ambiente.get("id") == ambiente_id:
-                return DeployEnvironment(manager_id=ambiente_id, name=ambiente.get("name"))
-        if ligados:
-            lista = "Ambientes ligados: " + ", ".join(
-                f"{e.get('id')} ({e.get('name')})" for e in ligados
+        linked = [e for e in api.get("environments") or [] if isinstance(e, dict)]
+        for environment in linked:
+            if environment.get("id") == environment_id:
+                return DeployEnvironment(manager_id=environment_id, name=environment.get("name"))
+        if linked:
+            listing = "Ambientes ligados: " + ", ".join(
+                f"{e.get('id')} ({e.get('name')})" for e in linked
             )
         else:
-            lista = "A API não está ligada a nenhum ambiente"
+            listing = "A API não está ligada a nenhum ambiente"
         raise DeployError(
-            f"A API {api.get('id')} não está ligada ao ambiente {ambiente_id}. "
-            f"{lista}.\n\nConfira TARGET_ENVIRONMENT_ID ou ligue a API ao ambiente "
-            f"no Manager.\n\n{NENHUM_DEPLOY}"
+            f"A API {api.get('id')} não está ligada ao ambiente {environment_id}. "
+            f"{listing}.\n\nConfira TARGET_ENVIRONMENT_ID ou ligue a API ao ambiente "
+            f"no Manager.\n\n{NO_DEPLOYMENT}"
         )
 
     # --- E3 ------------------------------------------------------------------
 
-    def _avaliar_governanca(
-        self, api: Dict[str, Any], revisao: Dict[str, Any], ambiente_id: int
+    def _evaluate_governance(
+        self, api: Dict[str, Any], revision: Dict[str, Any], environment_id: int
     ) -> Tuple[DeployGovernance, List[str]]:
         """Avalia os critérios do stage da revisão; devolve o resultado e os avisos."""
-        precheck = self._governanca.avaliar(revisao, api.get("apiTags"))
+        precheck = self._governance.evaluate(revision, api.get("apiTags"))
         stage = precheck.stage or {}
-        violacoes: List[str] = []
+        violations: List[str] = []
 
-        permitidos = [
-            int(e) for e in stage.get("deployableEnvironments") or [] if _numero(e) is not None
+        allowed = [
+            int(e) for e in stage.get("deployableEnvironments") or [] if _number(e) is not None
         ]
-        if permitidos and ambiente_id not in permitidos:
-            violacoes.append(
-                f"O ambiente {ambiente_id} não está entre os que o stage "
+        if allowed and environment_id not in allowed:
+            violations.append(
+                f"O ambiente {environment_id} não está entre os que o stage "
                 f"{precheck.stage_id} permite: "
-                + ", ".join(str(p) for p in permitidos)
+                + ", ".join(str(p) for p in allowed)
                 + "."
             )
 
-        exigida = _numero(stage.get("completenessRequisite")) if stage else None
-        atual: Optional[float] = None
-        if exigida:
-            atual = self._manager_api.get_revision_completeness(revisao["id"]).score
-            if atual < exigida:
-                violacoes.append(
-                    f"A completeness da revisão é {atual:.1f}, e o stage exige "
-                    f"{exigida:.1f}."
+        required = _number(stage.get("completenessRequisite")) if stage else None
+        current: Optional[float] = None
+        if required:
+            current = self._manager_api.get_revision_completeness(revision["id"]).score
+            if current < required:
+                violations.append(
+                    f"A completeness da revisão é {current:.1f}, e o stage exige "
+                    f"{required:.1f}."
                 )
 
-        if precheck.faltantes:
-            violacoes.append(
+        if precheck.missing_names:
+            violations.append(
                 "Faltam atributos exigidos pelo stage: "
-                + ", ".join(str(f.name or f.attribute_id) for f in precheck.faltantes)
+                + ", ".join(str(f.name or f.attribute_id) for f in precheck.missing_names)
                 + "."
             )
 
@@ -330,83 +330,83 @@ class DeployService:
             "deploy.governanca workflow=%s stage=%s ambiente=%s violacoes=%d",
             precheck.workflow_id,
             precheck.stage_id,
-            ambiente_id,
-            len(violacoes),
+            environment_id,
+            len(violations),
         )
-        governanca = DeployGovernance(
+        governance = DeployGovernance(
             workflow_id=precheck.workflow_id,
             stage_id=precheck.stage_id,
-            deployable_environments=permitidos,
-            completeness_required=exigida,
-            completeness_actual=atual,
+            deployable_environments=allowed,
+            completeness_required=required,
+            completeness_actual=current,
             required=[
-                AtributoExigido(e.attribute_id, e.name, e.tag_id) for e in precheck.exigidos
+                RequiredAttribute(e.attribute_id, e.name, e.tag_id) for e in precheck.required
             ],
             missing=[
-                AtributoExigido(f.attribute_id, f.name, f.tag_id) for f in precheck.faltantes
+                RequiredAttribute(f.attribute_id, f.name, f.tag_id) for f in precheck.missing_names
             ],
-            violations=violacoes,
+            violations=violations,
         )
-        return governanca, [f"Governança: {a}" for a in precheck.avisos]
+        return governance, [f"Governança: {a}" for a in precheck.warnings]
 
     # --- E4 / E5 -------------------------------------------------------------
 
-    def _escrever(
+    def _write(
         self,
-        revisao: Dict[str, Any],
-        ambiente: DeployEnvironment,
+        revision: Dict[str, Any],
+        environment: DeployEnvironment,
         base: Dict[str, Any],
-        etapa: Callable[[str], None],
+        step: Callable[[str], None],
     ) -> Optional[int]:
         """Faz o deploy e devolve o id do registro criado."""
-        etapa(f"Fazendo o deploy no ambiente {ambiente.name or ambiente.manager_id}")
+        step(f"Fazendo o deploy no ambiente {environment.name or environment.manager_id}")
         try:
-            return self._manager_api.deploy_revision(ambiente.manager_id, revisao["id"])
+            return self._manager_api.deploy_revision(environment.manager_id, revision["id"])
         except ManagerApiGovernanceBlockedError as exc:
             raise DeployGovernanceBlockedError(
-                exc.workflow_id, base["governanca"].stage_id, exc.messages
+                exc.workflow_id, base["governance"].stage_id, exc.messages
             ) from exc
         except ManagerApiTransportRejectedError as exc:
-            motivos = exc.messages if exc.status_code in _STATUS_COM_MOTIVO else []
+            reasons = exc.messages if exc.status_code in _STATUS_WITH_REASON else []
             logger.info(
-                "deploy.recusado status_code=%s motivos=%d", exc.status_code, len(motivos)
+                "deploy.recusado status_code=%s motivos=%d", exc.status_code, len(reasons)
             )
-            if motivos:
-                corpo = "O Manager recusou o deploy:\n\n" + "\n".join(
-                    f"  - {m}" for m in motivos
+            if reasons:
+                body = "O Manager recusou o deploy:\n\n" + "\n".join(
+                    f"  - {m}" for m in reasons
                 )
             else:
-                corpo = manager_failure_message(classify_manager_failure(exc)) or (
+                body = manager_failure_message(classify_manager_failure(exc)) or (
                     INTERNAL_ERROR_MESSAGE
                 )
-            raise self._falha(base, corpo, attempted=True) from exc
+            raise self._failure(base, body, attempted=True) from exc
         except ManagerApiError as exc:
             logger.info("deploy.falha_transporte type=%s", type(exc).__name__)
-            corpo = manager_failure_message(classify_manager_failure(exc)) or (
+            body = manager_failure_message(classify_manager_failure(exc)) or (
                 INTERNAL_ERROR_MESSAGE
             )
-            raise self._falha(
+            raise self._failure(
                 base,
-                f"{corpo}\n\nNão foi possível confirmar se o deploy aconteceu. "
+                f"{body}\n\nNão foi possível confirmar se o deploy aconteceu. "
                 "Confira o ambiente no Manager antes de rodar de novo.",
                 attempted=True,
             ) from exc
 
-    def _conferir(
+    def _verify(
         self,
         api_id: int,
         deployment_id: Optional[int],
-        revisao: Dict[str, Any],
-        ambiente: DeployEnvironment,
+        revision: Dict[str, Any],
+        environment: DeployEnvironment,
         base: Dict[str, Any],
-        etapa: Callable[[str], None],
+        step: Callable[[str], None],
     ) -> Optional[DeployState]:
         """Relê a API e confirma o deploy criado; devolve o novo estado do ambiente."""
-        etapa("Conferindo o deploy")
+        step("Conferindo o deploy")
         try:
-            depois = self._manager_api.get_api_by_id(api_id) or {}
+            after = self._manager_api.get_api_by_id(api_id) or {}
         except ManagerApiError as exc:
-            raise self._falha(
+            raise self._failure(
                 base,
                 f"O Manager aceitou o deploy (id {deployment_id}), mas não consegui "
                 "reler a API para conferir. Confira o ambiente no Manager.",
@@ -415,59 +415,59 @@ class DeployService:
                 deployment_id=deployment_id,
             ) from exc
 
-        registro = next(
+        record = next(
             (
                 d
-                for d in deployments.registros_da_api(depois)
+                for d in deployments.api_records(after)
                 if d.get("id") == deployment_id
             ),
             None,
         )
-        conferido = (
-            registro is not None
-            and registro.get("status") == deployments.DEPLOYED
-            and registro.get("environmentId") == ambiente.manager_id
-            and registro.get("revisionId") == revisao["id"]
+        verified = (
+            record is not None
+            and record.get("status") == deployments.DEPLOYED
+            and record.get("environmentId") == environment.manager_id
+            and record.get("revisionId") == revision["id"]
         )
-        if not conferido:
+        if not verified:
             logger.info(
                 "deploy.divergente deployment_id=%s encontrado=%s",
                 deployment_id,
-                registro is not None,
+                record is not None,
             )
-            raise self._falha(
+            raise self._failure(
                 base,
                 f"O Manager aceitou o deploy (id {deployment_id}), mas a releitura "
-                f"não mostra a revisão {revisao.get('revisionNumber')} deployada no "
-                f"ambiente {ambiente.manager_id}. Confira o ambiente no Manager.",
+                f"não mostra a revisão {revision.get('revisionNumber')} deployada no "
+                f"ambiente {environment.manager_id}. Confira o ambiente no Manager.",
                 attempted=True,
                 accepted=True,
                 deployment_id=deployment_id,
-                novo=_estado(deployments.ativo_no_ambiente(depois, ambiente.manager_id)),
+                new=_state(deployments.active_in_environment(after, environment.manager_id)),
             )
-        return _estado(registro)
+        return _state(record)
 
     @staticmethod
-    def _falha(
+    def _failure(
         base: Dict[str, Any],
-        mensagem: str,
+        message: str,
         *,
         attempted: bool,
         accepted: bool = False,
         deployment_id: Optional[int] = None,
-        novo: Optional[DeployState] = None,
-    ) -> DeployFalhouError:
+        new: Optional[DeployState] = None,
+    ) -> DeployFailedError:
         """Erro de deploy com o resultado `FAILED`."""
         view = DeployView(
             **base,
-            new_state=novo,
-            deployment=DeploymentResultado(
+            new_state=new,
+            deployment=DeploymentResult(
                 attempted=attempted,
                 accepted=accepted,
                 deployment_id=deployment_id,
                 verified=False,
                 status=STATUS_FAILED,
-                reason=mensagem,
+                reason=message,
             ),
         )
-        return DeployFalhouError(mensagem, view)
+        return DeployFailedError(message, view)

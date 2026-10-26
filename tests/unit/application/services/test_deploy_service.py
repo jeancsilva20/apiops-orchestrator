@@ -11,7 +11,7 @@ from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_import
 )
 from apiops_orchestrator.application.exceptions.deploy_exceptions import (
     DeployError,
-    DeployFalhouError,
+    DeployFailedError,
     DeployGovernanceBlockedError,
 )
 from apiops_orchestrator.application.services.deploy_service import DeployService
@@ -26,11 +26,11 @@ from apiops_orchestrator.domain.ports.manager_api_port import (
 )
 
 
-def _deploy(dep_id, rev_id, numero, env, status="DEPLOYED", data=1792434435000):
+def _deploy(dep_id, rev_id, number, env, status="DEPLOYED", data=1792434435000):
     return {
         "id": dep_id,
         "revisionId": rev_id,
-        "revisionNumber": numero,
+        "revisionNumber": number,
         "apiId": 417,
         "environmentId": env,
         "status": status,
@@ -60,14 +60,14 @@ def _api(deploys_rev2=None, deploys_rev3=None, ambientes=None, api_tags=None):
     }
 
 
-def _workflow(deployable=None, completeness=0.0, requisitos=None):
+def _workflow(deployable=None, completeness=0.0, requirements=None):
     return {
         "workflowId": 500,
         "stages": [
             {
                 "workflowStageId": 1402,
                 "completenessRequisite": completeness,
-                "attributesRequisites": requisitos or [],
+                "attributesRequisites": requirements or [],
                 "deployableEnvironments": deployable if deployable is not None else [7],
             }
         ],
@@ -138,14 +138,14 @@ class ManagerFake:
             raise self.erro_post
         if self.efeito:
             # Como a plataforma: o anterior no ambiente vira UNDEPLOYED.
-            for revisao in self.api["revisions"]:
-                for d in revisao["deployments"]:
+            for revision in self.api["revisions"]:
+                for d in revision["deployments"]:
                     if d["environmentId"] == environment_id and d["status"] == "DEPLOYED":
                         d["status"] = "UNDEPLOYED"
-                alvo = revisao["id"] == revision_id
-                if alvo:
-                    revisao["deployments"].append(
-                        _deploy(self.id_novo, revision_id, revisao["revisionNumber"],
+                target = revision["id"] == revision_id
+                if target:
+                    revision["deployments"].append(
+                        _deploy(self.id_novo, revision_id, revision["revisionNumber"],
                                 environment_id, data=1792434500000)
                     )
         return self.id_novo
@@ -161,12 +161,12 @@ class ManagerFake:
         raise AssertionError("GET /revisions/{id} devolve deployments vazio (L-2)")
 
 
-def _settings(modo="pipeline", revisao=3, ambiente=7):
+def _settings(mode="pipeline", revision=3, environment=7):
     return SimpleNamespace(
-        EXECUTION_MODE=modo,
-        modo_pipeline=(modo == "pipeline"),
-        TARGET_REVISION_NUMBER=revisao,
-        TARGET_ENVIRONMENT_ID=ambiente,
+        EXECUTION_MODE=mode,
+        pipeline_mode=(mode == "pipeline"),
+        TARGET_REVISION_NUMBER=revision,
+        TARGET_ENVIRONMENT_ID=environment,
     )
 
 
@@ -255,12 +255,12 @@ def test_documento_conforme_ao_contrato(tmp_path):
 def test_modo_local_recusa_antes_de_qualquer_chamada(tmp_path):
     manager = ManagerFake()
     with pytest.raises(DeployError) as capturado:
-        _servico(manager, modo="local").deploy(_repo(tmp_path))
+        _servico(manager, mode="local").deploy(_repo(tmp_path))
 
-    mensagem = capturado.value.message
-    assert "não roda na sua máquina" in mensagem
-    for nome in ("EXECUTION_MODE", "local", "pipeline", "TARGET_"):
-        assert nome not in mensagem
+    message = capturado.value.message
+    assert "não roda na sua máquina" in message
+    for name in ("EXECUTION_MODE", "local", "pipeline", "TARGET_"):
+        assert name not in message
     assert capturado.value.exit_code == 1
     assert manager.chamadas == []
 
@@ -272,7 +272,7 @@ def test_documento_da_esteira_traz_o_modo(tmp_path):
 
 @pytest.mark.parametrize(
     "cfg,variavel",
-    [({"revisao": None}, "TARGET_REVISION_NUMBER"), ({"ambiente": None}, "TARGET_ENVIRONMENT_ID")],
+    [({"revision": None}, "TARGET_REVISION_NUMBER"), ({"environment": None}, "TARGET_ENVIRONMENT_ID")],
 )
 def test_variavel_ausente_falha_antes_de_qualquer_chamada(tmp_path, cfg, variavel):
     manager = ManagerFake()
@@ -283,11 +283,11 @@ def test_variavel_ausente_falha_antes_de_qualquer_chamada(tmp_path, cfg, variave
     assert manager.chamadas == []
 
 
-@pytest.mark.parametrize("numero", [1, 0, -2])
-def test_draft_ou_numero_invalido_recusa_antes_de_qualquer_chamada(tmp_path, numero):
+@pytest.mark.parametrize("number", [1, 0, -2])
+def test_draft_ou_numero_invalido_recusa_antes_de_qualquer_chamada(tmp_path, number):
     manager = ManagerFake()
     with pytest.raises(DeployError):
-        _servico(manager, revisao=numero).deploy(_repo(tmp_path))
+        _servico(manager, revision=number).deploy(_repo(tmp_path))
     assert manager.chamadas == []
 
 
@@ -345,27 +345,27 @@ def test_identidade_divergente_aborta_sem_escrever(tmp_path):
 def test_revisao_inexistente_lista_numero_e_id_e_nao_escreve(tmp_path):
     manager = ManagerFake()
     with pytest.raises(DeployError) as capturado:
-        _servico(manager, revisao=4).deploy(_repo(tmp_path))
+        _servico(manager, revision=4).deploy(_repo(tmp_path))
 
-    mensagem = capturado.value.message
-    assert "3 (id 9327)" in mensagem and "2 (id 9175)" in mensagem
+    message = capturado.value.message
+    assert "3 (id 9327)" in message and "2 (id 9175)" in message
     assert "deploy_revision" not in manager.chamadas
 
 
 def test_revision_id_vem_so_das_revisoes_da_propria_api(tmp_path):
     """E-5: o POST aceita revisão de outra API; o id nunca vem de fora da API."""
     manager = ManagerFake()
-    _servico(manager, revisao=2).deploy(_repo(tmp_path))
+    _servico(manager, revision=2).deploy(_repo(tmp_path))
     assert manager.post == (7, 9175)
 
 
 def test_ambiente_nao_ligado_lista_os_ligados_e_nao_escreve(tmp_path):
     manager = ManagerFake()
     with pytest.raises(DeployError) as capturado:
-        _servico(manager, ambiente=9).deploy(_repo(tmp_path))
+        _servico(manager, environment=9).deploy(_repo(tmp_path))
 
-    mensagem = capturado.value.message
-    assert "ambiente 9" in mensagem and "7 (DEV-APIOPS)" in mensagem
+    message = capturado.value.message
+    assert "ambiente 9" in message and "7 (DEV-APIOPS)" in message
     assert capturado.value.exit_code == 1
     assert "deploy_revision" not in manager.chamadas
 
@@ -386,7 +386,7 @@ def test_ambiente_fora_do_permitido_pelo_stage_bloqueia_com_3(tmp_path):
         workflow=_workflow(deployable=[7]),
     )
     with pytest.raises(DeployGovernanceBlockedError) as capturado:
-        _servico(manager, ambiente=9).deploy(_repo(tmp_path))
+        _servico(manager, environment=9).deploy(_repo(tmp_path))
 
     assert capturado.value.exit_code == 3
     assert "ambiente 9" in capturado.value.message
@@ -411,7 +411,7 @@ def test_completeness_abaixo_do_exigido_bloqueia(tmp_path):
 def test_completeness_igual_ao_exigido_libera(tmp_path):
     manager = ManagerFake(workflow=_workflow(completeness=70.0), completeness=70.0)
     view = _servico(manager).deploy(_repo(tmp_path))
-    assert view.governanca.completeness_actual == 70.0
+    assert view.governance.completeness_actual == 70.0
 
 
 def test_requisito_zero_nao_le_o_completeness(tmp_path):
@@ -422,7 +422,7 @@ def test_requisito_zero_nao_le_o_completeness(tmp_path):
 
 def test_atributo_exigido_ausente_no_manager_bloqueia(tmp_path):
     manager = ManagerFake(
-        workflow=_workflow(requisitos=[{"attributeId": 231, "mustHave": True}])
+        workflow=_workflow(requirements=[{"attributeId": 231, "mustHave": True}])
     )
     with pytest.raises(DeployGovernanceBlockedError) as capturado:
         _servico(manager).deploy(_repo(tmp_path))
@@ -434,10 +434,10 @@ def test_atributo_exigido_ausente_no_manager_bloqueia(tmp_path):
 def test_atributos_vem_do_manager_e_nao_do_repositorio(tmp_path):
     """O manifesto não declara apiTags; os do Manager satisfazem o requisito."""
     manager = ManagerFake(
-        workflow=_workflow(requisitos=[{"attributeId": 149, "mustHave": True}])
+        workflow=_workflow(requirements=[{"attributeId": 149, "mustHave": True}])
     )
     view = _servico(manager).deploy(_repo(tmp_path))
-    assert [a.name for a in view.governanca.required] == ["My new"]
+    assert [a.name for a in view.governance.required] == ["My new"]
 
 
 def test_todas_as_violacoes_saem_juntas(tmp_path):
@@ -446,23 +446,23 @@ def test_todas_as_violacoes_saem_juntas(tmp_path):
         workflow=_workflow(
             deployable=[7],
             completeness=70.0,
-            requisitos=[{"attributeId": 231, "mustHave": True}],
+            requirements=[{"attributeId": 231, "mustHave": True}],
         ),
         completeness=65.0,
     )
     with pytest.raises(DeployGovernanceBlockedError) as capturado:
-        _servico(manager, ambiente=9).deploy(_repo(tmp_path))
-    assert len(capturado.value.violacoes) == 3
+        _servico(manager, environment=9).deploy(_repo(tmp_path))
+    assert len(capturado.value.violations) == 3
 
 
 def test_revisao_sem_stage_avisa_e_nao_bloqueia(tmp_path):
     api = _api()
-    for revisao in api["revisions"]:
-        revisao.pop("workflowId")
+    for revision in api["revisions"]:
+        revision.pop("workflowId")
     view = _servico(ManagerFake(api=api)).deploy(_repo(tmp_path))
 
     assert view.deployment.verified is True
-    assert any("Governança" in a for a in view.avisos)
+    assert any("Governança" in a for a in view.warnings)
 
 
 # --- E4: escrita ---------------------------------------------------------------
@@ -474,7 +474,7 @@ def test_variavel_ausente_no_ambiente_repassa_a_mensagem_e_gera_documento(tmp_pa
         messages=["Environment Variable '$backend' have not found"],
     )
     manager = ManagerFake(erro_post=erro)
-    with pytest.raises(DeployFalhouError) as capturado:
+    with pytest.raises(DeployFailedError) as capturado:
         _servico(manager).deploy(_repo(tmp_path))
 
     assert "$backend" in capturado.value.message
@@ -488,14 +488,14 @@ def test_variavel_ausente_no_ambiente_repassa_a_mensagem_e_gera_documento(tmp_pa
 
 def test_ambiente_inexistente_404_repassa_a_mensagem(tmp_path):
     erro = ManagerApiTransportRejectedError(404, "Not Found", messages=["Environment not found."])
-    with pytest.raises(DeployFalhouError) as capturado:
+    with pytest.raises(DeployFailedError) as capturado:
         _servico(ManagerFake(erro_post=erro)).deploy(_repo(tmp_path))
     assert "Environment not found." in capturado.value.message
 
 
 def test_falha_de_transporte_no_post_gera_documento_e_avisa_que_nao_ha_certeza(tmp_path):
     erro = ManagerApiTransportUnavailableError("down")
-    with pytest.raises(DeployFalhouError) as capturado:
+    with pytest.raises(DeployFailedError) as capturado:
         _servico(ManagerFake(erro_post=erro)).deploy(_repo(tmp_path))
 
     assert "Não foi possível confirmar" in capturado.value.message
@@ -518,7 +518,7 @@ def test_412_no_post_vira_bloqueio_de_governanca(tmp_path):
 
 def test_201_sem_efeito_na_releitura_falha_com_o_id(tmp_path):
     manager = ManagerFake(efeito=False)
-    with pytest.raises(DeployFalhouError) as capturado:
+    with pytest.raises(DeployFailedError) as capturado:
         _servico(manager).deploy(_repo(tmp_path))
 
     assert "269" in capturado.value.message
@@ -529,7 +529,7 @@ def test_201_sem_efeito_na_releitura_falha_com_o_id(tmp_path):
 
 def test_releitura_indisponivel_falha_sem_afirmar_sucesso(tmp_path):
     manager = ManagerFake(erro_releitura=ManagerApiTransportUnavailableError("down"))
-    with pytest.raises(DeployFalhouError) as capturado:
+    with pytest.raises(DeployFailedError) as capturado:
         _servico(manager).deploy(_repo(tmp_path))
     assert capturado.value.view.deployment.verified is False
 

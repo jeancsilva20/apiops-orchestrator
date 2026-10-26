@@ -1,7 +1,7 @@
 """Nomenclatura do layout canônico (D-005 §4, V-16/V-17, V-18).
 
 Oracle: os nomes produzidos aqui têm de reproduzir exatamente os dos
-repositórios materializados em `exemplos-gerados/saida/`, gerados a partir de
+repositórios materializados em `exemplos-gerados/output/`, gerados a partir de
 APIs reais.
 """
 
@@ -27,7 +27,7 @@ RAIZ_EXEMPLOS = (
 
 
 @pytest.mark.parametrize(
-    "entrada,esperado",
+    "entrada,expected",
     [
         ("Tarefas", "tarefas"),
         ("Atribuicao Responsavel", "atribuicao-responsavel"),
@@ -37,68 +37,68 @@ RAIZ_EXEMPLOS = (
         ("a---b", "a-b"),
     ],
 )
-def test_slug_normaliza(entrada, esperado):
-    assert rl.slug(entrada) == esperado
+def test_slug_normaliza(entrada, expected):
+    assert rl.slug(entrada) == expected
 
 
 def test_slug_trunca_em_fronteira_de_palavra():
-    nome = "recurso-com-nome-bastante-longo-que-passa-do-teto-estabelecido-aqui"
-    resultado = rl.slug(nome, limite=30)
+    name = "recurso-com-nome-bastante-longo-que-passa-do-teto-estabelecido-aqui"
+    resultado = rl.slug(name, limit=30)
     assert len(resultado) <= 30
     assert not resultado.endswith("-")
-    assert nome.startswith(resultado)
+    assert name.startswith(resultado)
 
 
 # --- nome de pasta ---------------------------------------------------------
 
 
 def test_pasta_sem_colisao_usa_o_slug_puro():
-    recurso = {"name": "Tarefas", "operations": [{"path": "/tarefas", "method": "GET"}]}
-    assert rl.nome_pasta(recurso, [recurso]) == "tarefas"
+    resource = {"name": "Tarefas", "operations": [{"path": "/tarefas", "method": "GET"}]}
+    assert rl.folder_name(resource, [resource]) == "tarefas"
 
 
 def test_nome_reservado_do_windows_recebe_sufixo():
     """Uma pasta chamada `con` ou `aux` é incriável no Windows."""
-    recurso = {"name": "CON", "operations": [{"path": "/x", "method": "GET"}]}
-    assert rl.nome_pasta(recurso, [recurso]) == "con-recurso"
+    resource = {"name": "CON", "operations": [{"path": "/x", "method": "GET"}]}
+    assert rl.folder_name(resource, [resource]) == "con-recurso"
 
 
 def test_homonimos_sao_desambiguados_por_sufixo_legivel():
     a = {"name": "Itens", "operations": [{"path": "/pedidos/itens", "method": "GET"}]}
     b = {"name": "Itens", "operations": [{"path": "/notas/itens", "method": "GET"}]}
-    nomes = {rl.nome_pasta(r, [a, b]) for r in (a, b)}
-    assert nomes == {"itens-pedidos-itens", "itens-notas-itens"}
-    assert len(nomes) == 2
+    names = {rl.folder_name(r, [a, b]) for r in (a, b)}
+    assert names == {"itens-pedidos-itens", "itens-notas-itens"}
+    assert len(names) == 2
 
 
 def test_aviso_distingue_nome_identico_de_truncamento():
     """São problemas diferentes para quem lê o repositório."""
     a = {"name": "Itens", "operations": [{"path": "/a/itens", "method": "GET"}]}
     b = {"name": "Itens", "operations": [{"path": "/b/itens", "method": "GET"}]}
-    avisos = []
-    rl.nome_pasta(a, [a, b], avisos)
-    assert any("MESMO nome" in x for x in avisos)
+    warnings = []
+    rl.folder_name(a, [a, b], warnings)
+    assert any("MESMO nome" in x for x in warnings)
 
 
 def test_marca_e_deterministica_e_derivada_das_operacoes():
     r1 = {"name": "X", "operations": [{"path": "/a", "method": "GET"}]}
     r2 = {"name": "X", "operations": [{"path": "/a", "method": "GET"}]}
-    assert rl.marca(r1) == rl.marca(r2)
+    assert rl.fingerprint(r1) == rl.fingerprint(r2)
     r3 = {"name": "X", "operations": [{"path": "/b", "method": "GET"}]}
-    assert rl.marca(r1) != rl.marca(r3)
+    assert rl.fingerprint(r1) != rl.fingerprint(r3)
 
 
 def test_marca_ignora_ordem_das_operacoes():
     r1 = {"name": "X", "operations": [{"path": "/a", "method": "GET"}, {"path": "/b", "method": "POST"}]}
     r2 = {"name": "X", "operations": [{"path": "/b", "method": "POST"}, {"path": "/a", "method": "GET"}]}
-    assert rl.marca(r1) == rl.marca(r2)
+    assert rl.fingerprint(r1) == rl.fingerprint(r2)
 
 
 # --- nome de arquivo da operação -------------------------------------------
 
 
 @pytest.mark.parametrize(
-    "metodo,path,esperado",
+    "method,path,expected",
     [
         ("GET", "/tarefas", "get_tarefas.yaml"),
         ("GET", "/letras/{id}", "get_letras_{id}.yaml"),
@@ -106,25 +106,25 @@ def test_marca_ignora_ordem_das_operacoes():
         ("DELETE", "/letras/{id}", "delete_letras_{id}.yaml"),
     ],
 )
-def test_nome_de_arquivo_e_legivel_como_a_rota(metodo, path, esperado):
+def test_nome_de_arquivo_e_legivel_como_a_rota(method, path, expected):
     """O `{param}` é preservado: o nome do arquivo tem de ser lido como a rota."""
-    assert rl.nome_arquivo({"method": metodo, "path": path}) == esperado
+    assert rl.file_name({"method": method, "path": path}) == expected
 
 
 def test_nome_longo_e_truncado_com_marca_e_avisa():
     op = {"method": "GET", "path": "/" + "/".join(f"segmento-{i}" for i in range(20))}
-    avisos = []
-    nome = rl.nome_arquivo(op, avisos)
-    assert len(nome) <= rl.MAX_ARQUIVO + len(".yaml")
-    assert re.search(r"-[0-9a-f]{6}\.yaml$", nome)
-    assert any("truncado" in a for a in avisos)
+    warnings = []
+    name = rl.file_name(op, warnings)
+    assert len(name) <= rl.MAX_FILE + len(".yaml")
+    assert re.search(r"-[0-9a-f]{6}\.yaml$", name)
+    assert any("truncado" in a for a in warnings)
 
 
 # --- método derivado do nome do arquivo ------------------------------------
 
 
 @pytest.mark.parametrize(
-    "arquivo,esperado",
+    "file,expected",
     [
         ("get_tarefas.yaml", "GET"),
         ("post_tarefas_{id}_letras.yaml", "POST"),
@@ -135,24 +135,24 @@ def test_nome_longo_e_truncado_com_marca_e_avisa():
         ("qualquer-coisa.yaml", None),
     ],
 )
-def test_metodo_vem_do_nome_do_arquivo(arquivo, esperado):
+def test_metodo_vem_do_nome_do_arquivo(file, expected):
     """O YAML da operação NÃO declara `method` (D-005 §4)."""
-    assert rl.metodo_do_arquivo(arquivo) == esperado
+    assert rl.method_from_file(file) == expected
 
 
 def test_metodo_sobrevive_ao_truncamento():
     """O método é prefixo, então o truncamento não o alcança."""
     op = {"method": "PATCH", "path": "/" + "/".join(f"seg-{i}" for i in range(20))}
-    assert rl.metodo_do_arquivo(rl.nome_arquivo(op)) == "PATCH"
+    assert rl.method_from_file(rl.file_name(op)) == "PATCH"
 
 
 # --- execution points governados -------------------------------------------
 
 
-@pytest.mark.parametrize("ponto,governado", [("FIRST", True), ("SECOND", True), ("THIRD", False), (None, False)])
-def test_particao_do_estado_governado(ponto, governado):
+@pytest.mark.parametrize("point,governado", [("FIRST", True), ("SECOND", True), ("THIRD", False), (None, False)])
+def test_particao_do_estado_governado(point, governado):
     """V-22: o que está fora de FIRST/SECOND volta intacto e não entra na conformidade."""
-    assert rl.eh_governado(ponto) is governado
+    assert rl.is_governed(point) is governado
 
 
 # --- oracle: os repositórios reais -----------------------------------------
@@ -164,20 +164,20 @@ def test_round_trip_dos_nomes_contra_os_repositorios_reais():
     tem de reproduzir exatamente o nome do arquivo."""
     conferidas = 0
     for repo in sorted(RAIZ_EXEMPLOS.iterdir()):
-        pasta_recursos = repo / rl.PASTA_RECURSOS
+        pasta_recursos = repo / rl.RESOURCES_FOLDER
         if not pasta_recursos.is_dir():
             continue
-        for pasta in sorted(pasta_recursos.iterdir()):
-            for arquivo in sorted(pasta.glob("*.yaml")):
-                if arquivo.name == rl.ARQUIVO_RECURSO:
+        for folder in sorted(pasta_recursos.iterdir()):
+            for file in sorted(folder.glob("*.yaml")):
+                if file.name == rl.RESOURCE_FILE:
                     continue
-                texto = arquivo.read_text(encoding="utf-8")
-                path = (yaml.safe_load(texto) or {}).get("path")
-                metodo = rl.metodo_do_arquivo(arquivo.name)
-                assert metodo is not None, f"método não derivado de {arquivo.name}"
+                text = file.read_text(encoding="utf-8")
+                path = (yaml.safe_load(text) or {}).get("path")
+                method = rl.method_from_file(file.name)
+                assert method is not None, f"método não derivado de {file.name}"
                 assert (
-                    rl.nome_arquivo({"method": metodo, "path": path}) == arquivo.name
-                ), f"round-trip divergiu em {repo.name}/{pasta.name}/{arquivo.name}"
+                    rl.file_name({"method": method, "path": path}) == file.name
+                ), f"round-trip divergiu em {repo.name}/{folder.name}/{file.name}"
                 conferidas += 1
     assert conferidas > 0, "nenhuma operação conferida"
 
@@ -186,11 +186,11 @@ def test_round_trip_dos_nomes_contra_os_repositorios_reais():
 
 
 def _arvore_minima(*extras):
-    return [rl.ARQUIVO_BASIC_INFO, rl.ARQUIVO_RAIZ, *extras]
+    return [rl.BASIC_INFO_FILE, rl.ROOT_FILE, *extras]
 
 
 def test_descoberta_de_uma_arvore_completa():
-    d = rl.descobrir(
+    d = rl.discover(
         _arvore_minima(
             "resources/tarefas/resource.yaml",
             "resources/tarefas/get_tarefas.yaml",
@@ -199,46 +199,46 @@ def test_descoberta_de_uma_arvore_completa():
             "resources/letras/delete_letras_{id}.yaml",
         )
     )
-    assert d.completo
-    assert [r.slug for r in d.recursos] == ["letras", "tarefas"]
-    assert d.total_operacoes == 3
-    assert {o.metodo for o in d.recursos[1].operacoes} == {"GET"}
+    assert d.complete
+    assert [r.slug for r in d.resources] == ["letras", "tarefas"]
+    assert d.total_operations == 3
+    assert {o.method for o in d.resources[1].operations} == {"GET"}
 
 
 def test_all_yaml_ausente_impede_a_publicacao():
     """A raiz não herda de ninguém: publicar sem ela apaga o fluxo da revision."""
-    d = rl.descobrir([rl.ARQUIVO_BASIC_INFO])
-    assert not d.completo
-    assert rl.ARQUIVO_RAIZ in d.faltando
+    d = rl.discover([rl.BASIC_INFO_FILE])
+    assert not d.complete
+    assert rl.ROOT_FILE in d.missing
 
 
 def test_erro_de_digitacao_no_arquivo_base_vira_ausencia():
     """A proteção vem da obrigatoriedade do nome, não da proibição do desconhecido."""
-    d = rl.descobrir([rl.ARQUIVO_BASIC_INFO, "alll.yaml"])
-    assert rl.ARQUIVO_RAIZ in d.faltando
+    d = rl.discover([rl.BASIC_INFO_FILE, "alll.yaml"])
+    assert rl.ROOT_FILE in d.missing
     # o quase-acerto continua visível, e serve para a mensagem de erro
-    assert "alll.yaml" in d.ignorados
+    assert "alll.yaml" in d.ignored
 
 
 def test_arquivo_nao_relacionado_nao_derruba_a_descoberta():
-    d = rl.descobrir(_arvore_minima("notas.yaml", "resources/x/resource.yaml"))
-    assert d.completo
-    assert d.ignorados == ["notas.yaml"]
+    d = rl.discover(_arvore_minima("notas.yaml", "resources/x/resource.yaml"))
+    assert d.complete
+    assert d.ignored == ["notas.yaml"]
 
 
 def test_pasta_de_recurso_sem_resource_yaml_e_apontada():
-    d = rl.descobrir(_arvore_minima("resources/x/get_x.yaml"))
-    assert not d.completo
-    assert "resources/x/resource.yaml" in d.faltando
+    d = rl.discover(_arvore_minima("resources/x/get_x.yaml"))
+    assert not d.complete
+    assert "resources/x/resource.yaml" in d.missing
 
 
 def test_yaml_sem_metodo_dentro_do_recurso_e_ignorado_nao_e_operacao():
-    d = rl.descobrir(
+    d = rl.discover(
         _arvore_minima("resources/x/resource.yaml", "resources/x/rascunho.yaml")
     )
-    assert d.completo
-    assert d.total_operacoes == 0
-    assert "resources/x/rascunho.yaml" in d.ignorados
+    assert d.complete
+    assert d.total_operations == 0
+    assert "resources/x/rascunho.yaml" in d.ignored
 
 
 def test_descoberta_e_estavel_na_ordem():
@@ -248,56 +248,56 @@ def test_descoberta_e_estavel_na_ordem():
         "resources/a/post_a.yaml",
         "resources/a/get_a.yaml",
     )
-    uma = rl.descobrir(entrada)
-    outra = rl.descobrir(list(reversed(entrada)))
-    assert [r.slug for r in uma.recursos] == [r.slug for r in outra.recursos]
-    assert [o.arquivo for o in uma.recursos[0].operacoes] == [
-        o.arquivo for o in outra.recursos[0].operacoes
+    uma = rl.discover(entrada)
+    outra = rl.discover(list(reversed(entrada)))
+    assert [r.slug for r in uma.resources] == [r.slug for r in outra.resources]
+    assert [o.file for o in uma.resources[0].operations] == [
+        o.file for o in outra.resources[0].operations
     ]
 
 
 def test_separador_do_windows_e_aceito():
-    d = rl.descobrir(
-        [rl.ARQUIVO_BASIC_INFO, rl.ARQUIVO_RAIZ, r"resources\tarefas\resource.yaml"]
+    d = rl.discover(
+        [rl.BASIC_INFO_FILE, rl.ROOT_FILE, r"resources\tarefas\resource.yaml"]
     )
-    assert d.completo
-    assert d.recursos[0].slug == "tarefas"
+    assert d.complete
+    assert d.resources[0].slug == "tarefas"
 
 
 @pytest.mark.skipif(not RAIZ_EXEMPLOS.is_dir(), reason="exemplos gerados ausentes")
 def test_descoberta_contra_os_repositorios_reais():
-    esperado = {"api-417-rev2": (4, 7), "api-400-rev4": (2, 4)}
+    expected = {"api-417-rev2": (4, 7), "api-400-rev4": (2, 4)}
     for repo in sorted(RAIZ_EXEMPLOS.iterdir()):
-        if repo.name not in esperado:
+        if repo.name not in expected:
             continue
-        caminhos = [str(p.relative_to(repo)) for p in repo.rglob("*.yaml")]
-        d = rl.descobrir(caminhos)
-        recursos, operacoes = esperado[repo.name]
-        assert d.completo, f"{repo.name}: faltando {d.faltando}"
-        assert len(d.recursos) == recursos
-        assert d.total_operacoes == operacoes
+        paths = [str(p.relative_to(repo)) for p in repo.rglob("*.yaml")]
+        d = rl.discover(paths)
+        resources, operations = expected[repo.name]
+        assert d.complete, f"{repo.name}: faltando {d.missing}"
+        assert len(d.resources) == resources
+        assert d.total_operations == operations
 
 
 # --- components.yaml ---------------------------------------------------------
 
 
 def test_components_file_is_recognized_at_the_root():
-    d = rl.descobrir(_arvore_minima(rl.COMPONENTS_FILE))
+    d = rl.discover(_arvore_minima(rl.COMPONENTS_FILE))
 
     assert d.components_path == rl.COMPONENTS_FILE
-    assert rl.COMPONENTS_FILE not in d.ignorados
-    assert d.completo
+    assert rl.COMPONENTS_FILE not in d.ignored
+    assert d.complete
 
 
 def test_components_file_is_optional():
-    d = rl.descobrir(_arvore_minima())
+    d = rl.discover(_arvore_minima())
 
     assert d.components_path is None
-    assert d.completo
+    assert d.complete
 
 
 def test_components_yml_is_not_the_components_file():
-    d = rl.descobrir(_arvore_minima("components.yml"))
+    d = rl.discover(_arvore_minima("components.yml"))
 
     assert d.components_path is None
-    assert "components.yml" in d.ignorados
+    assert "components.yml" in d.ignored

@@ -16,19 +16,19 @@ SCHEMA_SEN_VALIDATE_V1 = "apiops.sen-validate/v1"
 # Achados que vêm do repositório, não da comparação com a API-template. A
 # borda os apresenta à parte: são textos explicativos de várias frases, e
 # numa coluna de tabela ficam ilegíveis.
-ESCOPO_REPOSITORIO = "repositório"
+REPOSITORY_SCOPE = "repositório"
 
-SEVERIDADE_INFO = "INFO"
-SEVERIDADE_WARNING = "WARNING"
+SEVERITY_INFO = "INFO"
+SEVERITY_WARNING = "WARNING"
 
-MODO_ESTEIRA = "pipeline"
+PIPELINE_MODE = "pipeline"
 
 
-def sem_modo_fora_da_esteira(documento: Dict[str, Any]) -> Dict[str, Any]:
+def drop_mode_outside_pipeline(document: Dict[str, Any]) -> Dict[str, Any]:
     """Tira `executionMode` do documento quando ele não vem da esteira."""
-    if documento.get("executionMode") != MODO_ESTEIRA:
-        documento.pop("executionMode", None)
-    return documento
+    if document.get("executionMode") != PIPELINE_MODE:
+        document.pop("executionMode", None)
+    return document
 
 
 @dataclass(frozen=True)
@@ -50,7 +50,7 @@ class ValidateRevision:
 
 
 @dataclass(frozen=True)
-class ReguaSnapshot:
+class RulerSnapshot:
     """Snapshot da régua usada na comparação (D-4 / P-3).
 
     Sem ele um achado deixa de ser reproduzível assim que a API-template muda.
@@ -64,7 +64,7 @@ class ReguaSnapshot:
 
 
 @dataclass(frozen=True)
-class Achado:
+class Finding:
     """Um achado de conformidade. Nunca bloqueia: INFO ou WARNING (V-11 §3)."""
 
     severity: str
@@ -75,7 +75,7 @@ class Achado:
 
 
 @dataclass(frozen=True)
-class AtributoExigido:
+class RequiredAttribute:
     """Atributo exigido pelo stage do Adaptive Governance."""
 
     attribute_id: int
@@ -84,18 +84,18 @@ class AtributoExigido:
 
 
 @dataclass(frozen=True)
-class GovernancaResultado:
+class GovernanceResult:
     """Resultado do pré-check. O faltante é CALCULADO, nunca extraído de texto (V-23 §4)."""
 
     workflow_id: Optional[int] = None
     stage_id: Optional[int] = None
-    required: List[AtributoExigido] = field(default_factory=list)
-    missing: List[AtributoExigido] = field(default_factory=list)
+    required: List[RequiredAttribute] = field(default_factory=list)
+    missing: List[RequiredAttribute] = field(default_factory=list)
     blocked: bool = False
 
 
 @dataclass(frozen=True)
-class PublicacaoResultado:
+class PublicationResult:
     """Resultado da E3 e da conferência da E3.1.
 
     `accepted` é só o código HTTP. O veredito é `verified`: HTTP 200 não é prova
@@ -109,7 +109,7 @@ class PublicacaoResultado:
 
 
 @dataclass(frozen=True)
-class CompletenessResumo:
+class CompletenessSummary:
     """Completeness em regime INFORMATIVO no `validate`: nunca bloqueia (decisão 2)."""
 
     score: Optional[float] = None
@@ -126,19 +126,19 @@ class ValidateView:
     execution_mode: str
     api: ValidateApi
     revision: ValidateRevision
-    regua: ReguaSnapshot
-    achados: List[Achado] = field(default_factory=list)
-    governanca: GovernancaResultado = field(default_factory=GovernancaResultado)
-    publicacao: PublicacaoResultado = field(default_factory=PublicacaoResultado)
-    completeness: CompletenessResumo = field(default_factory=CompletenessResumo)
+    ruler: RulerSnapshot
+    findings: List[Finding] = field(default_factory=list)
+    governance: GovernanceResult = field(default_factory=GovernanceResult)
+    publication: PublicationResult = field(default_factory=PublicationResult)
+    completeness: CompletenessSummary = field(default_factory=CompletenessSummary)
 
     @property
-    def warnings(self) -> List[Achado]:
-        return [a for a in self.achados if a.severity == SEVERIDADE_WARNING]
+    def warnings(self) -> List[Finding]:
+        return [a for a in self.findings if a.severity == SEVERITY_WARNING]
 
     @property
-    def infos(self) -> List[Achado]:
-        return [a for a in self.achados if a.severity == SEVERIDADE_INFO]
+    def infos(self) -> List[Finding]:
+        return [a for a in self.findings if a.severity == SEVERITY_INFO]
 
     def to_document(self) -> Dict[str, Any]:
         """Árvore do contrato v1, na ordem declarada.
@@ -146,7 +146,7 @@ class ValidateView:
         Nenhum campo pode carregar token, cookie ou material de credencial, e não
         há dump cru de wire: o consumidor recebe só o que foi decidido expor.
         """
-        return sem_modo_fora_da_esteira({
+        return drop_mode_outside_pipeline({
             "schema": self.schema,
             "generatedAt": self.generated_at,
             "executionMode": self.execution_mode,
@@ -161,10 +161,10 @@ class ValidateView:
                 "revisionNumber": self.revision.revision_number,
             },
             "ruler": {
-                "templateId": self.regua.template_id,
-                "revisionNumber": self.regua.revision_number,
-                "flowHash": self.regua.flow_hash,
-                "interceptorsCount": self.regua.interceptors_count,
+                "templateId": self.ruler.template_id,
+                "revisionNumber": self.ruler.revision_number,
+                "flowHash": self.ruler.flow_hash,
+                "interceptorsCount": self.ruler.interceptors_count,
             },
             "findings": [
                 {
@@ -174,18 +174,18 @@ class ValidateView:
                     "interceptorType": a.interceptor_type,
                     "customInterceptorId": a.custom_interceptor_id,
                 }
-                for a in self.achados
+                for a in self.findings
             ],
             "governance": {
-                "workflowId": self.governanca.workflow_id,
-                "stageId": self.governanca.stage_id,
+                "workflowId": self.governance.workflow_id,
+                "stageId": self.governance.stage_id,
                 "required": [
                     {
                         "attributeId": r.attribute_id,
                         "name": r.name,
                         "tagId": r.tag_id,
                     }
-                    for r in self.governanca.required
+                    for r in self.governance.required
                 ],
                 "missing": [
                     {
@@ -193,15 +193,15 @@ class ValidateView:
                         "name": m.name,
                         "tagId": m.tag_id,
                     }
-                    for m in self.governanca.missing
+                    for m in self.governance.missing
                 ],
-                "blocked": self.governanca.blocked,
+                "blocked": self.governance.blocked,
             },
             "publication": {
-                "attempted": self.publicacao.attempted,
-                "accepted": self.publicacao.accepted,
-                "verified": self.publicacao.verified,
-                "divergences": list(self.publicacao.divergences),
+                "attempted": self.publication.attempted,
+                "accepted": self.publication.accepted,
+                "verified": self.publication.verified,
+                "divergences": list(self.publication.divergences),
             },
             "completeness": {
                 "score": self.completeness.score,

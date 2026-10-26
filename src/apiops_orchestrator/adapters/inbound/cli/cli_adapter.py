@@ -36,15 +36,15 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
 )
 from apiops_orchestrator.application.exceptions.deploy_exceptions import (
     DeployError,
-    DeployFalhouError,
+    DeployFailedError,
 )
 from apiops_orchestrator.domain.models.completeness_view import CompletenessView
 from apiops_orchestrator.domain.models.deploy_model import DeployState, DeployView
 from apiops_orchestrator.domain.models.publish_view import PublishView
 from apiops_orchestrator.domain.models.validate_view import (
-    ESCOPO_REPOSITORIO,
-    SEVERIDADE_WARNING,
-    Achado,
+    REPOSITORY_SCOPE,
+    SEVERITY_WARNING,
+    Finding,
     ValidateView,
 )
 from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
@@ -211,14 +211,14 @@ class CliError(Exception):
         super().__init__(self.message)
 
 
-def _literal(valor: Any) -> str:
+def _literal(value: Any) -> str:
     """Valor externo pronto para entrar numa string com marcação Rich: colchetes saem como texto."""
-    return escape(str(valor))
+    return escape(str(value))
 
 
-def _print_erro(mensagem: Any, rotulo: str = "Erro:") -> None:
+def _print_error(message: Any, label: str = "Erro:") -> None:
     """Imprime o rótulo de erro em destaque seguido da mensagem, sem interpretar marcação nela."""
-    rprint(f"[bold red]{rotulo}[/bold red] {_literal(mensagem)}")
+    rprint(f"[bold red]{label}[/bold red] {_literal(message)}")
 
 
 def _exit_on_unexpected(exc: Exception, command: str, exit_code: int = 1) -> NoReturn:
@@ -235,17 +235,17 @@ def _exit_on_unexpected(exc: Exception, command: str, exit_code: int = 1) -> NoR
     would leak to stderr).
     """
     if isinstance(exc, CliError):
-        _print_erro(exc.message)
+        _print_error(exc.message)
         raise typer.Exit(code=exc.exit_code)
     if isinstance(exc, LoginError):
-        _print_erro(exc.message)
+        _print_error(exc.message)
         raise typer.Exit(code=1)
     if isinstance(exc, ManagerApiError):
         message = manager_failure_message(classify_manager_failure(exc))
         logger.info(
             "cli.manager_failure command=%s type=%s", command, type(exc).__name__
         )
-        _print_erro(message or INTERNAL_ERROR_MESSAGE)
+        _print_error(message or INTERNAL_ERROR_MESSAGE)
         raise typer.Exit(code=exit_code)
     logger.info(
         "cli.unexpected_error command=%s type=%s",
@@ -257,17 +257,17 @@ def _exit_on_unexpected(exc: Exception, command: str, exit_code: int = 1) -> NoR
     raise typer.Exit(code=exit_code)
 
 
-def _run_with_feedback(work: Callable[[], Any], label: str, narrar: bool = True):
+def _run_with_feedback(work: Callable[[], Any], label: str, narrate: bool = True):
     """Runs `work` with a spinner only when stdout is a terminal.
 
     In non-interactive stdout (CI runner, redirected output, docker logs),
     Rich's Live turns each animation frame into plain new lines polluting
     machine-readable output, so we fall back to a single dim status line.
 
-    With `narrar=False` (`-o json`/`-o yaml`) there is no feedback at all: stdout
+    With `narrate=False` (`-o json`/`-o yaml`) there is no feedback at all: stdout
     carries only the document the pipeline will parse.
     """
-    if not narrar:
+    if not narrate:
         return work()
     if not get_console().is_terminal:
         rprint(f"[dim]{label}[/dim]")
@@ -286,37 +286,37 @@ def _run_with_feedback(work: Callable[[], Any], label: str, narrar: bool = True)
         live.stop()
 
 
-def _authenticate_with_feedback(service_builder: Callable[[], Any], narrar: bool = True):
+def _authenticate_with_feedback(service_builder: Callable[[], Any], narrate: bool = True):
     """Runs the login flow with the shared waiting feedback."""
     return _run_with_feedback(
-        lambda: service_builder().login(), label="Autenticando...", narrar=narrar
+        lambda: service_builder().login(), label="Autenticando...", narrate=narrate
     )
 
 
 SCHEMA_SEN_LOGIN_V1 = "apiops.sen-login/v1"
 
 
-def _iso_utc(momento: Optional[datetime]) -> Optional[str]:
-    if momento is None:
+def _iso_utc(moment: Optional[datetime]) -> Optional[str]:
+    if moment is None:
         return None
-    if momento.tzinfo is not None:
-        momento = momento.astimezone(timezone.utc)
-    return momento.strftime("%Y-%m-%dT%H:%M:%SZ")
+    if moment.tzinfo is not None:
+        moment = moment.astimezone(timezone.utc)
+    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _documento_login(session: Any) -> Dict[str, Any]:
+def _login_document(session: Any) -> Dict[str, Any]:
     """Contrato `apiops.sen-login/v1`: o mesmo que o painel mostra, por perfil.
 
     Nenhum token, em nenhum perfil. O super-admin não expõe identidade pessoal.
     """
-    documento: Dict[str, Any] = {"schema": SCHEMA_SEN_LOGIN_V1, "authenticated": True}
+    document: Dict[str, Any] = {"schema": SCHEMA_SEN_LOGIN_V1, "authenticated": True}
     if session.is_super_admin:
-        documento["profile"] = session.profile
-        documento["scope"] = session.scope
+        document["profile"] = session.profile
+        document["scope"] = session.scope
     else:
-        documento["user"] = {"name": session.userName, "email": session.userEmail}
-    documento["expiresAt"] = _iso_utc(session.expiresAt)
-    return documento
+        document["user"] = {"name": session.userName, "email": session.userEmail}
+    document["expiresAt"] = _iso_utc(session.expiresAt)
+    return document
 
 
 @sen_app.command("login")
@@ -330,7 +330,7 @@ def login(
     Autentica na Orchestrator Auth API e guarda a sessão local.
     Requer a variável SEN_CREDENTIALS (Base64 de client_id:secret).
     """
-    estruturado = output is not OutputFormat.TEXT
+    structured = output is not OutputFormat.TEXT
     try:
         login_service_factory = (ctx.obj or {}).get("login_service_factory")
         if not callable(login_service_factory):
@@ -339,19 +339,19 @@ def login(
             )
             raise typer.Exit(code=1)
 
-        if not estruturado:
+        if not structured:
             print_welcome()
         session = _authenticate_with_feedback(
-            cast(Callable[[], Any], login_service_factory), narrar=not estruturado
+            cast(Callable[[], Any], login_service_factory), narrate=not structured
         )
     except LoginError as e:
-        _print_erro(e.message, rotulo="Erro de login:")
+        _print_error(e.message, label="Erro de login:")
         raise typer.Exit(code=e.exit_code)
     except typer.Exit as e:
         raise e
 
-    if estruturado:
-        display_output(_documento_login(session), output_format=output)
+    if structured:
+        display_output(_login_document(session), output_format=output)
         return
 
     expires_at = (
@@ -662,7 +662,7 @@ def list_apis(
     except typer.Exit:
         raise
     except ApiCollectionError as e:
-        _print_erro(e)
+        _print_error(e)
         raise typer.Exit(code=1)
     except Exception as e:
         _exit_on_unexpected(e, command="list api")
@@ -709,7 +709,7 @@ def _render_revisions_grade(
     rows = _run_with_feedback(
         lambda: service.api_revisions(api_id),
         label="Consultando completeness das revisões...",
-        narrar=output is OutputFormat.TEXT,
+        narrate=output is OutputFormat.TEXT,
     )
     if not rows:
         rprint(f"[yellow]Nenhuma revisão encontrada para a API {api_id}.[/yellow]")
@@ -910,7 +910,7 @@ def completeness(
     Mostra o completeness de uma revisão de API (Sensedia Manager).
     """
     if api_id is None or revision is None:
-        _print_erro(MISSING_TARGET_MESSAGE)
+        _print_error(MISSING_TARGET_MESSAGE)
         raise typer.Exit(code=1)
 
     try:
@@ -934,7 +934,7 @@ def completeness(
     except typer.Exit:
         raise
     except CompletenessError as e:
-        _print_erro(e.message)
+        _print_error(e.message)
         raise typer.Exit(code=e.exit_code)
     except Exception as e:
         _exit_on_unexpected(e, command="completeness", exit_code=CompletenessError.exit_code)
@@ -944,14 +944,14 @@ def completeness(
 # sen validate
 # ---------------------------------------------------------------------------
 
-_SEVERIDADE_ESTILO = {"WARNING": "yellow", "INFO": "cyan"}
+_SEVERITY_STYLE = {"WARNING": "yellow", "INFO": "cyan"}
 
 
-def _painel_validate(titulo: str, corpo, width=None) -> Panel:
+def _validate_panel(title: str, body, width=None) -> Panel:
     """Caixa de seção, no mesmo desenho do painel de sessão do `sen login`."""
     return Panel(
-        corpo,
-        title=f"[bold white]{titulo}[/bold white]",
+        body,
+        title=f"[bold white]{title}[/bold white]",
         title_align="left",
         box=box.ROUNDED if _stdout_supports_rounded_box() else box.ASCII,
         border_style="grey53",
@@ -960,17 +960,17 @@ def _painel_validate(titulo: str, corpo, width=None) -> Panel:
     )
 
 
-def _grade_de_campos(linhas) -> Table:
+def _field_grid(lines) -> Table:
     """Pares rótulo/valor alinhados — mesma grade do `_session_panel`."""
     grid = Table.grid(padding=(0, 1))
     grid.add_column(justify="left", min_width=12, no_wrap=True)
     grid.add_column(justify="left", overflow="fold")
-    for rotulo, valor in linhas:
-        grid.add_row(f"[bold white]{rotulo}[/bold white]", valor)
+    for label, value in lines:
+        grid.add_row(f"[bold white]{label}[/bold white]", value)
     return grid
 
 
-def _largura_validate() -> int:
+def _validate_width() -> int:
     """Largura única das seções do `validate`.
 
     Tudo — painel, tabela e avisos — usa a mesma referência do `sen login`, e
@@ -980,50 +980,50 @@ def _largura_validate() -> int:
     return min(_framed_logo_width(), get_console().width)
 
 
-def _tabela_achados(achados, largura: Optional[int] = None) -> Table:
+def _findings_table(findings, width: Optional[int] = None) -> Table:
     """Achados em tabela, como o `sen list` faz com as APIs.
 
     Em lista corrida de 38 achados nada se distingue; em colunas, o olho varre
     a severidade e para no que interessa.
     """
-    tabela = Table(
+    table = Table(
         box=_GRADE_BOX,
         header_style="bold cyan",
         border_style="grey53",
         padding=(0, 1),
         pad_edge=False,
         show_lines=True,
-        width=largura,
+        width=width,
     )
-    # ONDE quebra em vez de truncar: `POST /tarefas/{id}/atribuicao-responsavel`
+    # ONDE quebra em vez de truncar: `POST /tarefas/{id}/atribuicao-responsible`
     # cortado em "…atribuicao-res…" não identifica rota nenhuma.
-    tabela.add_column("SEVERIDADE", no_wrap=True, width=10)
-    tabela.add_column("ONDE", overflow="fold", max_width=30)
-    tabela.add_column("O QUE", overflow="fold", ratio=1)
-    for achado in achados:
-        estilo = _SEVERIDADE_ESTILO.get(achado.severity, "white")
-        tabela.add_row(
-            Text(achado.severity, style=estilo),
-            Text(achado.scope or "-", style="white"),
-            Text(achado.message, style="white"),
+    table.add_column("SEVERIDADE", no_wrap=True, width=10)
+    table.add_column("ONDE", overflow="fold", max_width=30)
+    table.add_column("O QUE", overflow="fold", ratio=1)
+    for finding in findings:
+        style = _SEVERITY_STYLE.get(finding.severity, "white")
+        table.add_row(
+            Text(finding.severity, style=style),
+            Text(finding.scope or "-", style="white"),
+            Text(finding.message, style="white"),
         )
-    return tabela
+    return table
 
 
-def _render_avisos_do_repo(avisos) -> None:
+def _render_repo_warnings(warnings) -> None:
     """Avisos do repositório, em blocos — não em tabela.
 
     São textos de várias frases, com quebra de linha própria, que dizem o que
     vai mudar na plataforma. Espremidos numa coluna de tabela viram uma coluna
     de palavras soltas; em bloco, de largura inteira, continuam legíveis.
     """
-    marcador = "▸" if _supports_text("▸") else "!"
+    marker = "▸" if _supports_text("▸") else "!"
     grid = Table.grid(padding=(0, 1))
-    grid.width = _largura_validate()
+    grid.width = _validate_width()
     grid.add_column(justify="left", width=1, no_wrap=True)
     grid.add_column(overflow="fold", ratio=1)
-    for achado in avisos:
-        grid.add_row(f"[yellow]{marcador}[/yellow]", Text(achado.message, style="white"))
+    for finding in warnings:
+        grid.add_row(f"[yellow]{marker}[/yellow]", Text(finding.message, style="white"))
     rprint(grid)
 
 
@@ -1034,61 +1034,61 @@ def _render_validate_text(view: ValidateView) -> None:
     O desenho segue o do `sen login` e do `sen list`: caixa para identidade,
     tabela para itens repetidos, grade de rótulos para pares chave/valor.
     """
-    width = _largura_validate()
+    width = _validate_width()
 
     # --- identidade: quem está sendo validado, e onde ------------------------
-    identidade = [("API", f"[bold white]{_literal(view.api.name or '-')}[/bold white]")]
-    detalhe = f"id {view.api.manager_id}"
+    identity = [("API", f"[bold white]{_literal(view.api.name or '-')}[/bold white]")]
+    detail = f"id {view.api.manager_id}"
     if view.api.version:
-        detalhe += f"  ·  v{_literal(view.api.version)}"
+        detail += f"  ·  v{_literal(view.api.version)}"
     if view.api.base_path:
-        detalhe += f"  ·  {_literal(view.api.base_path)}"
-    identidade.append(("", f"[grey53]{detalhe}[/grey53]"))
+        detail += f"  ·  {_literal(view.api.base_path)}"
+    identity.append(("", f"[grey53]{detail}[/grey53]"))
 
-    revisao = f"[white]#{view.revision.revision_number}[/white]" if (
+    revision = f"[white]#{view.revision.revision_number}[/white]" if (
         view.revision.revision_number is not None
     ) else "[white]-[/white]"
-    identidade.append(
-        ("Rascunho", f"{revisao} [grey53](id {view.revision.manager_id})[/grey53]")
+    identity.append(
+        ("Rascunho", f"{revision} [grey53](id {view.revision.manager_id})[/grey53]")
     )
 
-    if view.regua.template_id is not None:
-        alvo = f"[white]API {view.regua.template_id}[/white]"
-        complemento = []
-        if view.regua.revision_number is not None:
-            complemento.append(f"revisão #{view.regua.revision_number}")
-        if view.regua.interceptors_count is not None:
-            complemento.append(f"{view.regua.interceptors_count} interceptor(es)")
-        if view.regua.flow_hash:
+    if view.ruler.template_id is not None:
+        target = f"[white]API {view.ruler.template_id}[/white]"
+        details = []
+        if view.ruler.revision_number is not None:
+            details.append(f"revisão #{view.ruler.revision_number}")
+        if view.ruler.interceptors_count is not None:
+            details.append(f"{view.ruler.interceptors_count} interceptor(es)")
+        if view.ruler.flow_hash:
             # O snapshot é o que torna um achado reproduzível depois (D-4/P-3).
-            complemento.append(_literal(view.regua.flow_hash))
-        if complemento:
-            alvo += f"  [grey53]{'  ·  '.join(complemento)}[/grey53]"
+            details.append(_literal(view.ruler.flow_hash))
+        if details:
+            target += f"  [grey53]{'  ·  '.join(details)}[/grey53]"
     else:
-        alvo = "[grey53]não vinculada — conformidade não executada[/grey53]"
-    identidade.append(("Template", alvo))
+        target = "[grey53]não vinculada — conformidade não executada[/grey53]"
+    identity.append(("Template", target))
 
     rprint()
-    rprint(_painel_validate("Validação", _grade_de_campos(identidade), width=width))
+    rprint(_validate_panel("Validação", _field_grid(identity), width=width))
     rprint()
 
     # --- conformidade: nunca bloqueia (V-11 §3) ------------------------------
-    do_repo = [a for a in view.achados if a.scope == ESCOPO_REPOSITORIO]
-    da_template = [a for a in view.achados if a.scope != ESCOPO_REPOSITORIO]
+    from_repo = [a for a in view.findings if a.scope == REPOSITORY_SCOPE]
+    from_template = [a for a in view.findings if a.scope != REPOSITORY_SCOPE]
 
-    if da_template:
-        avisos = sum(
-            1 for a in da_template if a.severity == SEVERIDADE_WARNING
+    if from_template:
+        warnings = sum(
+            1 for a in from_template if a.severity == SEVERITY_WARNING
         )
         rprint(
             f"[bold]Conformidade com a API-template[/bold]  "
-            f"[yellow]{avisos} aviso(s)[/yellow] · "
-            f"[cyan]{len(da_template) - avisos} informativo(s)[/cyan]"
+            f"[yellow]{warnings} aviso(s)[/yellow] · "
+            f"[cyan]{len(from_template) - warnings} informativo(s)[/cyan]"
         )
-        rprint(_tabela_achados(da_template, largura=width))
+        rprint(_findings_table(from_template, width=width))
         rprint("[grey53]Nenhum deles impede a publicação.[/grey53]")
         rprint()
-    elif view.regua.template_id is not None:
+    elif view.ruler.template_id is not None:
         rprint(
             "[bold]Conformidade com a API-template[/bold]  "
             "[green]sem divergências[/green]"
@@ -1096,20 +1096,20 @@ def _render_validate_text(view: ValidateView) -> None:
         rprint()
 
     # --- o que o repositório vai mudar na plataforma -------------------------
-    if do_repo:
+    if from_repo:
         rprint(
             f"[bold]O que vai mudar no Manager[/bold]  "
-            f"[yellow]{len(do_repo)} aviso(s)[/yellow]"
+            f"[yellow]{len(from_repo)} aviso(s)[/yellow]"
         )
-        _render_avisos_do_repo(do_repo)
+        _render_repo_warnings(from_repo)
         rprint()
 
     # --- governança: o faltante é calculado, não extraído de texto (V-23 §4) --
-    gov = view.governanca
+    gov = view.governance
     if gov.stage_id is not None:
         if gov.missing:
-            faltantes = ", ".join((m.name or str(m.attribute_id)) for m in gov.missing)
-            rprint(f"[bold red]Governança[/bold red]  falta: {_literal(faltantes)}")
+            missing_names = ", ".join((m.name or str(m.attribute_id)) for m in gov.missing)
+            rprint(f"[bold red]Governança[/bold red]  falta: {_literal(missing_names)}")
         else:
             rprint(
                 f"[bold]Governança[/bold]  [green]liberada[/green] "
@@ -1123,7 +1123,7 @@ def _render_validate_text(view: ValidateView) -> None:
         rprint()
 
     # --- publicação: HTTP 200 não é prova de sucesso (W-8) -------------------
-    pub = view.publicacao
+    pub = view.publication
     if pub.attempted:
         if pub.verified:
             rprint(
@@ -1147,20 +1147,20 @@ def _render_validate_text(view: ValidateView) -> None:
     if comp.score is not None:
         # `≥` quebra em console cp1252 (UnicodeEncodeError), e o comando não
         # pode morrer por causa de um glifo decorativo.
-        maior_igual = "≥" if _supports_text("≥") else ">="
+        greater_equal = "≥" if _supports_text("≥") else ">="
         gate = (
-            f"  [grey53]Quality gate: {maior_igual}{comp.gate_percent:.0f}%[/grey53]"
+            f"  [grey53]Quality gate: {greater_equal}{comp.gate_percent:.0f}%[/grey53]"
             if comp.gate_percent is not None
             else ""
         )
         rprint(f"[bold]Quality score[/bold]  {comp.score:.1f}%{gate}")
         if comp.suggestions:
-            sugestoes = Table.grid(padding=(0, 1))
-            sugestoes.add_column(justify="right", width=3, no_wrap=True)
-            sugestoes.add_column(overflow="fold")
+            suggestions = Table.grid(padding=(0, 1))
+            suggestions.add_column(justify="right", width=3, no_wrap=True)
+            suggestions.add_column(overflow="fold")
             for i, s in enumerate(comp.suggestions, start=1):
-                sugestoes.add_row(f"[grey53]{i}.[/grey53]", Text(s, style="white"))
-            rprint(sugestoes)
+                suggestions.add_row(f"[grey53]{i}.[/grey53]", Text(s, style="white"))
+            rprint(suggestions)
         rprint()
 
 
@@ -1175,7 +1175,7 @@ def _stderr_console() -> Console:
     return _STDERR_CONSOLE
 
 
-class _ProgressoValidate:
+class _ValidateProgress:
     """Barra de etapas do `validate`, com pausa para a confirmação.
 
     O comando faz cinco chamadas de rede em sequência e pode parar no meio para
@@ -1192,18 +1192,18 @@ class _ProgressoValidate:
       animação viraria uma enxurrada de frames no log — mesmo motivo do `login`.
     """
 
-    def __init__(self, rotulo_inicial: str = "Validando", narrar: bool = True):
-        self._interativo = narrar and get_console().is_terminal
-        self._narrar = narrar
-        self._barra = _LoadingBar(f"{rotulo_inicial}...")
+    def __init__(self, initial_label: str = "Validando", narrate: bool = True):
+        self._interactive = narrate and get_console().is_terminal
+        self._narrate = narrate
+        self._bar = _LoadingBar(f"{initial_label}...")
         self._live = (
             Live(
-                Align.center(self._barra),
+                Align.center(self._bar),
                 console=get_console(),
                 refresh_per_second=10,
                 transient=True,
             )
-            if self._interativo
+            if self._interactive
             else None
         )
 
@@ -1217,14 +1217,14 @@ class _ProgressoValidate:
             self._live.stop()
         return False
 
-    def etapa(self, texto: str) -> None:
+    def step(self, text: str) -> None:
         """Narra em que ponto a espera está — a `Live` relê o rótulo no refresh."""
-        self._barra.label = f"{texto}..."
-        if self._live is None and self._narrar:
-            _stderr_console().print(f"[dim]{_literal(texto)}...[/dim]")
+        self._bar.label = f"{text}..."
+        if self._live is None and self._narrate:
+            _stderr_console().print(f"[dim]{_literal(text)}...[/dim]")
 
     @contextmanager
-    def pausado(self):
+    def paused(self):
         if self._live is None:
             yield
             return
@@ -1235,23 +1235,23 @@ class _ProgressoValidate:
             self._live.start()
 
 
-class _OperacaoCancelada(Exception):
+class _OperationCancelled(Exception):
     """Ctrl+C (ou fim da entrada) no prompt: interrompe o comando inteiro."""
 
 
 # Código de saída convencional de interrupção (128 + SIGINT), para que script ou
 # esteira distingam "cancelado" de "recusado" (0) e de falha (1).
-EXIT_CANCELADO = 130
+EXIT_CANCELLED = 130
 
 
-def _encerrar_sem_gravar(comando: str, codigo: int = 0) -> NoReturn:
+def _exit_without_writing(command: str, code: int = 0) -> NoReturn:
     """Sem a cascata completa não há relatório — só o desfecho."""
-    rprint(f"[yellow]{comando} cancelada.[/yellow] Nada foi gravado.")
-    raise typer.Exit(code=codigo)
+    rprint(f"[yellow]{command} cancelada.[/yellow] Nada foi gravado.")
+    raise typer.Exit(code=code)
 
 
-def _confirmar_publicacao(
-    mensagem: str, progresso: Optional["_ProgressoValidate"] = None
+def _confirm_publication(
+    message: str, progress: Optional["_ValidateProgress"] = None
 ) -> bool:
     """Guarda 2 do `validate`: confirmação interativa, só fora da esteira.
 
@@ -1261,20 +1261,20 @@ def _confirmar_publicacao(
     solta no meio da saída.
 
     `n` devolve `False` e o comando encerra sem gravar. Ctrl+C não é resposta:
-    interrompe o comando (`_OperacaoCancelada`).
+    interrompe o comando (`_OperationCancelled`).
     """
-    def _perguntar() -> bool:
+    def _ask() -> bool:
         rprint()
         rprint(
             Align.center(
                 Panel(
-                    Text(mensagem, style="white"),
+                    Text(message, style="white"),
                     title="[bold yellow]Confirmação[/bold yellow]",
                     title_align="left",
                     box=box.ROUNDED if _stdout_supports_rounded_box() else box.ASCII,
                     border_style="yellow",
                     padding=(0, 1),
-                    width=_largura_validate(),
+                    width=_validate_width(),
                 )
             )
         )
@@ -1283,12 +1283,12 @@ def _confirmar_publicacao(
         except typer.Abort as exc:
             # Ctrl+C ou fim da entrada: o Click entrega os dois como `Abort`.
             # Não é um "não" — é interromper. Nada foi gravado até aqui.
-            raise _OperacaoCancelada() from exc
+            raise _OperationCancelled() from exc
 
-    if progresso is None:
-        return _perguntar()
-    with progresso.pausado():
-        return _perguntar()
+    if progress is None:
+        return _ask()
+    with progress.paused():
+        return _ask()
 
 
 @sen_app.command("validate")
@@ -1315,16 +1315,16 @@ def validate(
             raise typer.Exit(code=1)
 
         service = cast(Callable[[], Any], service_factory)()
-        progresso = _ProgressoValidate(narrar=output is OutputFormat.TEXT)
-        with progresso:
+        progress = _ValidateProgress(narrate=output is OutputFormat.TEXT)
+        with progress:
             view = service.validate(
                 repo_path=repo or Path.cwd(),
-                confirmar=lambda m: _confirmar_publicacao(m, progresso),
-                progresso=progresso.etapa,
+                confirm=lambda m: _confirm_publication(m, progress),
+                progress=progress.step,
             )
 
-        if not view.publicacao.attempted:
-            _encerrar_sem_gravar("Validação")
+        if not view.publication.attempted:
+            _exit_without_writing("Validação")
 
         display_output(
             view.to_document(),
@@ -1334,10 +1334,10 @@ def validate(
 
     except typer.Exit:
         raise
-    except _OperacaoCancelada:
-        _encerrar_sem_gravar("Validação", EXIT_CANCELADO)
+    except _OperationCancelled:
+        _exit_without_writing("Validação", EXIT_CANCELLED)
     except ValidateError as e:
-        _print_erro(e.message)
+        _print_error(e.message)
         raise typer.Exit(code=e.exit_code)
     except Exception as e:
         _exit_on_unexpected(e, command="validate")
@@ -1345,16 +1345,16 @@ def validate(
 
 def _render_publish_text(view: PublishView) -> None:
     """Renderiza a resposta do `publish` — mesma árvore de `json`/`yaml`."""
-    width = _largura_validate()
+    width = _validate_width()
 
-    identidade = [("API", f"[bold white]{_literal(view.api.name or '-')}[/bold white]")]
-    detalhe = f"id {view.api.manager_id}"
+    identity = [("API", f"[bold white]{_literal(view.api.name or '-')}[/bold white]")]
+    detail = f"id {view.api.manager_id}"
     if view.api.version:
-        detalhe += f"  ·  v{_literal(view.api.version)}"
+        detail += f"  ·  v{_literal(view.api.version)}"
     if view.api.base_path:
-        detalhe += f"  ·  {_literal(view.api.base_path)}"
-    identidade.append(("", f"[grey53]{detalhe}[/grey53]"))
-    identidade.append(
+        detail += f"  ·  {_literal(view.api.base_path)}"
+    identity.append(("", f"[grey53]{detail}[/grey53]"))
+    identity.append(
         (
             "Revisão",
             f"[white]#{view.revision.revision_number}[/white] "
@@ -1363,23 +1363,23 @@ def _render_publish_text(view: PublishView) -> None:
     )
 
     rprint()
-    rprint(_painel_validate("Publicação", _grade_de_campos(identidade), width=width))
+    rprint(_validate_panel("Publicação", _field_grid(identity), width=width))
     rprint()
 
-    if view.avisos:
+    if view.warnings:
         rprint(
             f"[bold]O que vai mudar no Manager[/bold]  "
-            f"[yellow]{len(view.avisos)} aviso(s)[/yellow]"
+            f"[yellow]{len(view.warnings)} aviso(s)[/yellow]"
         )
-        _render_avisos_do_repo(
+        _render_repo_warnings(
             [
-                Achado(severity=SEVERIDADE_WARNING, scope=ESCOPO_REPOSITORIO, message=a)
-                for a in view.avisos
+                Finding(severity=SEVERITY_WARNING, scope=REPOSITORY_SCOPE, message=a)
+                for a in view.warnings
             ]
         )
         rprint()
 
-    gov = view.governanca
+    gov = view.governance
     if gov.stage_id is not None:
         rprint(
             f"[bold]Governança[/bold]  [green]liberada[/green] "
@@ -1394,18 +1394,18 @@ def _render_publish_text(view: PublishView) -> None:
 
     # Recusa, divergência e erro encerram antes de chegar aqui: só o
     # sucesso conferido é renderizado.
-    numero = view.revision.revision_number
-    rprint(f"[bold]Revisão {numero}[/bold]  [green]gravada[/green]")
+    number = view.revision.revision_number
+    rprint(f"[bold]Revisão {number}[/bold]  [green]gravada[/green]")
     if not view.deployments:
         rprint("  [grey53]não está deployada em nenhum ambiente[/grey53]")
     for d in view.deployments:
-        linha = "  deployada em "
+        line = "  deployada em "
         if d.environment.name:
-            linha += f"[white]{_literal(d.environment.name)}[/white] "
-        detalhe = f"(id {d.environment.manager_id})"
+            line += f"[white]{_literal(d.environment.name)}[/white] "
+        detail = f"(id {d.environment.manager_id})"
         if d.deployed_at:
-            detalhe += f" · deploy em {_literal(d.deployed_at)}"
-        rprint(f"{linha}[grey53]{detalhe}[/grey53]")
+            detail += f" · deploy em {_literal(d.deployed_at)}"
+        rprint(f"{line}[grey53]{detail}[/grey53]")
     rprint()
 
 
@@ -1433,11 +1433,11 @@ def publish(
             raise typer.Exit(code=1)
 
         service = cast(Callable[[], Any], service_factory)()
-        progresso = _ProgressoValidate(
-            rotulo_inicial="Publicando", narrar=output is OutputFormat.TEXT
+        progress = _ValidateProgress(
+            initial_label="Publicando", narrate=output is OutputFormat.TEXT
         )
-        with progresso:
-            view = service.publish(repo_path=repo or Path.cwd(), progresso=progresso.etapa)
+        with progress:
+            view = service.publish(repo_path=repo or Path.cwd(), progress=progress.step)
 
         display_output(
             view.to_document(),
@@ -1448,41 +1448,41 @@ def publish(
     except typer.Exit:
         raise
     except ValidateError as e:
-        _print_erro(e.message)
+        _print_error(e.message)
         raise typer.Exit(code=e.exit_code)
     except Exception as e:
         _exit_on_unexpected(e, command="publish")
 
 
-def _descrever_estado(estado: Optional[DeployState]) -> str:
-    if estado is None:
+def _describe_state(state: Optional[DeployState]) -> str:
+    if state is None:
         return "[grey53]nenhuma revisão desta API deployada[/grey53]"
-    texto = f"[white]revisão #{estado.revision_number}[/white]"
-    detalhe = f"deploy {estado.deployment_id}"
-    if estado.deployed_at:
-        detalhe += f" · {_literal(estado.deployed_at)}"
-    return f"{texto} [grey53]({detalhe})[/grey53]"
+    text = f"[white]revisão #{state.revision_number}[/white]"
+    detail = f"deploy {state.deployment_id}"
+    if state.deployed_at:
+        detail += f" · {_literal(state.deployed_at)}"
+    return f"{text} [grey53]({detail})[/grey53]"
 
 
 def _render_deploy_text(view: DeployView) -> None:
     """Renderiza a resposta do `deploy` — mesma árvore de `json`/`yaml`."""
-    width = _largura_validate()
+    width = _validate_width()
 
-    identidade = [("API", f"[bold white]{_literal(view.api.name or '-')}[/bold white]")]
-    detalhe = f"id {view.api.manager_id}"
+    identity = [("API", f"[bold white]{_literal(view.api.name or '-')}[/bold white]")]
+    detail = f"id {view.api.manager_id}"
     if view.api.version:
-        detalhe += f"  ·  v{_literal(view.api.version)}"
+        detail += f"  ·  v{_literal(view.api.version)}"
     if view.api.base_path:
-        detalhe += f"  ·  {_literal(view.api.base_path)}"
-    identidade.append(("", f"[grey53]{detalhe}[/grey53]"))
-    identidade.append(
+        detail += f"  ·  {_literal(view.api.base_path)}"
+    identity.append(("", f"[grey53]{detail}[/grey53]"))
+    identity.append(
         (
             "Revisão",
             f"[white]#{view.revision.revision_number}[/white] "
             f"[grey53](id {view.revision.manager_id})[/grey53]",
         )
     )
-    identidade.append(
+    identity.append(
         (
             "Ambiente",
             f"[white]{_literal(view.environment.name or '-')}[/white] "
@@ -1491,32 +1491,32 @@ def _render_deploy_text(view: DeployView) -> None:
     )
 
     rprint()
-    rprint(_painel_validate("Deploy", _grade_de_campos(identidade), width=width))
+    rprint(_validate_panel("Deploy", _field_grid(identity), width=width))
     rprint()
 
-    if view.avisos:
-        rprint(f"[bold]Avisos[/bold]  [yellow]{len(view.avisos)}[/yellow]")
-        _render_avisos_do_repo(
+    if view.warnings:
+        rprint(f"[bold]Avisos[/bold]  [yellow]{len(view.warnings)}[/yellow]")
+        _render_repo_warnings(
             [
-                Achado(severity=SEVERIDADE_WARNING, scope=ESCOPO_REPOSITORIO, message=a)
-                for a in view.avisos
+                Finding(severity=SEVERITY_WARNING, scope=REPOSITORY_SCOPE, message=a)
+                for a in view.warnings
             ]
         )
         rprint()
 
-    gov = view.governanca
+    gov = view.governance
     if gov.stage_id is not None:
-        criterios = [f"{len(gov.required)} atributo(s) exigido(s)"]
+        criteria = [f"{len(gov.required)} atributo(s) exigido(s)"]
         if gov.completeness_required:
-            criterios.append(
+            criteria.append(
                 f"completeness {gov.completeness_actual:.1f} de "
                 f"{gov.completeness_required:.1f} exigida"
             )
         if gov.deployable_environments:
-            criterios.append("ambiente permitido pelo stage")
+            criteria.append("ambiente permitido pelo stage")
         rprint(
             f"[bold]Governança[/bold]  [green]liberada[/green] "
-            f"[grey53]({', '.join(criterios)})[/grey53]"
+            f"[grey53]({', '.join(criteria)})[/grey53]"
         )
         rprint(
             f"  [grey53]workflow {gov.workflow_id} · stage {gov.stage_id} "
@@ -1524,8 +1524,8 @@ def _render_deploy_text(view: DeployView) -> None:
         )
         rprint()
 
-    rprint(f"[bold]Antes[/bold]   {_descrever_estado(view.previous_state)}")
-    rprint(f"[bold]Agora[/bold]   {_descrever_estado(view.new_state)}")
+    rprint(f"[bold]Antes[/bold]   {_describe_state(view.previous_state)}")
+    rprint(f"[bold]Agora[/bold]   {_describe_state(view.new_state)}")
     rprint()
     rprint(
         f"[bold]Revisão {view.revision.revision_number}[/bold]  "
@@ -1556,11 +1556,11 @@ def deploy(
             raise typer.Exit(code=1)
 
         service = cast(Callable[[], Any], service_factory)()
-        progresso = _ProgressoValidate(
-            rotulo_inicial="Fazendo o deploy", narrar=output is OutputFormat.TEXT
+        progress = _ValidateProgress(
+            initial_label="Fazendo o deploy", narrate=output is OutputFormat.TEXT
         )
-        with progresso:
-            view = service.deploy(repo_path=repo or Path.cwd(), progresso=progresso.etapa)
+        with progress:
+            view = service.deploy(repo_path=repo or Path.cwd(), progress=progress.step)
 
         display_output(
             view.to_document(),
@@ -1570,14 +1570,14 @@ def deploy(
 
     except typer.Exit:
         raise
-    except DeployFalhouError as e:
+    except DeployFailedError as e:
         if output is OutputFormat.TEXT:
-            _print_erro(e.message)
+            _print_error(e.message)
         else:
             display_output(e.view.to_document(), output_format=output)
         raise typer.Exit(code=e.exit_code)
     except DeployError as e:
-        _print_erro(e.message)
+        _print_error(e.message)
         raise typer.Exit(code=e.exit_code)
     except Exception as e:
         _exit_on_unexpected(e, command="deploy")
@@ -1616,55 +1616,55 @@ def diag_structure(
         RepoCanonicalReader,
     )
 
-    alvo = repo or Path.cwd()
-    lido = RepoCanonicalReader(LocalFileImporterAdapter()).carregar(str(alvo))
+    target = repo or Path.cwd()
+    loaded = RepoCanonicalReader(LocalFileImporterAdapter()).load(str(target))
 
-    documento = {
-        "repo": str(alvo),
-        "completo": lido.completo,
-        "faltando": lido.faltando,
-        "ignorados": lido.ignorados,
-        "ilegiveis": lido.ilegiveis,
+    document = {
+        "repo": str(target),
+        "completo": loaded.complete,
+        "faltando": loaded.missing,
+        "ignorados": loaded.ignored,
+        "ilegiveis": loaded.unreadable,
         "recursos": [
             {
                 "slug": r.slug,
-                "nome": r.nome,
+                "nome": r.name,
                 "operacoes": [
-                    {"metodo": o.metodo, "path": o.path, "arquivo": o.arquivo}
-                    for o in r.operacoes
+                    {"metodo": o.method, "path": o.path, "arquivo": o.file}
+                    for o in r.operations
                 ],
             }
-            for r in lido.recursos
+            for r in loaded.resources
         ],
     }
 
-    def _texto() -> None:
-        marca = "[green]completo[/green]" if lido.completo else "[red]incompleto[/red]"
-        rprint(f"[bold]{_literal(alvo)}[/bold]  {marca}")
+    def _text() -> None:
+        badge = "[green]completo[/green]" if loaded.complete else "[red]incompleto[/red]"
+        rprint(f"[bold]{_literal(target)}[/bold]  {badge}")
         rprint(
-            f"[grey53]{len(lido.recursos)} recurso(s) · "
-            f"{lido.total_operacoes} operação(ões)[/grey53]\n"
+            f"[grey53]{len(loaded.resources)} recurso(s) · "
+            f"{loaded.total_operations} operação(ões)[/grey53]\n"
         )
-        for r in lido.recursos:
+        for r in loaded.resources:
             rprint(
-                f"  [bold]{_literal(r.slug)}[/bold]  [grey53]{_literal(r.nome or '-')}[/grey53]"
+                f"  [bold]{_literal(r.slug)}[/bold]  [grey53]{_literal(r.name or '-')}[/grey53]"
             )
-            for o in r.operacoes:
+            for o in r.operations:
                 rprint(
-                    f"     {_literal(o.metodo):<7} {_literal(o.path or '-')}  "
-                    f"[grey53]{_literal(o.arquivo)}[/grey53]"
+                    f"     {_literal(o.method):<7} {_literal(o.path or '-')}  "
+                    f"[grey53]{_literal(o.file)}[/grey53]"
                 )
-        for rotulo, itens, cor in (
-            ("faltando", lido.faltando, "red"),
-            ("ilegíveis", lido.ilegiveis, "red"),
-            ("ignorados", lido.ignorados, "yellow"),
+        for label, items, color in (
+            ("faltando", loaded.missing, "red"),
+            ("ilegíveis", loaded.unreadable, "red"),
+            ("ignorados", loaded.ignored, "yellow"),
         ):
-            if itens:
-                rprint(f"\n[{cor}]{rotulo}:[/{cor}]")
-                for i in itens:
-                    rprint(f"  [{cor}]•[/{cor}] {_literal(i)}")
+            if items:
+                rprint(f"\n[{color}]{label}:[/{color}]")
+                for i in items:
+                    rprint(f"  [{color}]•[/{color}] {_literal(i)}")
 
-    display_output(documento, output_format=output, text_callback=_texto)
+    display_output(document, output_format=output, text_callback=_text)
 
 
 sen_app.add_typer(diag_app)
@@ -1689,58 +1689,58 @@ def diag_template(
     )
 
     try:
-        fabrica = (ctx.obj or {}).get("regua_service_factory")
-        if not callable(fabrica):
+        factory = (ctx.obj or {}).get("regua_service_factory")
+        if not callable(factory):
             rprint(
                 "[bold red]Erro:[/bold red] Serviço de API-template "
                 "indisponível no contexto."
             )
             raise typer.Exit(code=1)
 
-        alvo = repo or Path.cwd()
-        lido = RepoCanonicalReader(LocalFileImporterAdapter()).carregar(str(alvo))
-        regua = cast(Callable[[], Any], fabrica)().carregar(lido.basic_info)
+        target = repo or Path.cwd()
+        loaded = RepoCanonicalReader(LocalFileImporterAdapter()).load(str(target))
+        ruler = cast(Callable[[], Any], factory)().load(loaded.basic_info)
 
-        documento = {
+        document = {
             "ruler": {
-                "templateId": regua.template_id,
-                "revisionNumber": regua.revision_number,
-                "flowHash": regua.flow_hash,
-                "interceptorsCount": regua.total,
+                "templateId": ruler.template_id,
+                "revisionNumber": ruler.revision_number,
+                "flowHash": ruler.flow_hash,
+                "interceptorsCount": ruler.total,
             },
-            "warnings": regua.avisos,
+            "warnings": ruler.warnings,
             "flow": [
                 {
                     "executionPoint": i.get("executionPoint"),
                     "type": i.get("type"),
                     "customInterceptorId": i.get("customInterceptorId"),
                 }
-                for i in regua.interceptors
+                for i in ruler.interceptors
             ],
         }
 
-        def _texto() -> None:
+        def _text() -> None:
             rprint(
-                f"[bold]API-template {regua.template_id}[/bold]  "
-                f"[grey53]revisão #{regua.revision_number} · "
-                f"{regua.total} interceptor(es) · {_literal(regua.flow_hash)}[/grey53]\n"
+                f"[bold]API-template {ruler.template_id}[/bold]  "
+                f"[grey53]revisão #{ruler.revision_number} · "
+                f"{ruler.total} interceptor(es) · {_literal(ruler.flow_hash)}[/grey53]\n"
             )
-            for i in regua.interceptors:
+            for i in ruler.interceptors:
                 cid = i.get("customInterceptorId")
-                rotulo = f"{i.get('type')}{'#' + str(cid) if cid else ''}"
+                label = f"{i.get('type')}{'#' + str(cid) if cid else ''}"
                 rprint(
                     f"  [grey53]{_literal(i.get('executionPoint')):<7}[/grey53] "
-                    f"{_literal(rotulo)}"
+                    f"{_literal(label)}"
                 )
-            for aviso in regua.avisos:
-                rprint(f"\n[yellow]WARNING[/yellow] {_literal(aviso)}")
+            for warning in ruler.warnings:
+                rprint(f"\n[yellow]WARNING[/yellow] {_literal(warning)}")
 
-        display_output(documento, output_format=output, text_callback=_texto)
+        display_output(document, output_format=output, text_callback=_text)
 
     except typer.Exit:
         raise
     except ValidateError as e:
-        _print_erro(e.message)
+        _print_error(e.message)
         raise typer.Exit(code=e.exit_code)
     except Exception as e:
         _exit_on_unexpected(e, command="diag template")
@@ -1764,42 +1764,42 @@ def diag_draft(
         RepoCanonicalReader,
     )
     from apiops_orchestrator.application.services.validate_service import (
-        api_visivel,
-        numero_alvo,
+        api_visible,
+        target_number,
     )
-    from apiops_orchestrator.domain.services.interceptor_flow import particionar
+    from apiops_orchestrator.domain.services.interceptor_flow import partition
 
     try:
-        fabrica = (ctx.obj or {}).get("manager_api_factory")
-        if not callable(fabrica):
+        factory = (ctx.obj or {}).get("manager_api_factory")
+        if not callable(factory):
             rprint("[bold red]Erro:[/bold red] Acesso ao Manager indisponível no contexto.")
             raise typer.Exit(code=1)
 
-        alvo = repo or Path.cwd()
-        lido = RepoCanonicalReader(LocalFileImporterAdapter()).carregar(str(alvo))
-        spec = (lido.basic_info or {}).get("spec") or {}
+        target = repo or Path.cwd()
+        loaded = RepoCanonicalReader(LocalFileImporterAdapter()).load(str(target))
+        spec = (loaded.basic_info or {}).get("spec") or {}
 
-        manager, settings, acesso = cast(Callable[[], Any], fabrica)()
-        api = api_visivel(manager, acesso, spec.get("id"))
+        manager, settings, access = cast(Callable[[], Any], factory)()
+        api = api_visible(manager, access, spec.get("id"))
         if api is None:
-            _print_erro(API_NOT_FOUND_TEMPLATE.format(api_id=spec.get("id")))
+            _print_error(API_NOT_FOUND_TEMPLATE.format(api_id=spec.get("id")))
             raise typer.Exit(code=1)
-        numero = numero_alvo(settings)
-        revisao = next(
-            (r for r in (api.get("revisions") or []) if r.get("revisionNumber") == numero),
+        number = target_number(settings)
+        revision = next(
+            (r for r in (api.get("revisions") or []) if r.get("revisionNumber") == number),
             None,
         )
-        if revisao is None:
+        if revision is None:
             rprint(
                 f"[bold red]Erro:[/bold red] a API {spec.get('id')} não tem revisão "
-                f"de número {numero}."
+                f"de número {number}."
             )
             raise typer.Exit(code=1)
 
-        draft = manager.get_revision(revisao["id"]) or {}
-        governados, preservados = particionar(draft.get("interceptors"))
+        draft = manager.get_revision(revision["id"]) or {}
+        governed, preserved = partition(draft.get("interceptors"))
 
-        documento = {
+        document = {
             "api": {"managerId": api.get("id"), "name": api.get("name")},
             "revision": {
                 "managerId": draft.get("id"),
@@ -1807,11 +1807,11 @@ def diag_draft(
                 "workflowId": draft.get("workflowId"),
                 "workflowStageId": draft.get("workflowStageId"),
             },
-            "root": {"governed": len(governados), "preserved": len(preservados)},
+            "root": {"governed": len(governed), "preserved": len(preserved)},
             "resources": [
                 {
                     "name": r.get("name"),
-                    "interceptors": len(particionar(r.get("interceptors"))[0]),
+                    "interceptors": len(partition(r.get("interceptors"))[0]),
                     "operations": [
                         {"method": o.get("method"), "path": o.get("path")}
                         for o in (r.get("operations") or [])
@@ -1821,8 +1821,8 @@ def diag_draft(
             ],
         }
 
-        def _texto() -> None:
-            rev = documento["revision"]
+        def _text() -> None:
+            rev = document["revision"]
             rprint(
                 f"[bold]{_literal(api.get('name'))}[/bold]  [grey53]API {api.get('id')}[/grey53]\n"
                 f"revisão {rev['managerId']} (#{rev['revisionNumber']})  "
@@ -1830,10 +1830,10 @@ def diag_draft(
                 "— lidos da revisão, reenviados intactos[/grey53]\n"
             )
             rprint(
-                f"  raiz: {len(governados)} governado(s), "
-                f"{len(preservados)} preservado(s)"
+                f"  raiz: {len(governed)} governado(s), "
+                f"{len(preserved)} preservado(s)"
             )
-            for r in documento["resources"]:
+            for r in document["resources"]:
                 rprint(
                     f"  [bold]{_literal(r['name'])}[/bold]  [grey53]{r['interceptors']} "
                     f"interceptor(es)[/grey53]"
@@ -1841,12 +1841,12 @@ def diag_draft(
                 for o in r["operations"]:
                     rprint(f"     {_literal(o['method']):<7} {_literal(o['path'])}")
 
-        display_output(documento, output_format=output, text_callback=_texto)
+        display_output(document, output_format=output, text_callback=_text)
 
     except typer.Exit:
         raise
     except ValidateError as e:
-        _print_erro(e.message)
+        _print_error(e.message)
         raise typer.Exit(code=e.exit_code)
     except Exception as e:
         _exit_on_unexpected(e, command="diag draft")

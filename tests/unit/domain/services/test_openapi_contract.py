@@ -9,11 +9,11 @@ OK = {"200": {"description": "Consulta realizada"}}
 
 
 def _op(method, data, file=None):
-    return SimpleNamespace(metodo=method, dados=data, caminho=file or f"resources/t/{method.lower()}.yaml")
+    return SimpleNamespace(method=method, data=data, file_path=file or f"resources/t/{method.lower()}.yaml")
 
 
 def _resource(data, *operations):
-    return SimpleNamespace(dados=data, operacoes=list(operations), caminho="resources/t/resource.yaml")
+    return SimpleNamespace(data=data, operations=list(operations), file_path="resources/t/resource.yaml")
 
 
 def _current():

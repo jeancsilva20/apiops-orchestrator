@@ -90,9 +90,9 @@ def extract_contract(
 
     operations: Dict[Route, Dict[str, Any]] = {}
     for resource in resources:
-        resource_parameters = normalize_yaml((resource.dados or {}).get("parameters") or [])
-        for operation in resource.operacoes:
-            data = operation.dados or {}
+        resource_parameters = normalize_yaml((resource.data or {}).get("parameters") or [])
+        for operation in resource.operations:
+            data = operation.data or {}
             fields = {
                 f: normalize_yaml(data[f]) for f in OPERATION_FIELDS if data.get(f) is not None
             }
@@ -101,7 +101,7 @@ def extract_contract(
             )
             if not fields.get("summary") and data.get("description"):
                 fields["summary"] = data["description"]
-            operations[(str(operation.metodo or "").upper(), data.get("path"))] = fields
+            operations[(str(operation.method or "").upper(), data.get("path"))] = fields
 
     return RepositoryContract(root=root, components=governed, operations=operations)
 

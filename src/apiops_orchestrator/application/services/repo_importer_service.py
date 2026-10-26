@@ -13,71 +13,71 @@ from apiops_orchestrator.domain.services import repo_layout as _layout
 
 
 @dataclass(frozen=True)
-class OperacaoCarregada:
+class LoadedOperation:
     """Uma operação lida do disco. O método vem do NOME do arquivo."""
 
-    metodo: str
+    method: str
     path: Optional[str]
-    arquivo: str
-    caminho: str
-    dados: Dict[str, Any] = field(default_factory=dict)
+    file: str
+    file_path: str
+    data: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
-class RecursoCarregado:
+class LoadedResource:
     slug: str
-    caminho: str
-    dados: Dict[str, Any] = field(default_factory=dict)
-    operacoes: List[OperacaoCarregada] = field(default_factory=list)
+    file_path: str
+    data: Dict[str, Any] = field(default_factory=dict)
+    operations: List[LoadedOperation] = field(default_factory=list)
 
     @property
-    def nome(self) -> Optional[str]:
-        return self.dados.get("name")
+    def name(self) -> Optional[str]:
+        return self.data.get("name")
 
 
 @dataclass(frozen=True)
-class RepositorioCarregado:
+class LoadedRepository:
     """Resultado da E1: o repositório inteiro em memória, sem rede.
 
-    `faltando` e `ilegiveis` não são exceção aqui de propósito — a camada de
+    `missing` e `unreadable` não são exceção aqui de propósito — a camada de
     aplicação é que decide o desfecho e o exit code. O domínio e o leitor apenas
     relatam.
     """
 
-    raiz_path: str
+    root_path: str
     basic_info: Dict[str, Any] = field(default_factory=dict)
-    raiz: Dict[str, Any] = field(default_factory=dict)
+    root: Dict[str, Any] = field(default_factory=dict)
     components: Dict[str, Any] = field(default_factory=dict)
-    recursos: List[RecursoCarregado] = field(default_factory=list)
-    faltando: List[str] = field(default_factory=list)
-    ignorados: List[str] = field(default_factory=list)
-    ilegiveis: List[str] = field(default_factory=list)
+    resources: List[LoadedResource] = field(default_factory=list)
+    missing: List[str] = field(default_factory=list)
+    ignored: List[str] = field(default_factory=list)
+    unreadable: List[str] = field(default_factory=list)
 
     @property
-    def completo(self) -> bool:
-        return not self.faltando and not self.ilegiveis
+    def complete(self) -> bool:
+        return not self.missing and not self.unreadable
 
     @property
-    def total_operacoes(self) -> int:
-        return sum(len(r.operacoes) for r in self.recursos)
+    def total_operations(self) -> int:
+        return sum(len(r.operations) for r in self.resources)
 
 
-def _motivo_da_leitura(exc: Exception) -> str:
+def _read_error_reason(exc: Exception) -> str:
     """Por que o arquivo não pôde ser lido, em termos de quem vai corrigi-lo.
 
     O adapter embrulha o erro do parser numa mensagem com o caminho absoluto da
     máquina e o rastro inteiro do PyYAML. O que interessa ao dev é a linha, a
     coluna e o problema — o erro original vem encadeado e tem as três coisas.
     """
-    origem = exc.__cause__ or exc.__context__
-    marca = getattr(origem, "problem_mark", None)
-    if marca is not None:
-        problema = getattr(origem, "problem", None)
-        local = f"linha {marca.line + 1}, coluna {marca.column + 1}"
-        return f"erro de sintaxe YAML na {local}" + (f" ({problema})" if problema else "")
-    if isinstance(exc, PermissionError) or isinstance(origem, PermissionError):
+    origin = exc.__cause__ or exc.__context__
+    mark = getattr(origin, "problem_mark", None)
+    if mark is not None:
+        problem = getattr(origin, "problem", None)
+        local = f"linha {mark.line + 1}, coluna {mark.column + 1}"
+        return f"erro de sintaxe YAML na {local}" + (f" ({problem})" if problem else "")
+    if isinstance(exc, PermissionError) or isinstance(origin, PermissionError):
         return "sem permissão de leitura"
-    if isinstance(origem, UnicodeDecodeError):
+    if isinstance(origin, UnicodeDecodeError):
         return "o arquivo não está em UTF-8"
     return "conteúdo inválido"
 
@@ -89,74 +89,74 @@ class RepoCanonicalReader:
         self.importer = importer
         self.logger = logging.getLogger(__name__)
 
-    def carregar(self, repo_path: str) -> RepositorioCarregado:
-        raiz = Path(repo_path)
-        relativos = self._listar(raiz)
-        descoberta = _layout.descobrir(relativos)
+    def load(self, repo_path: str) -> LoadedRepository:
+        root = Path(repo_path)
+        relative_paths = self._list(root)
+        discovery = _layout.discover(relative_paths)
 
-        ilegiveis: List[str] = []
+        unreadable: List[str] = []
 
-        def ler(caminho_relativo: Optional[str]) -> Dict[str, Any]:
-            if not caminho_relativo:
+        def read(relative_path: Optional[str]) -> Dict[str, Any]:
+            if not relative_path:
                 return {}
-            absoluto = str(raiz / Path(caminho_relativo))
+            absolute = str(root / Path(relative_path))
             try:
-                return self.importer.read(absoluto) or {}
+                return self.importer.read(absolute) or {}
             except Exception as exc:  # YAML malformado, permissão, encoding
                 # Não engolir: um arquivo ilegível é falha do repositório, e o
                 # caso real existe — `replaceChar: *****` sem aspas torna o
                 # arquivo imparseável.
-                ilegiveis.append(f"{caminho_relativo}: {_motivo_da_leitura(exc)}")
-                self.logger.info("repo.arquivo_ilegivel caminho=%s", caminho_relativo)
+                unreadable.append(f"{relative_path}: {_read_error_reason(exc)}")
+                self.logger.info("repo.arquivo_ilegivel caminho=%s", relative_path)
                 return {}
 
-        basic_info = ler(descoberta.caminho_basic_info)
-        conteudo_raiz = ler(descoberta.caminho_raiz)
-        components = ler(descoberta.components_path)
+        basic_info = read(discovery.basic_info_path)
+        root_content = read(discovery.root_file_path)
+        components = read(discovery.components_path)
 
-        recursos: List[RecursoCarregado] = []
-        for recurso in descoberta.recursos:
-            operacoes = [
-                OperacaoCarregada(
-                    metodo=op.metodo,
-                    path=(dados := ler(op.caminho)).get("path"),
-                    arquivo=op.arquivo,
-                    caminho=op.caminho,
-                    dados=dados,
+        resources: List[LoadedResource] = []
+        for resource in discovery.resources:
+            operations = [
+                LoadedOperation(
+                    method=op.method,
+                    path=(data := read(op.file_path)).get("path"),
+                    file=op.file,
+                    file_path=op.file_path,
+                    data=data,
                 )
-                for op in recurso.operacoes
+                for op in resource.operations
             ]
-            recursos.append(
-                RecursoCarregado(
-                    slug=recurso.slug,
-                    caminho=recurso.caminho_recurso,
-                    dados=ler(recurso.caminho_recurso)
-                    if recurso.caminho_recurso not in descoberta.faltando
+            resources.append(
+                LoadedResource(
+                    slug=resource.slug,
+                    file_path=resource.resource_file_path,
+                    data=read(resource.resource_file_path)
+                    if resource.resource_file_path not in discovery.missing
                     else {},
-                    operacoes=operacoes,
+                    operations=operations,
                 )
             )
 
-        return RepositorioCarregado(
-            raiz_path=str(raiz),
+        return LoadedRepository(
+            root_path=str(root),
             basic_info=basic_info,
-            raiz=conteudo_raiz,
+            root=root_content,
             components=components,
-            recursos=recursos,
-            faltando=list(descoberta.faltando),
-            ignorados=list(descoberta.ignorados),
-            ilegiveis=ilegiveis,
+            resources=resources,
+            missing=list(discovery.missing),
+            ignored=list(discovery.ignored),
+            unreadable=unreadable,
         )
 
-    def _listar(self, raiz: Path) -> List[str]:
+    def _list(self, root: Path) -> List[str]:
         """Caminhos relativos, com `/`, de todo `.yaml`/`.yml` sob a raiz."""
-        achados = self.importer.glob_files(str(raiz), "**/*.yaml")
-        achados += self.importer.glob_files(str(raiz), "**/*.yml")
-        relativos = []
-        for bruto in achados:
+        findings = self.importer.glob_files(str(root), "**/*.yaml")
+        findings += self.importer.glob_files(str(root), "**/*.yml")
+        relative_paths = []
+        for raw in findings:
             try:
-                rel = Path(bruto).resolve().relative_to(raiz.resolve())
+                rel = Path(raw).resolve().relative_to(root.resolve())
             except ValueError:
                 continue
-            relativos.append(posixpath.join(*rel.parts))
-        return sorted(set(relativos))
+            relative_paths.append(posixpath.join(*rel.parts))
+        return sorted(set(relative_paths))

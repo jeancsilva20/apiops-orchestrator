@@ -26,11 +26,11 @@ def display_output(
     """
     if output_format in (OutputFormat.JSON, OutputFormat.YAML):
         if output_format == OutputFormat.JSON:
-            texto = json.dumps(data, indent=4, ensure_ascii=False)
-            linguagem = "json"
+            text = json.dumps(data, indent=4, ensure_ascii=False)
+            language = "json"
         else:
-            texto = yaml.dump(data, sort_keys=False, allow_unicode=True)
-            linguagem = "yaml"
+            text = yaml.dump(data, sort_keys=False, allow_unicode=True)
+            language = "yaml"
 
         # Saída legível por máquina NÃO pode passar por renderizador que quebra
         # linha: o `rich.Syntax` ajusta à largura do console e corta valores
@@ -40,11 +40,11 @@ def display_output(
         # as linhas intactas.
         if console.is_terminal:
             console.print(
-                Syntax(texto, linguagem, theme="monokai", background_color="default"),
+                Syntax(text, language, theme="monokai", background_color="default"),
                 soft_wrap=True,
             )
         else:
-            sys.stdout.write(texto if texto.endswith("\n") else texto + "\n")
+            sys.stdout.write(text if text.endswith("\n") else text + "\n")
     else:
         if text_callback:
             text_callback()

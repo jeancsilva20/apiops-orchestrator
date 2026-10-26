@@ -8,14 +8,14 @@ from typer.testing import CliRunner
 from apiops_orchestrator.adapters.inbound.cli.cli_adapter import app
 from apiops_orchestrator.application.exceptions.deploy_exceptions import (
     DeployError,
-    DeployFalhouError,
+    DeployFailedError,
     DeployGovernanceBlockedError,
 )
 from apiops_orchestrator.domain.models.deploy_model import (
     SCHEMA_SEN_DEPLOY_V1,
     DeployEnvironment,
     DeployGovernance,
-    DeploymentResultado,
+    DeploymentResult,
     DeployState,
     DeployView,
 )
@@ -34,10 +34,10 @@ def _view(**overrides) -> DeployView:
         ),
         revision=ValidateRevision(manager_id=9327, revision_number=3),
         environment=DeployEnvironment(manager_id=7, name="DEV-APIOPS"),
-        governanca=DeployGovernance(workflow_id=500, stage_id=1402, deployable_environments=[7]),
+        governance=DeployGovernance(workflow_id=500, stage_id=1402, deployable_environments=[7]),
         previous_state=DeployState(268, 9175, 2, "2026-10-19T17:00:00Z"),
         new_state=DeployState(269, 9327, 3, "2026-10-19T18:00:00Z"),
-        deployment=DeploymentResultado(
+        deployment=DeploymentResult(
             attempted=True, accepted=True, deployment_id=269, verified=True, status="SUCCESS"
         ),
     )
@@ -51,10 +51,10 @@ class _ServicoFake:
         self._erro = erro
         self.chamado_com = None
 
-    def deploy(self, repo_path, *, progresso=None):
-        self.chamado_com = {"repo_path": repo_path, "progresso": progresso}
-        if progresso is not None:
-            progresso("Lendo o manifesto")
+    def deploy(self, repo_path, *, progress=None):
+        self.chamado_com = {"repo_path": repo_path, "progresso": progress}
+        if progress is not None:
+            progress("Lendo o manifesto")
         if self._erro is not None:
             raise self._erro
         return self._resultado
@@ -64,14 +64,14 @@ def _ctx(servico):
     return {"deploy_service_factory": lambda: servico}
 
 
-def _falha():
+def _failure():
     view = _view(
         new_state=None,
-        deployment=DeploymentResultado(
+        deployment=DeploymentResult(
             attempted=True, status="FAILED", reason="O Manager recusou o deploy"
         ),
     )
-    return DeployFalhouError("O Manager recusou o deploy:\n\n  - Environment not found.", view)
+    return DeployFailedError("O Manager recusou o deploy:\n\n  - Environment not found.", view)
 
 
 # --- gramática ---------------------------------------------------------------
@@ -131,12 +131,12 @@ def test_progresso_nao_contamina_saida_legivel_por_maquina(formato):
 
 def test_texto_mostra_ambiente_estados_e_resultado():
     resultado = runner.invoke(app, ["sen", "deploy"], obj=_ctx(_ServicoFake(_view())))
-    saida = " ".join(resultado.output.split())
+    output = " ".join(resultado.output.split())
 
     assert resultado.exit_code == 0
-    assert "DEV-APIOPS" in saida and "#3" in saida and "9327" in saida
-    assert "revisão #2" in saida and "revisão #3" in saida
-    assert "Revisão 3 deployada no ambiente DEV-APIOPS" in saida
+    assert "DEV-APIOPS" in output and "#3" in output and "9327" in output
+    assert "revisão #2" in output and "revisão #3" in output
+    assert "Revisão 3 deployada no ambiente DEV-APIOPS" in output
 
 
 def test_texto_sem_estado_anterior():
@@ -167,7 +167,7 @@ def test_exit_3_para_bloqueio_de_governanca():
 
 def test_falha_da_escrita_em_json_emite_o_documento_com_failed():
     resultado = runner.invoke(
-        app, ["sen", "deploy", "-o", "json"], obj=_ctx(_ServicoFake(erro=_falha()))
+        app, ["sen", "deploy", "-o", "json"], obj=_ctx(_ServicoFake(erro=_failure()))
     )
     assert resultado.exit_code == 1
     doc = json.loads(resultado.output)
@@ -175,7 +175,7 @@ def test_falha_da_escrita_em_json_emite_o_documento_com_failed():
 
 
 def test_falha_da_escrita_em_texto_mostra_a_mensagem():
-    resultado = runner.invoke(app, ["sen", "deploy"], obj=_ctx(_ServicoFake(erro=_falha())))
+    resultado = runner.invoke(app, ["sen", "deploy"], obj=_ctx(_ServicoFake(erro=_failure())))
     assert resultado.exit_code == 1
     assert "Environment not found." in resultado.output
 

@@ -22,10 +22,10 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence
 
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
-    CustomInexistenteError,
-    ReguaInalcancavelError,
-    TemplateAusenteError,
-    TemplateNaoConfiguradaError,
+    CustomNotFoundError,
+    RulerUnreachableError,
+    MissingTemplateError,
+    TemplateNotConfiguredError,
 )
 from apiops_orchestrator.application.services.manager_failure_translator import (
     classify_manager_failure,
@@ -37,27 +37,27 @@ from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiTransportRejectedError,
     ManagerApiTransportUnavailableError,
 )
-from apiops_orchestrator.domain.services.repo_layout import eh_governado
+from apiops_orchestrator.domain.services.repo_layout import is_governed
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class ReguaCarregada:
+class LoadedRuler:
     """A régua e o seu snapshot."""
 
     template_id: int
     revision_number: Optional[int]
     interceptors: List[Dict[str, Any]]
     flow_hash: str
-    avisos: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
 
     @property
     def total(self) -> int:
         return len(self.interceptors)
 
 
-def calcular_flow_hash(interceptors: Sequence[Dict[str, Any]]) -> str:
+def compute_flow_hash(interceptors: Sequence[Dict[str, Any]]) -> str:
     """Hash determinístico do fluxo comparado (D-4/P-3).
 
     Cobre o que a conformidade de fato compara — tipo, `customInterceptorId`,
@@ -65,7 +65,7 @@ def calcular_flow_hash(interceptors: Sequence[Dict[str, Any]]) -> str:
     `position`, que mudam entre revisões sem mudar o que a régua exige: incluí-los
     faria o hash variar sem que a régua tivesse mudado.
     """
-    semente = []
+    seed = []
     for item in interceptors:
         content = item.get("content")
         if isinstance(content, str):
@@ -73,7 +73,7 @@ def calcular_flow_hash(interceptors: Sequence[Dict[str, Any]]) -> str:
                 content = json.loads(content)
             except (TypeError, ValueError):
                 pass
-        semente.append(
+        seed.append(
             {
                 "type": item.get("type"),
                 "customInterceptorId": item.get("customInterceptorId"),
@@ -81,11 +81,11 @@ def calcular_flow_hash(interceptors: Sequence[Dict[str, Any]]) -> str:
                 "content": content,
             }
         )
-    bruto = json.dumps(semente, sort_keys=True, ensure_ascii=False, default=str)
-    return hashlib.sha1(bruto.encode("utf-8")).hexdigest()[:12]
+    raw = json.dumps(seed, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
 
 
-class ReguaService:
+class RulerService:
     def __init__(self, manager_api: ManagerApiPort, settings: Settings):
         self._manager_api = manager_api
         self._settings = settings
@@ -94,88 +94,88 @@ class ReguaService:
 
     def resolver_id(self, basic_info: Dict[str, Any]) -> int:
         """De onde vem o id da régua, conforme o modo de execução (V-11)."""
-        do_manifesto = (basic_info.get("spec") or {}).get("template")
-        if self._settings.modo_pipeline:
-            return self._resolver_em_pipeline(do_manifesto)
-        return self._resolver_em_local(do_manifesto)
+        from_manifest = (basic_info.get("spec") or {}).get("template")
+        if self._settings.pipeline_mode:
+            return self._resolve_in_pipeline(from_manifest)
+        return self._resolve_locally(from_manifest)
 
-    def _resolver_em_pipeline(self, do_manifesto: Any) -> int:
-        do_cofre = self._settings.TEMPLATE_API_ID
-        if do_cofre is None:
+    def _resolve_in_pipeline(self, from_manifest: Any) -> int:
+        from_vault = self._settings.TEMPLATE_API_ID
+        if from_vault is None:
             # Validar contra nada numa esteira é pior do que parar.
-            raise TemplateNaoConfiguradaError()
-        if do_manifesto not in (None, "") and str(do_manifesto) != str(do_cofre):
+            raise TemplateNotConfiguredError()
+        if from_manifest not in (None, "") and str(from_manifest) != str(from_vault):
             logger.info(
-                "regua.divergencia manifesto=%s cofre=%s", do_manifesto, do_cofre
+                "regua.divergencia manifesto=%s cofre=%s", from_manifest, from_vault
             )
-        return int(do_cofre)
+        return int(from_vault)
 
-    def _resolver_em_local(self, do_manifesto: Any) -> int:
-        if do_manifesto in (None, ""):
+    def _resolve_locally(self, from_manifest: Any) -> int:
+        if from_manifest in (None, ""):
             # D-12 revogou o "vazio permitido" da V-11 §1.
-            raise TemplateAusenteError()
+            raise MissingTemplateError()
         try:
-            return int(do_manifesto)
+            return int(from_manifest)
         except (TypeError, ValueError):
-            raise TemplateAusenteError()
+            raise MissingTemplateError()
 
-    def divergencia_de_binding(self, basic_info: Dict[str, Any]) -> Optional[str]:
+    def binding_divergence(self, basic_info: Dict[str, Any]) -> Optional[str]:
         """Aviso quando a esteira ignora o `spec.template` do manifesto."""
-        if not self._settings.modo_pipeline:
+        if not self._settings.pipeline_mode:
             return None
-        do_manifesto = (basic_info.get("spec") or {}).get("template")
-        do_cofre = self._settings.TEMPLATE_API_ID
-        if do_manifesto in (None, "") or do_cofre is None:
+        from_manifest = (basic_info.get("spec") or {}).get("template")
+        from_vault = self._settings.TEMPLATE_API_ID
+        if from_manifest in (None, "") or from_vault is None:
             return None
-        if str(do_manifesto) == str(do_cofre):
+        if str(from_manifest) == str(from_vault):
             return None
         return (
-            f"O `api-basic-info.yaml` aponta a API-template {do_manifesto}, mas a "
-            f"esteira está usando a {do_cofre}, definida pela plataforma. "
+            f"O `api-basic-info.yaml` aponta a API-template {from_manifest}, mas a "
+            f"esteira está usando a {from_vault}, definida pela plataforma. "
             "A da esteira tem prioridade, para que a template não possa ser "
-            f"trocada por um commit. Seguindo com a {do_cofre}."
+            f"trocada por um commit. Seguindo com a {from_vault}."
         )
 
     # --- leitura -------------------------------------------------------------
 
-    def carregar(self, basic_info: Dict[str, Any]) -> ReguaCarregada:
+    def load(self, basic_info: Dict[str, Any]) -> LoadedRuler:
         """Resolve o id, lê a régua em UM GET e devolve o fluxo com o snapshot."""
-        avisos = []
-        divergencia = self.divergencia_de_binding(basic_info)
-        if divergencia:
-            avisos.append(divergencia)
+        warnings = []
+        divergence = self.binding_divergence(basic_info)
+        if divergence:
+            warnings.append(divergence)
 
         template_id = self.resolver_id(basic_info)
-        payload = self._ler(template_id)
+        payload = self._read(template_id)
 
-        ultima = payload.get("lastRevision") or {}
+        last = payload.get("lastRevision") or {}
         # Um GET basta: `lastRevision` já traz o fluxo completo com `content`
         # (V-11 §6). "A implantada" não serviria — a 414 tem `deployments: []`.
-        governados = [
+        governed = [
             i
-            for i in (ultima.get("interceptors") or [])
-            if eh_governado(i.get("executionPoint")) and i.get("status") != "REMOVED"
+            for i in (last.get("interceptors") or [])
+            if is_governed(i.get("executionPoint")) and i.get("status") != "REMOVED"
         ]
-        if not governados:
-            avisos.append(
+        if not governed:
+            warnings.append(
                 f"A API-template {template_id} não tem nenhum interceptor configurado, "
                 "então não há padrão para comparar. A validação segue, mas sem "
                 "verificar conformidade."
             )
 
-        return ReguaCarregada(
+        return LoadedRuler(
             template_id=template_id,
-            revision_number=ultima.get("revisionNumber"),
-            interceptors=governados,
-            flow_hash=calcular_flow_hash(governados),
-            avisos=avisos,
+            revision_number=last.get("revisionNumber"),
+            interceptors=governed,
+            flow_hash=compute_flow_hash(governed),
+            warnings=warnings,
         )
 
-    def _ler(self, template_id: int) -> Dict[str, Any]:
+    def _read(self, template_id: int) -> Dict[str, Any]:
         try:
             return self._manager_api.get_api_by_id(template_id) or {}
         except (ManagerApiTransportRejectedError, ManagerApiTransportUnavailableError) as exc:
-            raise ReguaInalcancavelError(
+            raise RulerUnreachableError(
                 template_id,
                 getattr(exc, "status_code", None),
                 manager_failure_message(classify_manager_failure(exc)),
@@ -183,23 +183,23 @@ class ReguaService:
 
     # --- existência dos Custom referenciados (W-2) --------------------------
 
-    def verificar_customs(self, referencias: Sequence[tuple]) -> None:
+    def check_customs(self, references: Sequence[tuple]) -> None:
         """Aborta no primeiro `Custom` que não existe, nomeando id e escopo.
 
-        `referencias` são pares `(custom_id, escopo)`. O catálogo é autoridade:
+        `references` são pares `(custom_id, scope)`. O catálogo é autoridade:
         `404` significa ausente. O conteúdo **não** é reposto de revisão antiga —
         isso ressuscitaria uma referência que um administrador apagou de propósito.
         """
-        vistos: Dict[int, bool] = {}
-        for custom_id, escopo in referencias:
+        seen: Dict[int, bool] = {}
+        for custom_id, scope in references:
             if custom_id is None:
                 continue
-            if custom_id not in vistos:
-                vistos[custom_id] = self._existe(custom_id)
-            if not vistos[custom_id]:
-                raise CustomInexistenteError(custom_id, escopo)
+            if custom_id not in seen:
+                seen[custom_id] = self._exists(custom_id)
+            if not seen[custom_id]:
+                raise CustomNotFoundError(custom_id, scope)
 
-    def _existe(self, custom_id: int) -> bool:
+    def _exists(self, custom_id: int) -> bool:
         try:
             return self._manager_api.get_custom_interceptor_by_id(custom_id) is not None
         except ManagerApiTransportRejectedError as exc:
