@@ -14,6 +14,7 @@ Recebe **ports**, nunca adapters concretos.
 """
 
 import logging
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 
@@ -54,6 +55,14 @@ logger = logging.getLogger(__name__)
 # Recusas da gravação cujo motivo da plataforma orienta a correção do repositório.
 # As demais (sessão, acesso, tamanho, limite de taxa) usam a mensagem da família.
 _STATUS_COM_MOTIVO = frozenset({400, 409, 412, 422})
+
+
+@dataclass(frozen=True)
+class WrittenRevision:
+    """Write result and the revision state read back to verify it."""
+
+    result: PublicacaoResultado
+    published: Dict[str, Any] = field(default_factory=dict)
 
 
 class RevisionWriter:
@@ -187,7 +196,7 @@ class RevisionWriter:
         etapa: Callable[[str], None] = lambda _: None,
         rotulo_gravacao: str,
         alvo_recusa: str,
-    ) -> PublicacaoResultado:
+    ) -> WrittenRevision:
         """E3 + E3.1: um único PUT na revisão e a releitura que o confere.
 
         `workflowId`/`workflowStageId` viajam na cópia profunda do estado remoto
@@ -225,7 +234,10 @@ class RevisionWriter:
         if divergencias:
             raise PublicacaoDivergenteError(divergencias)
 
-        return PublicacaoResultado(attempted=True, accepted=True, verified=True)
+        return WrittenRevision(
+            result=PublicacaoResultado(attempted=True, accepted=True, verified=True),
+            published=publicado,
+        )
 
     def _recusa_da_gravacao(
         self, exc: ManagerApiTransportRejectedError, alvo: str

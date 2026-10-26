@@ -29,6 +29,10 @@ from apiops_orchestrator.application.enums.manager_failure_kind_enum import (
     ManagerFailureKind,
 )
 from apiops_orchestrator.application.services.api_access_guard import ApiAccessGuard
+from apiops_orchestrator.application.services.contract_writer import (
+    ContractWriter,
+    PreparedContract,
+)
 from apiops_orchestrator.application.services.manager_failure_translator import (
     classify_manager_failure,
 )
@@ -39,7 +43,10 @@ from apiops_orchestrator.application.services.regua_service import ReguaService
 from apiops_orchestrator.application.services.repo_importer_service import (
     RepositorioCarregado,
 )
-from apiops_orchestrator.application.services.revision_writer import RevisionWriter
+from apiops_orchestrator.application.services.revision_writer import (
+    RevisionWriter,
+    WrittenRevision,
+)
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
 from apiops_orchestrator.domain.models.validate_view import (
@@ -106,6 +113,13 @@ def _so_herda(no: Dict[str, Any]) -> bool:
     return not particionar(no.get("interceptors"))[0]
 
 
+def _repository_warnings(warnings: List[str]) -> List[Achado]:
+    return [
+        Achado(severity=SEVERIDADE_WARNING, scope=ESCOPO_REPOSITORIO, message=warning)
+        for warning in warnings
+    ]
+
+
 @dataclass
 class _DonoDoFluxo:
     """Escopo com fluxo próprio, e quantos escopos abaixo dele só o herdam."""
@@ -141,6 +155,7 @@ class ValidateService:
         self._regua = ReguaService(manager_api, settings)
         self._governanca = GovernancePrecheckService(manager_api)
         self._escrita = RevisionWriter(manager_api, importer, comando="validate")
+        self._contract = ContractWriter(manager_api, command="validate")
 
     # --- cascata -------------------------------------------------------------
 
@@ -168,6 +183,7 @@ class ValidateService:
 
         etapa("Lendo o repositório")
         lido = self._escrita.carregar(repo_path)
+        contract, contract_warnings = self._contract.validate(lido)
         spec = lido.basic_info.get("spec") or {}
 
         etapa("Consultando a API no Manager")
@@ -199,14 +215,8 @@ class ValidateService:
         # Em local, o que vai sair do Manager é mostrado na confirmação, antes
         # da gravação, e não se repete no resultado. Na esteira não há pergunta.
         if self._settings.modo_pipeline:
-            achados.extend(
-                Achado(
-                    severity=SEVERIDADE_WARNING,
-                    scope=ESCOPO_REPOSITORIO,
-                    message=aviso,
-                )
-                for aviso in montado.avisos
-            )
+            achados.extend(_repository_warnings(montado.avisos))
+        achados.extend(_repository_warnings(contract_warnings))
 
         etapa("Verificando a governança")
         precheck = self._governanca.avaliar(draft, spec.get("apiTags"))
@@ -235,9 +245,19 @@ class ValidateService:
                 ],
             )
 
-        publicacao = self._e3_publicar(montado, revisao, confirmar, etapa)
+        prepared = self._contract.prepare(revisao["id"], contract, etapa)
+        if self._settings.modo_pipeline:
+            achados.extend(_repository_warnings(prepared.warnings))
 
-        if publicacao.attempted:
+        written = self._e3_publicar(montado, revisao, confirmar, etapa, prepared)
+        publicacao = written.result if written else PublicacaoResultado(attempted=False)
+
+        if written is not None:
+            achados.extend(
+                _repository_warnings(
+                    self._contract.write(revisao["id"], prepared, written.published, etapa)
+                )
+            )
             etapa("Calculando o quality score")
             completeness = self._e4_completeness(revisao["id"])
         else:
@@ -351,7 +371,8 @@ class ValidateService:
         revisao: Dict[str, Any],
         confirmar: Callable[[str], bool],
         etapa: Callable[[str], None] = lambda _: None,
-    ) -> PublicacaoResultado:
+        prepared: Optional[PreparedContract] = None,
+    ) -> Optional[WrittenRevision]:
         # Guarda 2 (D-9): em local a escrita é ato deliberado do dev.
         #
         # O texto diz o que o comando faz, não o nome da operação interna: a
@@ -361,15 +382,21 @@ class ValidateService:
         if not self._settings.modo_pipeline:
             # A pergunta em si ("Deseja prosseguir?") fica na borda: o serviço
             # não sabe que a confirmação é um sim/não de terminal.
+            contract_line = (
+                "O swagger da revisão também recebe o contrato OpenAPI do repositório.\n"
+                if prepared is not None and prepared.write
+                else ""
+            )
             pergunta = self._escrita.texto_de_confirmacao(
                 "Para validar a sua API, uma versão de rascunho será gravada no "
                 f"API Manager, na revisão {revisao.get('revisionNumber')} "
                 f"(id {revisao['id']}).\n"
+                f"{contract_line}"
                 "Nenhum ambiente recebe deploy, e nada é promovido.",
-                montado.avisos,
+                list(montado.avisos) + list(prepared.warnings if prepared else []),
             )
             if not confirmar(pergunta):
-                return PublicacaoResultado(attempted=False)
+                return None
 
         # E3 + E3.1: UM ÚNICO PUT (W-7) e a conferência — 200 não é prova (W-8).
         return self._escrita.gravar_e_conferir(

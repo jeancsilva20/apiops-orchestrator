@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "api-components.schema.json",
+  "title": "OpenAPI components (components.yaml)",
+  "description": "Optional file at the repository root with the reusable OpenAPI 3 components. Every $ref of the contract points here.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemas": {
+      "type": "object"
+    },
+    "securitySchemes": {
+      "type": "object"
+    },
+    "responses": {
+      "type": "object"
+    },
+    "requestBodies": {
+      "type": "object"
+    },
+    "headers": {
+      "type": "object"
+    },
+    "examples": {
+      "type": "object"
+    }
+  }
+}

@@ -276,3 +276,28 @@ def test_descoberta_contra_os_repositorios_reais():
         assert d.completo, f"{repo.name}: faltando {d.faltando}"
         assert len(d.recursos) == recursos
         assert d.total_operacoes == operacoes
+
+
+# --- components.yaml ---------------------------------------------------------
+
+
+def test_components_file_is_recognized_at_the_root():
+    d = rl.descobrir(_arvore_minima(rl.COMPONENTS_FILE))
+
+    assert d.components_path == rl.COMPONENTS_FILE
+    assert rl.COMPONENTS_FILE not in d.ignorados
+    assert d.completo
+
+
+def test_components_file_is_optional():
+    d = rl.descobrir(_arvore_minima())
+
+    assert d.components_path is None
+    assert d.completo
+
+
+def test_components_yml_is_not_the_components_file():
+    d = rl.descobrir(_arvore_minima("components.yml"))
+
+    assert d.components_path is None
+    assert "components.yml" in d.ignorados

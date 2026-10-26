@@ -142,7 +142,14 @@ def _repo(tmp_path, lab, raiz, recursos):
         _escrever(base / layout.ARQUIVO_RECURSO, {"name": nome, **_bloco(inherit, rotulos)})
         for path, (inherit_rota, rotulos_rota) in rotas.items():
             arquivo = base / f"get{path.replace('/', '_')}.yaml"
-            _escrever(arquivo, {"path": path, **_bloco(inherit_rota, rotulos_rota)})
+            _escrever(
+                arquivo,
+                {
+                    "path": path,
+                    **_bloco(inherit_rota, rotulos_rota),
+                    "responses": {"200": {"description": "OK"}},
+                },
+            )
     return tmp_path
 
 

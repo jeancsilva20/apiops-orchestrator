@@ -82,6 +82,27 @@
             }
           }
         },
+        "contact": {
+          "type": "object",
+          "description": "OpenAPI info.contact of the API."
+        },
+        "tags": {
+          "type": "array",
+          "description": "OpenAPI root tags, documentation groups of the routes. Not the apiTags of the governance.",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ]
+          }
+        },
+        "security": {
+          "type": "array",
+          "description": "OpenAPI root security requirements; each name must exist in components.yaml securitySchemes.",
+          "items": {
+            "type": "object"
+          }
+        },
         "apiTags": {
           "type": "array",
           "description": "Lista declarativa COMPLETA de pares (attributeName, tags[]). Regime de omissao: AUSENTE PRESERVA, lista VAZIA REMOVE. E sobre estes valores que o Adaptive Governance calcula o faltante no PUT da revision (W-7, D-020).",

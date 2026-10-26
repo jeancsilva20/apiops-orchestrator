@@ -13,6 +13,7 @@ validado contra 6 APIs reais (155 arquivos). Duas mudanças em relação ao prot
     repositorio-da-api/
     ├── api-basic-info.yaml
     ├── all.yaml                       escopo raiz da revision
+    ├── components.yaml                optional: OpenAPI contract components
     └── resources/
         └── <slug-do-recurso>/
             ├── resource.yaml
@@ -37,6 +38,8 @@ ARQUIVO_BASIC_INFO = "api-basic-info.yaml"
 ARQUIVO_RAIZ = "all.yaml"
 ARQUIVO_RECURSO = "resource.yaml"
 PASTA_RECURSOS = "resources"
+# Optional: its absence is not reported in `faltando`.
+COMPONENTS_FILE = "components.yaml"
 
 METODOS = ("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD")
 
@@ -255,6 +258,7 @@ class RepositorioDescoberto:
 
     caminho_basic_info: Optional[str] = None
     caminho_raiz: Optional[str] = None
+    components_path: Optional[str] = None
     recursos: List[RecursoDescoberto] = field(default_factory=list)
     faltando: List[str] = field(default_factory=list)
     ignorados: List[str] = field(default_factory=list)
@@ -286,6 +290,7 @@ def descobrir(caminhos_relativos: Sequence[str]) -> RepositorioDescoberto:
 
     basic_info = ARQUIVO_BASIC_INFO if ARQUIVO_BASIC_INFO in arquivos else None
     raiz = ARQUIVO_RAIZ if ARQUIVO_RAIZ in arquivos else None
+    components_path = COMPONENTS_FILE if COMPONENTS_FILE in arquivos else None
 
     faltando: List[str] = []
     if basic_info is None:
@@ -297,7 +302,7 @@ def descobrir(caminhos_relativos: Sequence[str]) -> RepositorioDescoberto:
     por_recurso: Dict[str, List[str]] = {}
     ignorados: List[str] = []
     for caminho in arquivos:
-        if caminho in (ARQUIVO_BASIC_INFO, ARQUIVO_RAIZ):
+        if caminho in (ARQUIVO_BASIC_INFO, ARQUIVO_RAIZ, COMPONENTS_FILE):
             continue
         partes = caminho.split("/")
         if len(partes) == 3 and partes[0] == PASTA_RECURSOS:
@@ -342,6 +347,7 @@ def descobrir(caminhos_relativos: Sequence[str]) -> RepositorioDescoberto:
     return RepositorioDescoberto(
         caminho_basic_info=basic_info,
         caminho_raiz=raiz,
+        components_path=components_path,
         recursos=recursos,
         faltando=faltando,
         ignorados=sorted(ignorados),

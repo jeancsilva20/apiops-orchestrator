@@ -47,6 +47,7 @@ class RepositorioCarregado:
     raiz_path: str
     basic_info: Dict[str, Any] = field(default_factory=dict)
     raiz: Dict[str, Any] = field(default_factory=dict)
+    components: Dict[str, Any] = field(default_factory=dict)
     recursos: List[RecursoCarregado] = field(default_factory=list)
     faltando: List[str] = field(default_factory=list)
     ignorados: List[str] = field(default_factory=list)
@@ -111,6 +112,7 @@ class RepoCanonicalReader:
 
         basic_info = ler(descoberta.caminho_basic_info)
         conteudo_raiz = ler(descoberta.caminho_raiz)
+        components = ler(descoberta.components_path)
 
         recursos: List[RecursoCarregado] = []
         for recurso in descoberta.recursos:
@@ -139,6 +141,7 @@ class RepoCanonicalReader:
             raiz_path=str(raiz),
             basic_info=basic_info,
             raiz=conteudo_raiz,
+            components=components,
             recursos=recursos,
             faltando=list(descoberta.faltando),
             ignorados=list(descoberta.ignorados),

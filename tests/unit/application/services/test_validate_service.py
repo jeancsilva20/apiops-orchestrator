@@ -4,6 +4,7 @@ O fake **grava a ordem das chamadas**: é assim que se prova que as guardas
 abortam ANTES da escrita, e não só que abortam.
 """
 
+import copy
 import textwrap
 from types import SimpleNamespace
 
@@ -17,6 +18,7 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
     CustomInexistenteError,
     GovernanceBlockedError,
     IdentidadeDivergenteError,
+    InvalidContractError,
     LayoutInvalidoError,
     PublicacaoDivergenteError,
     PublicacaoRecusadaError,
@@ -78,6 +80,24 @@ spec:
 ALL_YAML = "destination:\n  url: https://backend\n"
 
 
+# Smallest contract an operation file declares; `_swagger_of` mirrors it.
+MINIMAL_CONTRACT = "summary: Rota de teste\nresponses:\n  '200':\n    description: Consulta realizada\n"
+
+
+def _swagger_of(revision):
+    """Revision swagger already holding `MINIMAL_CONTRACT` in every route."""
+    paths = {}
+    for resource in revision.get("resources") or []:
+        for operation in resource.get("operations") or []:
+            paths.setdefault(operation.get("path"), {})[str(operation.get("method")).lower()] = {
+                "summary": "Rota de teste",
+                "parameters": [],
+                "responses": {"200": {"description": "Consulta realizada"}},
+                "x-resource-name": resource.get("name"),
+            }
+    return {"openapi": "3.0.0", "info": {"title": "API", "version": "1.0.0"}, "paths": paths}
+
+
 class ManagerFake:
     """Port fake que grava a sequência exata de chamadas."""
 
@@ -89,6 +109,7 @@ class ManagerFake:
         self._publicado = publicado
         self.chamadas = []
         self.payload_enviado = None
+        self.written_swagger = None
 
     # --- leitura
     def get_api_by_id(self, api_id=None):
@@ -117,11 +138,24 @@ class ManagerFake:
         self.chamadas.append("get_revision_completeness")
         return SimpleNamespace(score=42.0, suggestions=["Adicione exemplos"])
 
+    def get_revision_swagger(self, revision_id):
+        self.chamadas.append("get_revision_swagger")
+        if self.written_swagger is not None:
+            return copy.deepcopy(self.written_swagger)
+        if self.payload_enviado is not None:
+            return _swagger_of(self._publicado or self.payload_enviado)
+        return _swagger_of(self.draft)
+
     # --- escrita
     def update_revision(self, revision_id, payload):
         self.chamadas.append("update_revision")
         self.payload_enviado = payload
         return {}
+
+    def update_revision_swagger(self, revision_id, document):
+        self.chamadas.append("update_revision_swagger")
+        self.written_swagger = copy.deepcopy(document)
+        return {"result": "success"}
 
     def publish_api_changes(self, data):  # pragma: no cover - não deve ser chamado
         self.chamadas.append("publish_api_changes")
@@ -457,6 +491,7 @@ def test_custom_inexistente_aborta_antes_de_escrever(tmp_path):
         "resources/x/resource.yaml": 'name: "X"\n',
         "resources/x/get_x.yaml": (
             "path: /x\ninterceptors_request:\n  - type: Custom\n    id: 178\n"
+            + MINIMAL_CONTRACT
         ),
     }
     manager = ManagerFake(customs={})
@@ -506,6 +541,7 @@ def test_conformidade_avalia_o_que_sera_publicado_nao_o_remoto(tmp_path):
         "resources/x/get_x.yaml": (
             "path: /x\ninherit: false\n\ninterceptors_request:\n"
             "  - type: Log\n    content:\n      acceptedTerms: true\n"
+            + MINIMAL_CONTRACT
         ),
     }
     # O remoto NÃO tem o `Log`; o repositório passa a declará-lo.
@@ -554,7 +590,7 @@ def test_heranca_pura_sobre_lista_propria_vira_warning(tmp_path):
     """
     extras = {
         "resources/x/resource.yaml": 'name: "X"\ninherit: true\n',
-        "resources/x/get_x.yaml": "path: /x\ninherit: true\n",
+        "resources/x/get_x.yaml": "path: /x\ninherit: true\n" + MINIMAL_CONTRACT,
     }
     draft = dict(
         DRAFT,
@@ -833,10 +869,10 @@ class _ManagerComRegua(ManagerFake):
 def _repo_com_recursos(tmp_path, recurso_a_proprio=False):
     extras = {
         "resources/a/resource.yaml": 'name: "A"\n',
-        "resources/a/get_a.yaml": "path: /a\n",
-        "resources/a/post_a.yaml": "path: /a\n",
+        "resources/a/get_a.yaml": "path: /a\n" + MINIMAL_CONTRACT,
+        "resources/a/post_a.yaml": "path: /a\n" + MINIMAL_CONTRACT,
         "resources/b/resource.yaml": 'name: "B"\n',
-        "resources/b/get_b.yaml": "path: /b\n",
+        "resources/b/get_b.yaml": "path: /b\n" + MINIMAL_CONTRACT,
     }
     if recurso_a_proprio:
         extras["resources/a/resource.yaml"] = (
@@ -897,7 +933,7 @@ REGUA_SO_LOG = [
 def _achados_com(tmp_path, recurso_a, get_b="path: /b\n"):
     repo = _repo_com_recursos(tmp_path)
     (repo / "resources/a/resource.yaml").write_text(recurso_a, encoding="utf-8")
-    (repo / "resources/b/get_b.yaml").write_text(get_b, encoding="utf-8")
+    (repo / "resources/b/get_b.yaml").write_text(get_b + MINIMAL_CONTRACT, encoding="utf-8")
     view = _servico(_ManagerComRegua(REGUA_SO_LOG), modo="pipeline").validate(
         repo, confirmar=SIM
     )
@@ -945,3 +981,106 @@ def test_esteira_sem_template_api_id_falha_antes_do_manager(tmp_path):
     assert capturado.value.exit_code == 1
     assert "TEMPLATE_API_ID não está definida" in capturado.value.message
     assert manager.chamadas == []
+
+
+# --- OpenAPI contract step ---------------------------------------------------
+
+ROUTE_X = {
+    "resources/x/resource.yaml": 'name: "X"\n',
+    "resources/x/get_x.yaml": "path: /x\n" + MINIMAL_CONTRACT,
+}
+
+
+class _ManagerWithDocumentedRoute(ManagerFake):
+    """Before any write, the swagger documents a 404 on `GET /x` that the repository lacks."""
+
+    def get_revision_swagger(self, revision_id):
+        swagger = super().get_revision_swagger(revision_id)
+        if self.payload_enviado is None:
+            swagger["paths"] = {
+                "/x": {
+                    "get": {
+                        "summary": "Rota de teste",
+                        "parameters": [],
+                        "responses": {
+                            "200": {"description": "Consulta realizada"},
+                            "404": {"description": "Recurso inexistente"},
+                        },
+                    }
+                }
+            }
+        return swagger
+
+
+class _ManagerOnSwagger2(ManagerFake):
+    def get_revision_swagger(self, revision_id):
+        self.chamadas.append("get_revision_swagger")
+        return {"swagger": "2.0", "paths": {}}
+
+
+def test_invalid_contract_aborts_before_any_manager_call(tmp_path):
+    extras = {"resources/x/resource.yaml": 'name: "X"\n', "resources/x/get_x.yaml": "path: /x\n"}
+    manager = ManagerFake()
+
+    with pytest.raises(InvalidContractError) as raised:
+        _servico(manager).validate(_repo(tmp_path, extras=extras), confirmar=SIM)
+
+    assert raised.value.exit_code == 1
+    assert "resources/x/get_x.yaml" in raised.value.message
+    assert manager.chamadas == []
+
+
+def test_contract_is_written_after_the_flow_and_before_completeness(tmp_path):
+    extras = dict(ROUTE_X)
+    extras["resources/x/get_x.yaml"] += "operationId: consultarX\n"
+    manager = ManagerFake()
+
+    view = _servico(manager).validate(_repo(tmp_path, extras=extras), confirmar=SIM)
+
+    calls = manager.chamadas
+    assert calls.index("update_revision") < calls.index("update_revision_swagger")
+    assert calls.index("update_revision_swagger") < calls.index("get_revision_completeness")
+    assert manager.written_swagger["paths"]["/x"]["get"]["operationId"] == "consultarX"
+    assert all("contrato" not in a.message for a in view.achados)
+
+
+def test_confirmation_tells_the_swagger_is_written_and_what_leaves_it(tmp_path):
+    manager = _ManagerWithDocumentedRoute()
+    questions = []
+
+    view = _servico(manager).validate(
+        _repo(tmp_path, extras=ROUTE_X), confirmar=lambda q: questions.append(q) or True
+    )
+
+    [question] = questions
+    assert "O swagger da revisão também recebe o contrato OpenAPI" in question
+    assert "GET /x · resposta 404" in question
+    assert all("GET /x · resposta 404" not in a.message for a in view.achados)
+
+
+def test_cancelled_confirmation_writes_no_swagger(tmp_path):
+    manager = ManagerFake()
+
+    _servico(manager).validate(_repo(tmp_path, extras=ROUTE_X), confirmar=NAO)
+
+    assert "update_revision" not in manager.chamadas
+    assert "update_revision_swagger" not in manager.chamadas
+
+
+def test_removed_documentation_is_a_finding_in_the_pipeline(tmp_path):
+    view = _servico(_ManagerWithDocumentedRoute(), modo="pipeline").validate(
+        _repo(tmp_path, extras=ROUTE_X), confirmar=SIM
+    )
+
+    assert any("GET /x · resposta 404" in a.message and a.severity == "WARNING" for a in view.achados)
+
+
+def test_swagger_2_keeps_the_flow_and_warns(tmp_path):
+    manager = _ManagerOnSwagger2()
+
+    view = _servico(manager, modo="pipeline").validate(_repo(tmp_path, extras=ROUTE_X), confirmar=SIM)
+
+    assert view.publicacao.verified is True
+    assert "update_revision" in manager.chamadas
+    assert "update_revision_swagger" not in manager.chamadas
+    assert any("Swagger 2.0" in a.message for a in view.achados)

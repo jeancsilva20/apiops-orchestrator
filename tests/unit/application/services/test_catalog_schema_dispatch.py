@@ -51,6 +51,7 @@ def catalogo():
     [
         ("api-basic-info.yaml", "api-basic-info.schema.json"),
         ("all.yaml", "api-root-scope.schema.json"),
+        ("components.yaml", "api-components.schema.json"),
         ("resources/tarefas/resource.yaml", "api-resource.schema.json"),
         ("resources/tarefas/get_tarefas.yaml", "api-operations.schema.json"),
         (r"resources\tarefas\get_tarefas.yaml", "api-operations.schema.json"),

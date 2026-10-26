@@ -181,3 +181,25 @@ def test_leitura_nao_toca_a_rede(tmp_path, leitor, monkeypatch):
         tmp_path, {"api-basic-info.yaml": BASIC_INFO, "all.yaml": ALL_YAML}
     )
     assert leitor.carregar(str(repo)).completo
+
+
+def test_components_file_is_loaded(tmp_path, leitor):
+    repo = _montar(
+        tmp_path,
+        {
+            "api-basic-info.yaml": BASIC_INFO,
+            "all.yaml": ALL_YAML,
+            "components.yaml": "schemas:\n  Tarefa:\n    type: object\n",
+        },
+    )
+
+    loaded = leitor.carregar(str(repo))
+
+    assert loaded.components == {"schemas": {"Tarefa": {"type": "object"}}}
+    assert loaded.completo
+
+
+def test_missing_components_file_loads_empty(tmp_path, leitor):
+    repo = _montar(tmp_path, {"api-basic-info.yaml": BASIC_INFO, "all.yaml": ALL_YAML})
+
+    assert leitor.carregar(str(repo)).components == {}

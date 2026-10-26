@@ -6,9 +6,47 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "path"
+    "path",
+    "responses"
   ],
   "properties": {
+    "operationId": {
+      "type": "string",
+      "description": "OpenAPI operationId, unique in the API."
+    },
+    "summary": {
+      "type": "string",
+      "description": "OpenAPI summary; when absent, the description is used."
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "security": {
+      "type": "array",
+      "description": "Overrides the root security; an empty list makes the route public.",
+      "items": {
+        "type": "object"
+      }
+    },
+    "parameters": {
+      "type": "array",
+      "description": "OpenAPI parameters of the route, written in full (no $ref).",
+      "items": {
+        "type": "object"
+      }
+    },
+    "requestBody": {
+      "type": "object",
+      "description": "Only in POST, PUT and PATCH."
+    },
+    "responses": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "Required. An undocumented route declares {'200': {description: OK}}."
+    },
     "path": {
       "type": "string",
       "minLength": 1,

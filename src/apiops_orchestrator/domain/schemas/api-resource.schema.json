@@ -27,6 +27,13 @@
       "type": "boolean",
       "description": "true = os itens declarados executam depois do fluxo herdado; sem itens, o escopo so herda. false = executa exatamente o fluxo declarado; sem itens, o escopo nao executa nenhum interceptor."
     },
+    "parameters": {
+      "type": "array",
+      "description": "OpenAPI parameters shared by every route of the resource, written in full. A path parameter must exist in every route template; the route overrides one with the same name and in.",
+      "items": {
+        "type": "object"
+      }
+    },
     "interceptors_request": {
       "$ref": "#/$defs/fluxo",
       "description": "Mapeia para o execution point FIRST. A ordem da lista e a fonte declarativa."

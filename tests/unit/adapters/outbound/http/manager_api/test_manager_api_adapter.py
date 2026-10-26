@@ -13,6 +13,7 @@ from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiResponseTooLargeError,
     ManagerApiTransportRejectedError,
     ManagerApiTransportUnavailableError,
+    ManagerApiUnexpectedResponseError,
 )
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.infrastructure.exceptions.http_client_exceptions import (
@@ -542,3 +543,51 @@ def test_deploy_revision_5xx_esgotado_vira_indisponivel(mock_settings):
         mock_request.side_effect = HttpClientServerError("Internal Server Error")
         with pytest.raises(ManagerApiTransportUnavailableError):
             adapter.deploy_revision(7, None)
+
+
+def test_get_revision_swagger_reads_the_revision_swagger(mock_settings):
+    adapter = _make_adapter(mock_settings)
+    swagger = {"openapi": "3.0.0", "paths": {}}
+
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.return_value = swagger
+        assert adapter.get_revision_swagger(9554) == swagger
+
+    kwargs = mock_request.call_args.kwargs
+    assert kwargs["method"] == "GET"
+    assert kwargs["url"] == "http://urltest.com/api-manager/api/v3/revisions/9554/swagger"
+
+
+def test_get_revision_swagger_outside_json_is_an_unexpected_response(mock_settings):
+    adapter = _make_adapter(mock_settings)
+
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.return_value = "openapi: 3.0.0"
+        with pytest.raises(ManagerApiUnexpectedResponseError):
+            adapter.get_revision_swagger(9554)
+
+
+def test_update_revision_swagger_puts_the_whole_document(mock_settings):
+    adapter = _make_adapter(mock_settings)
+    document = {"openapi": "3.0.0", "paths": {"/t": {}}}
+
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.return_value = {"result": "success"}
+        adapter.update_revision_swagger(9554, document)
+
+    kwargs = mock_request.call_args.kwargs
+    assert kwargs["method"] == "PUT"
+    assert kwargs["url"] == "http://urltest.com/api-manager/api/v3/revisions/9554/swagger"
+    assert kwargs["json"] == document
+
+
+def test_update_revision_swagger_rejection_carries_the_platform_reasons(mock_settings):
+    adapter = _make_adapter(mock_settings)
+    body = {"result": "failure", "errors": [{"message": "Invalid swagger"}], "status": 400}
+
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.side_effect = HttpClient4xxError(status_code=400, title="x", detail="x", body=body)
+        with pytest.raises(ManagerApiTransportRejectedError) as excinfo:
+            adapter.update_revision_swagger(9554, {})
+
+    assert excinfo.value.messages == ["Invalid swagger"]

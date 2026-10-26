@@ -4,6 +4,7 @@ O fake grava a ordem das chamadas: é assim que se prova que as pré-condições
 abortam ANTES da escrita, e que a régua e o completeness não são lidos.
 """
 
+import copy
 import textwrap
 from types import SimpleNamespace
 
@@ -16,6 +17,7 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
     CustomInexistenteError,
     GovernanceBlockedError,
     IdentidadeDivergenteError,
+    InvalidContractError,
     LayoutInvalidoError,
     PublicacaoDivergenteError,
     PublicacaoRecusadaError,
@@ -86,6 +88,24 @@ spec:
 ALL_YAML = "destination:\n  url: https://backend\n"
 
 
+# Smallest contract an operation file declares; `_swagger_of` mirrors it.
+MINIMAL_CONTRACT = "summary: Rota de teste\nresponses:\n  '200':\n    description: Consulta realizada\n"
+
+
+def _swagger_of(revision):
+    """Revision swagger already holding `MINIMAL_CONTRACT` in every route."""
+    paths = {}
+    for resource in revision.get("resources") or []:
+        for operation in resource.get("operations") or []:
+            paths.setdefault(operation.get("path"), {})[str(operation.get("method")).lower()] = {
+                "summary": "Rota de teste",
+                "parameters": [],
+                "responses": {"200": {"description": "Consulta realizada"}},
+                "x-resource-name": resource.get("name"),
+            }
+    return {"openapi": "3.0.0", "info": {"title": "API", "version": "1.0.0"}, "paths": paths}
+
+
 class ManagerFake:
     """Port fake que grava a sequência exata de chamadas e os ids tocados."""
 
@@ -99,6 +119,7 @@ class ManagerFake:
         self.ids_lidos = []
         self.id_gravado = None
         self.payload_enviado = None
+        self.written_swagger = None
 
     # --- leitura
     def get_api_by_id(self, api_id=None):
@@ -128,6 +149,14 @@ class ManagerFake:
         self.chamadas.append("get_revision_completeness")
         raise AssertionError("o publish não lê completeness (plano §7)")
 
+    def get_revision_swagger(self, revision_id):
+        self.chamadas.append("get_revision_swagger")
+        if self.written_swagger is not None:
+            return copy.deepcopy(self.written_swagger)
+        if self.payload_enviado is not None:
+            return _swagger_of(self._publicado or self.payload_enviado)
+        return _swagger_of(REVISOES[revision_id])
+
     # --- escrita
     def update_revision(self, revision_id, payload):
         self.chamadas.append("update_revision")
@@ -136,6 +165,11 @@ class ManagerFake:
         self.id_gravado = revision_id
         self.payload_enviado = payload
         return {}
+
+    def update_revision_swagger(self, revision_id, document):
+        self.chamadas.append("update_revision_swagger")
+        self.written_swagger = copy.deepcopy(document)
+        return {"result": "success"}
 
     def publish_api_changes(self, data):  # pragma: no cover - não deve ser chamado
         self.chamadas.append("publish_api_changes")
@@ -275,6 +309,7 @@ def test_custom_inexistente_aborta_antes_de_escrever(tmp_path):
         "resources/x/resource.yaml": 'name: "X"\n',
         "resources/x/get_x.yaml": (
             "path: /x\ninterceptors_request:\n  - type: Custom\n    id: 178\n"
+            + MINIMAL_CONTRACT
         ),
     }
     manager = ManagerFake(customs={})
@@ -346,7 +381,7 @@ def test_um_unico_put_depois_de_todas_as_leituras_e_nenhum_post(tmp_path):
     for leitura in ("get_api_by_id:417", "get_workflow"):
         assert manager.chamadas.index(leitura) < escrita
     # a releitura de conferência vem depois da escrita
-    assert manager.chamadas[-1] == "get_revision"
+    assert "get_revision" in manager.chamadas[escrita + 1:]
 
 
 def test_workflow_e_stage_da_revisao_alvo_viajam_intactos(tmp_path):
@@ -445,8 +480,10 @@ def test_etapas_narradas_na_ordem(tmp_path):
         "Consultando a API no Manager",
         "Verificando os interceptors Custom",
         "Verificando a governança",
+        "Lendo o swagger da revisão",
         "Gravando a revisão 2 no Manager",
         "Conferindo o que foi gravado",
+        "Montando o contrato",
     ]
 
 
@@ -602,3 +639,45 @@ def test_deploy_de_outra_revisao_nao_conta(tmp_path):
     view = _servico(manager).publish(_repo(tmp_path))
 
     assert view.deployments == []
+
+
+# --- OpenAPI contract step ---------------------------------------------------
+
+ROUTE_X = {
+    "resources/x/resource.yaml": 'name: "X"\n',
+    "resources/x/get_x.yaml": "path: /x\n" + MINIMAL_CONTRACT + "operationId: consultarX\n",
+}
+
+
+class _ManagerRejectingTheSwagger(ManagerFake):
+    def update_revision_swagger(self, revision_id, document):
+        self.chamadas.append("update_revision_swagger")
+        raise ManagerApiTransportRejectedError(400, "Invalid Request", messages=["Swagger inválido"])
+
+
+def test_invalid_contract_aborts_before_any_manager_call(tmp_path):
+    extras = {"resources/x/resource.yaml": 'name: "X"\n', "resources/x/get_x.yaml": "path: /x\n"}
+    manager = ManagerFake()
+
+    with pytest.raises(InvalidContractError):
+        _servico(manager).publish(_repo(tmp_path, extras=extras))
+
+    assert manager.chamadas == []
+
+
+def test_contract_is_written_after_the_flow(tmp_path):
+    manager = ManagerFake()
+
+    view = _servico(manager).publish(_repo(tmp_path, extras=ROUTE_X))
+
+    assert manager.chamadas.index("update_revision") < manager.chamadas.index("update_revision_swagger")
+    assert manager.written_swagger["paths"]["/x"]["get"]["operationId"] == "consultarX"
+    assert view.publicacao.verified is True
+    assert view.avisos == []
+
+
+def test_rejected_swagger_keeps_the_published_flow_and_warns(tmp_path):
+    view = _servico(_ManagerRejectingTheSwagger()).publish(_repo(tmp_path, extras=ROUTE_X))
+
+    assert view.publicacao.verified is True
+    assert any("recusou a gravação do contrato" in a and "Swagger inválido" in a for a in view.avisos)

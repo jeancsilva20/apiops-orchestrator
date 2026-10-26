@@ -12,6 +12,7 @@ from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiResponseTooLargeError,
     ManagerApiTransportRejectedError,
     ManagerApiTransportUnavailableError,
+    ManagerApiUnexpectedResponseError,
 )
 from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
 from apiops_orchestrator.domain.models.api_visibility_model import OwnershipContext
@@ -459,6 +460,20 @@ class ManagerApiAdapter(ManagerApiPort):
     ) -> Dict[str, Any]:
         """PUT denso na revisão — atualiza a existente, nunca cria (D-005 §9)."""
         return self._request("PUT", f"revisions/{revision_id}", json=payload)
+
+    def get_revision_swagger(self, revision_id: int) -> Dict[str, Any]:
+        document = self._request("GET", f"revisions/{revision_id}/swagger")
+        if not isinstance(document, dict):
+            logger.info("manager_api.swagger.unexpected_body revision_id=%s", revision_id)
+            raise ManagerApiUnexpectedResponseError(
+                "Manager API returned a non-JSON swagger document"
+            )
+        return document
+
+    def update_revision_swagger(
+        self, revision_id: int, document: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        return self._request("PUT", f"revisions/{revision_id}/swagger", json=document)
 
     def deploy_revision(self, environment_id: int, revision_id: int) -> Optional[int]:
         resposta = self._request(

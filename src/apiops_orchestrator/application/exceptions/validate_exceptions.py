@@ -228,6 +228,20 @@ class ReguaInalcancavelError(ValidateError):
         self.status_code = status_code
 
 
+class InvalidContractError(ValidateError):
+    """The OpenAPI contract declared in the repository fails the Swagger validate."""
+
+    def __init__(self, errors: List[str]):
+        listed = "\n".join(f"  - {error}" for error in errors)
+        super().__init__(
+            "O contrato OpenAPI declarado no repositório tem problemas:\n\n"
+            f"{listed}\n\n"
+            "Corrija os arquivos e rode o comando de novo. O comando parou antes de "
+            "acessar o Manager."
+        )
+        self.errors = list(errors)
+
+
 class PublicacaoDivergenteError(ValidateError):
     """A plataforma aceitou (200) mas o estado publicado não corresponde ao enviado (W-8).
 

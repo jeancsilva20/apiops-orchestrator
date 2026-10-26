@@ -8,12 +8,15 @@ esteira (V-24 §6).
          só na esteira                          sem rede, antes de autenticar
          revisão alvo pelo número               sem rede — P-1
     E1   carregar o repositório                 sem rede — P-8
+    C0   declared OpenAPI contract              no network — aborts BEFORE writing
     E2   API + guarda de identidade             GET      — P-3 / P-4 / P-10
          ambientes com a revisão no ar          do mesmo GET, só informativo
          Custom referenciados existem           GET
          pré-check de tags e governança         GET      — aborta ANTES de escrever
+    C1   current swagger and what leaves it     GET      — warns only
     E3   PUT ÚNICO na revisão alvo              ESCRITA
     E3.1 conferência pós-publicação             GET      — 200 não é prova
+    C2-4 contract in the swagger + verification WRITE  — problems become warnings
 """
 
 import logging
@@ -26,6 +29,7 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
     TagInvalidaError,
     ValidateError,
 )
+from apiops_orchestrator.application.services.contract_writer import ContractWriter
 from apiops_orchestrator.application.services.governance_precheck_service import (
     GovernancePrecheckService,
 )
@@ -98,6 +102,7 @@ class PublishService:
         self._manager_api = manager_api
         self._settings = settings
         self._escrita = RevisionWriter(manager_api, importer, comando="publish")
+        self._contract = ContractWriter(manager_api, command="publish")
         self._governanca = GovernancePrecheckService(manager_api)
         # Só a verificação de `Custom`: a régua em si não é lida pelo publish.
         self._customs = ReguaService(manager_api, settings)
@@ -118,6 +123,7 @@ class PublishService:
 
         etapa("Lendo o repositório")
         lido = self._escrita.carregar(repo_path)
+        contract, contract_warnings = self._contract.validate(lido)
         spec = lido.basic_info.get("spec") or {}
 
         etapa("Consultando a API no Manager")
@@ -157,13 +163,18 @@ class PublishService:
                 ],
             )
 
-        publicacao = self._escrita.gravar_e_conferir(
+        prepared = self._contract.prepare(revisao["id"], contract, etapa)
+        avisos += contract_warnings + prepared.warnings
+
+        written = self._escrita.gravar_e_conferir(
             revisao,
             montado,
             etapa=etapa,
             rotulo_gravacao=f"Gravando a revisão {numero} no Manager",
             alvo_recusa=f"da revisão {numero}",
         )
+        avisos += self._contract.write(revisao["id"], prepared, written.published, etapa)
+        publicacao = written.result
 
         return PublishView(
             schema=SCHEMA_SEN_PUBLISH_V1,

@@ -73,6 +73,10 @@ class ManagerApiTransportUnavailableError(ManagerApiError):
     """Manager/Finder inalcançável ou 5xx persistente após esgotar retries."""
 
 
+class ManagerApiUnexpectedResponseError(ManagerApiError):
+    """The platform answered in a format the port does not recognize."""
+
+
 @dataclass(frozen=True)
 class ApiCatalogPage:
     """Uma pagina do catalogo (api-finder) com o total de registros."""
@@ -142,6 +146,16 @@ class ManagerApiPort(ABC):
         É neste `PUT` que o Adaptive Governance atua (W-7) — escrever também em
         `PUT /apis/{id}` furaria o gate e deixaria estado meio-aplicado.
         """
+
+    @abstractmethod
+    def get_revision_swagger(self, revision_id: int) -> Dict[str, Any]:
+        """Swagger of the revision, with the `x-*` extensions."""
+
+    @abstractmethod
+    def update_revision_swagger(
+        self, revision_id: int, document: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """`PUT` of the whole revision swagger."""
 
     @abstractmethod
     def deploy_revision(self, environment_id: int, revision_id: int) -> Optional[int]:

@@ -17,6 +17,12 @@
       "comment": "Obrigatorio pelo nome exato: a ausencia aborta na E1, porque a raiz nao herda de ninguem e publicar sem ela apaga o fluxo da revision (V-18 2.3)."
     },
     {
+      "pattern": "components.yaml",
+      "schema": "api-components.schema.json",
+      "required": false,
+      "comment": "Optional: reusable OpenAPI components of the contract."
+    },
+    {
       "pattern": "resources/*/resource.yaml",
       "schema": "api-resource.schema.json",
       "required": true,
