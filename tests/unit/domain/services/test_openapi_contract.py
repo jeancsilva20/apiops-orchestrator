@@ -247,13 +247,33 @@ def test_kept_parameter_extensions_make_the_second_write_unnecessary():
     assert oc.same_document(written, oc.apply_contract(written, contract))
 
 
-def test_route_only_in_the_manager_is_left_alone():
+def test_method_outside_the_repository_leaves_the_path_that_keeps_another():
+    current = _current()
+    current["paths"]["/tarefas/{id}"]["delete"] = {"summary": "Remove", "responses": OK, "x-interceptors": {}}
+
+    document = oc.apply_contract(current, _contract())
+
+    assert "delete" not in document["paths"]["/tarefas/{id}"]
+    assert document["paths"]["/tarefas/{id}"]["get"]["summary"] == "Consulta uma tarefa"
+
+
+def test_path_left_without_operations_is_dropped():
     current = _current()
     current["paths"]["/saude"] = {"get": {"summary": "Saúde", "responses": OK}}
 
     document = oc.apply_contract(current, _contract())
 
-    assert document["paths"]["/saude"] == {"get": {"summary": "Saúde", "responses": OK}}
+    assert "/saude" not in document["paths"]
+    assert "/tarefas/{id}" in document["paths"]
+
+
+def test_a_route_outside_the_repository_alone_makes_the_write_necessary():
+    written = oc.apply_contract(_current(), _contract())
+    assert oc.same_document(oc.apply_contract(written, _contract()), written)
+
+    written["paths"]["/tarefas/{id}"]["delete"] = {"summary": "Remove", "responses": OK}
+
+    assert not oc.same_document(oc.apply_contract(written, _contract()), written)
 
 
 def test_missing_routes_lists_repository_routes_absent_from_the_document():

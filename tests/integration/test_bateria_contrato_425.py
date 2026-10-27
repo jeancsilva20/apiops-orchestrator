@@ -603,3 +603,22 @@ def test_9_pulled_api_matches_what_was_uploaded(tmp_path, lab, validate, manager
     assert "saem da documentação" not in questions[0]
     assert "update_revision_swagger" not in manager.calls
     assert _contract_failures(view) == []
+
+
+def test_10_method_removed_from_a_path_that_keeps_another_does_not_come_back(
+    tmp_path, lab, validate, manager
+):
+    """The Manager keeps the removed method in the swagger; the swagger write must not restore it."""
+    assert "post" in manager.get_revision_swagger(lab["draft_id"])["paths"][DOCUMENTED_PATH]
+
+    view, _ = validate(_repository(tmp_path, lab))
+
+    assert view.publication.verified is True
+    assert _contract_failures(view) == []
+    revision = manager.get_revision(lab["draft_id"])
+    methods = {
+        o["method"] for r in revision["resources"] for o in r["operations"] if o["path"] == DOCUMENTED_PATH
+    }
+    assert methods == {"GET"}
+    path_item = manager.get_revision_swagger(lab["draft_id"])["paths"][DOCUMENTED_PATH]
+    assert "post" not in path_item and "get" in path_item

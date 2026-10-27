@@ -142,7 +142,10 @@ def _replace(target: Dict[str, Any], key: str, value: Any) -> None:
 
 
 def apply_contract(current: Dict[str, Any], contract: RepositoryContract) -> Dict[str, Any]:
-    """Swagger to write: the current one with the governed fields replaced by the repository ones."""
+    """Swagger to write: the current one with the governed fields replaced by the repository ones.
+
+    Operations outside the repository are dropped, and so is a path left without operations.
+    """
     document = copy.deepcopy(current)
 
     _replace(document.setdefault("info", {}), "contact", contract.root.get("contact"))
@@ -156,19 +159,29 @@ def apply_contract(current: Dict[str, Any], contract: RepositoryContract) -> Dic
     if components or "components" in document:
         document["components"] = components
 
-    for path, item in (document.get("paths") or {}).items():
+    paths = document.get("paths") or {}
+    for path, item in list(paths.items()):
         if not isinstance(item, dict):
             continue
         path_parameters = item.pop("parameters", None)
+        dropped = False
         for method in HTTP_METHODS:
             operation = item.get(method)
+            if not isinstance(operation, dict):
+                continue
             fields = contract.operations.get((method.upper(), path))
-            if not isinstance(operation, dict) or fields is None:
+            if fields is None:
+                # The flow write already removed it, but the Manager may keep it in
+                # the swagger, and writing it back would put it in the flow again.
+                del item[method]
+                dropped = True
                 continue
             current_parameters = operation.get("parameters")
             for name in OPERATION_FIELDS:
                 _replace(operation, name, fields.get(name))
             _keep_parameter_extensions(operation, current_parameters, path_parameters)
+        if dropped and not any(isinstance(item.get(m), dict) for m in HTTP_METHODS):
+            del paths[path]
 
     return document
 
