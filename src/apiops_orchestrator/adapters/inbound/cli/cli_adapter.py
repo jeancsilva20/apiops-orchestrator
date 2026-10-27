@@ -42,8 +42,12 @@ from apiops_orchestrator.domain.models.completeness_view import CompletenessView
 from apiops_orchestrator.domain.models.deploy_model import DeployState, DeployView
 from apiops_orchestrator.domain.models.publish_view import PublishView
 from apiops_orchestrator.domain.models.validate_view import (
+    DOCUMENTATION_SCOPE,
+    DOCUMENTATION_UNCHANGED,
+    DOCUMENTATION_UPDATED,
     REPOSITORY_SCOPE,
     SEVERITY_WARNING,
+    DocumentationResult,
     Finding,
     ValidateView,
 )
@@ -1027,6 +1031,24 @@ def _render_repo_warnings(warnings) -> None:
     rprint(grid)
 
 
+def _render_documentation(documentation: DocumentationResult) -> None:
+    """Whether the API documentation was updated, why not, and the warnings already shown before."""
+    if documentation.status == DOCUMENTATION_UPDATED:
+        status = "[green]sim[/green]"
+    elif documentation.status == DOCUMENTATION_UNCHANGED:
+        status = "[cyan]sem mudança[/cyan] [grey53](o repositório já está igual ao Manager)[/grey53]"
+    else:
+        status = "[yellow]não[/yellow]"
+    rprint(f"[bold]Documentação atualizada[/bold]  {status}")
+    messages = [documentation.reason] if documentation.reason else []
+    messages += [w for w in documentation.warnings if w != documentation.reason]
+    if messages:
+        _render_repo_warnings(
+            [Finding(severity=SEVERITY_WARNING, scope=DOCUMENTATION_SCOPE, message=m) for m in messages]
+        )
+    rprint()
+
+
 def _render_validate_text(view: ValidateView) -> None:
     """Renderiza a resposta do `validate` para leitura no terminal.
 
@@ -1074,7 +1096,9 @@ def _render_validate_text(view: ValidateView) -> None:
 
     # --- conformidade: nunca bloqueia (V-11 §3) ------------------------------
     from_repo = [a for a in view.findings if a.scope == REPOSITORY_SCOPE]
-    from_template = [a for a in view.findings if a.scope != REPOSITORY_SCOPE]
+    from_template = [
+        a for a in view.findings if a.scope not in (REPOSITORY_SCOPE, DOCUMENTATION_SCOPE)
+    ]
 
     if from_template:
         warnings = sum(
@@ -1140,6 +1164,7 @@ def _render_validate_text(view: ValidateView) -> None:
         else:
             rprint("[bold red]Rascunho[/bold red]  recusado")
         rprint()
+        _render_documentation(view.documentation)
     # Sem `attempted`, o comando já encerrou com "Validação cancelada".
 
     # --- quality score: informativo aqui; o gate trava em DEV+ ---------------
@@ -1366,15 +1391,19 @@ def _render_publish_text(view: PublishView) -> None:
     rprint(_validate_panel("Publicação", _field_grid(identity), width=width))
     rprint()
 
-    if view.warnings:
+    documentation = view.documentation
+    flow_warnings = [
+        w for w in view.warnings if w not in documentation.warnings and w != documentation.reason
+    ]
+    if flow_warnings:
         rprint(
             f"[bold]O que vai mudar no Manager[/bold]  "
-            f"[yellow]{len(view.warnings)} aviso(s)[/yellow]"
+            f"[yellow]{len(flow_warnings)} aviso(s)[/yellow]"
         )
         _render_repo_warnings(
             [
                 Finding(severity=SEVERITY_WARNING, scope=REPOSITORY_SCOPE, message=a)
-                for a in view.warnings
+                for a in flow_warnings
             ]
         )
         rprint()
@@ -1407,6 +1436,7 @@ def _render_publish_text(view: PublishView) -> None:
             detail += f" · deploy em {_literal(d.deployed_at)}"
         rprint(f"{line}[grey53]{detail}[/grey53]")
     rprint()
+    _render_documentation(documentation)
 
 
 @sen_app.command("publish")

@@ -25,6 +25,8 @@ from apiops_orchestrator.domain.models.publish_view import (
     RevisionDeployment,
 )
 from apiops_orchestrator.domain.models.validate_view import (
+    DOCUMENTATION_NOT_UPDATED,
+    DocumentationResult,
     RequiredAttribute,
     GovernanceResult,
     PublicationResult,
@@ -232,3 +234,21 @@ def test_erro_inesperado_encerra_com_1_sem_stack():
     )
     assert resultado.exit_code == 1
     assert "Traceback" not in resultado.output
+
+
+def test_text_shows_why_the_documentation_was_not_updated_apart_from_the_flow_warnings():
+    reason = "O Manager recusou a gravação do contrato: Swagger inválido"
+    short = "Estas descrições têm menos caracteres que o mínimo"
+    view = _view(
+        documentation=DocumentationResult(status=DOCUMENTATION_NOT_UPDATED, reason=reason, warnings=[short]),
+        warnings=["O `timeout` da raiz passa a 30000 ms.", short, reason],
+    )
+
+    resultado = runner.invoke(app, ["sen", "publish"], obj=_ctx(_ServicoFake(resultado=view)))
+    output = " ".join(resultado.output.split())
+
+    assert resultado.exit_code == 0
+    assert "O que vai mudar no Manager 1 aviso(s)" in output
+    assert "Documentação atualizada não" in output
+    assert output.count("Swagger inválido") == 1
+    assert output.count("menos caracteres que o mínimo") == 1

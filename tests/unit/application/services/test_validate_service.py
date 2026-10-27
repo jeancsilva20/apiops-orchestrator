@@ -1056,6 +1056,7 @@ def test_confirmation_tells_the_swagger_is_written_and_what_leaves_it(tmp_path):
     assert "O swagger da revisão também recebe o contrato OpenAPI" in question
     assert "GET /x · resposta 404" in question
     assert all("GET /x · resposta 404" not in a.message for a in view.findings)
+    assert view.documentation.warnings == []
 
 
 def test_cancelled_confirmation_writes_no_swagger(tmp_path):
@@ -1083,4 +1084,60 @@ def test_swagger_2_keeps_the_flow_and_warns(tmp_path):
     assert view.publication.verified is True
     assert "update_revision" in manager.chamadas
     assert "update_revision_swagger" not in manager.chamadas
-    assert any("Swagger 2.0" in a.message for a in view.findings)
+    assert len([a for a in view.findings if "Swagger 2.0" in a.message]) == 1
+    assert view.documentation.status == "not_updated"
+    assert "Swagger 2.0" in view.documentation.reason
+
+
+SHORT_RESPONSE_ROUTE = {
+    "resources/x/resource.yaml": 'name: "X"\n',
+    "resources/x/get_x.yaml": "path: /x\nsummary: Rota de teste\nresponses:\n  '200':\n    description: OK\n",
+}
+
+
+def test_short_descriptions_show_only_in_the_confirmation(tmp_path):
+    questions = []
+
+    view = _servico(ManagerFake()).validate(
+        _repo(tmp_path, extras=SHORT_RESPONSE_ROUTE), confirm=lambda q: questions.append(q) or True
+    )
+
+    [question] = questions
+    assert "resources/x/get_x.yaml · responses.200" in question
+    assert all("responses.200" not in a.message for a in view.findings)
+    assert view.documentation.warnings == []
+
+
+def test_short_descriptions_are_left_to_the_completeness_suggestions_in_the_pipeline(tmp_path):
+    view = _servico(ManagerFake(), mode="pipeline").validate(
+        _repo(tmp_path, extras=SHORT_RESPONSE_ROUTE), confirm=SIM
+    )
+
+    assert all("responses.200" not in a.message for a in view.findings)
+
+
+def test_written_contract_is_reported_as_updated(tmp_path):
+    extras = dict(ROUTE_X)
+    extras["resources/x/get_x.yaml"] += "operationId: consultarX\n"
+
+    view = _servico(ManagerFake()).validate(_repo(tmp_path, extras=extras), confirm=SIM)
+
+    assert view.to_document()["documentation"] == {"status": "updated", "reason": None}
+
+
+def test_contract_equal_to_the_manager_is_reported_as_unchanged(tmp_path):
+    manager = ManagerFake()
+
+    view = _servico(manager).validate(_repo(tmp_path), confirm=SIM)
+
+    assert "update_revision_swagger" not in manager.chamadas
+    assert view.to_document()["documentation"] == {"status": "unchanged", "reason": None}
+
+
+def test_route_documented_by_the_flow_write_is_reported_as_updated(tmp_path):
+    manager = ManagerFake()
+
+    view = _servico(manager).validate(_repo(tmp_path, extras=ROUTE_X), confirm=SIM)
+
+    assert "update_revision_swagger" not in manager.chamadas
+    assert view.to_document()["documentation"] == {"status": "updated", "reason": None}

@@ -29,6 +29,8 @@ OPERATION_FIELDS = (
     "responses",
 )
 HTTP_METHODS = ("get", "put", "post", "delete", "options", "head", "patch", "trace")
+# Extensions that carry the runtime flow, not the documentation.
+FLOW_EXTENSIONS = frozenset({"x-interceptors", "x-destination", "x-timeout"})
 
 Route = Tuple[str, Optional[str]]
 
@@ -311,6 +313,19 @@ def normalize_for_comparison(document: Dict[str, Any]) -> Dict[str, Any]:
 def same_document(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
     """Both documents are the same once normalized."""
     return normalize_for_comparison(a) == normalize_for_comparison(b)
+
+
+def _without_flow(node: Any) -> Any:
+    if isinstance(node, dict):
+        return {k: _without_flow(v) for k, v in node.items() if k not in FLOW_EXTENSIONS}
+    if isinstance(node, list):
+        return [_without_flow(v) for v in node]
+    return node
+
+
+def same_documentation(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
+    """Both documents describe the API the same way; the flow extensions do not count."""
+    return same_document(_without_flow(a), _without_flow(b))
 
 
 def _extensions(node: Any, path: str = "") -> Dict[str, Any]:

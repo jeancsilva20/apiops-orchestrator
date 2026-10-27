@@ -354,6 +354,18 @@ def test_expanded_parameter_reference_is_the_same_parameter():
     assert oc.same_document(sent, written)
 
 
+def test_same_documentation_ignores_the_flow_extensions_only():
+    before = _current()
+    after = _current()
+    after["x-interceptors"] = {"9": {"x-interceptor-type": "LOG"}}
+    after["paths"]["/tarefas/{id}"]["get"]["x-destination"] = "https://outro"
+
+    assert oc.same_documentation(before, after)
+
+    after["paths"]["/tarefas/{id}"]["get"]["description"] = "Consulta uma tarefa pelo id"
+    assert not oc.same_documentation(before, after)
+
+
 def test_verify_contract_reports_a_governed_field_written_differently():
     sent = {"paths": {"/t": {"get": {"responses": OK}}}}
     written = {"paths": {"/t": {"get": {"responses": {"200": {"description": "OK"}}}}}}

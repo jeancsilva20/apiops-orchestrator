@@ -1,12 +1,13 @@
 """Contract step of `validate` and `publish`: validates, reads, writes and verifies the revision swagger.
 
 Receives **ports**, never concrete adapters. An error in the declared contract
-aborts; a platform problem becomes a warning and the written flow stays.
+aborts; a platform problem becomes the reason the documentation was not updated,
+and the written flow stays.
 """
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
     InvalidContractError,
@@ -28,6 +29,12 @@ from apiops_orchestrator.domain.services import (
     openapi_contract_validator,
     revision_payload,
 )
+from apiops_orchestrator.domain.models.validate_view import (
+    DOCUMENTATION_NOT_UPDATED,
+    DOCUMENTATION_UNCHANGED,
+    DOCUMENTATION_UPDATED,
+    DocumentationResult,
+)
 from apiops_orchestrator.domain.services.openapi_contract import RepositoryContract
 
 logger = logging.getLogger(__name__)
@@ -48,10 +55,20 @@ class PreparedContract:
     contract: RepositoryContract
     write: bool
     warnings: List[str] = field(default_factory=list)
+    # Swagger read before any write of the run.
+    before: Optional[Dict[str, Any]] = None
 
 
 def _bullets(items: Sequence[str]) -> str:
     return "\n".join(f"  - {item}" for item in items)
+
+
+def _updated(reason: Optional[str]) -> DocumentationResult:
+    return DocumentationResult(status=DOCUMENTATION_UPDATED, reason=reason)
+
+
+def _not_updated(reason: Optional[str]) -> DocumentationResult:
+    return DocumentationResult(status=DOCUMENTATION_NOT_UPDATED, reason=reason)
 
 
 class ContractWriter:
@@ -108,7 +125,7 @@ class ContractWriter:
                 + _bullets(removed)
                 + "\n\nSe não era essa a intenção, declare-os no repositório."
             )
-        return PreparedContract(contract, write=True, warnings=warnings)
+        return PreparedContract(contract, write=True, warnings=warnings, before=current)
 
     def write(
         self,
@@ -116,64 +133,71 @@ class ContractWriter:
         prepared: PreparedContract,
         approved: Dict[str, Any],
         step: Callable[[str], None] = lambda _: None,
-    ) -> List[str]:
-        """Writes the contract over the current swagger and verifies it; returns the warnings."""
+    ) -> DocumentationResult:
+        """Writes the contract over the current swagger and verifies it; says whether it was updated."""
         if not prepared.write:
-            return []
+            return _not_updated(prepared.warnings[0] if prepared.warnings else None)
 
         step("Montando o contrato")
         try:
             current = self._manager_api.get_revision_swagger(revision_id)
         except ManagerApiError as exc:
-            return [
+            return _not_updated(
                 self._failure_warning(
                     "Não consegui ler o swagger da revisão no Manager, então o contrato "
                     "não foi gravado. O fluxo foi gravado normalmente.",
                     exc,
                 )
-            ]
+            )
         if openapi_contract.is_swagger_2(current):
-            return [SWAGGER_2_WARNING]
+            return _not_updated(SWAGGER_2_WARNING)
         missing = openapi_contract.missing_routes(current, prepared.contract)
         if missing:
             logger.info("%s.contract.missing_routes total=%d", self._command, len(missing))
-            return [
+            return _not_updated(
                 "O contrato não foi gravado: estas rotas do repositório não aparecem no "
                 "swagger da revisão:\n"
                 + _bullets(missing)
                 + "\n\nO fluxo foi gravado. Rode o comando de novo; se continuar, confira "
                 "a revisão no Manager."
-            ]
+            )
 
         document = openapi_contract.apply_contract(current, prepared.contract)
         if openapi_contract.same_document(document, current):
+            # The revision write may have changed the documentation already
+            # (route description, new route): that run still updated it.
+            if prepared.before is not None and not openapi_contract.same_documentation(
+                prepared.before, current
+            ):
+                logger.info("%s.contract.updated_by_revision", self._command)
+                return _updated(None)
             logger.info("%s.contract.unchanged", self._command)
-            return []
+            return DocumentationResult(status=DOCUMENTATION_UNCHANGED)
 
         step("Gravando o contrato no Manager")
         try:
             self._manager_api.update_revision_swagger(revision_id, document)
         except ManagerApiTransportRejectedError as exc:
-            return [self._rejection_warning(exc)]
+            return _not_updated(self._rejection_warning(exc))
         except ManagerApiError as exc:
-            return [
+            return _not_updated(
                 self._failure_warning(
                     "O Manager não respondeu à gravação do contrato. O fluxo foi gravado "
                     "normalmente; a documentação, não.",
                     exc,
                 )
-            ]
+            )
 
         step("Conferindo o contrato gravado")
         try:
             written = self._manager_api.get_revision_swagger(revision_id)
             revision = self._manager_api.get_revision(revision_id) or {}
         except ManagerApiError as exc:
-            return [
+            return _updated(
                 self._failure_warning(
                     "O contrato foi enviado, mas não consegui relê-lo para conferir.", exc
                 )
-            ]
+            )
 
         differences = openapi_contract.verify_contract(document, written)
         differences += [f"fluxo: {d}" for d in revision_payload.verify(approved, revision)]
@@ -184,14 +208,14 @@ class ContractWriter:
                 )
         if differences:
             logger.info("%s.contract.diverged total=%d", self._command, len(differences))
-            return [
+            return _updated(
                 "O Manager aceitou o contrato, mas o que ficou gravado não é o que foi "
                 "enviado:\n"
                 + _bullets(differences)
                 + "\n\nO fluxo continua gravado. Confira a revisão no Manager."
-            ]
+            )
         logger.info("%s.contract.written", self._command)
-        return []
+        return _updated(None)
 
     def _failure_warning(self, text: str, exc: ManagerApiError) -> str:
         logger.info("%s.contract.failure type=%s", self._command, type(exc).__name__)

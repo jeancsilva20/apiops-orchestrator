@@ -17,6 +17,12 @@ SCHEMA_SEN_VALIDATE_V1 = "apiops.sen-validate/v1"
 # borda os apresenta à parte: são textos explicativos de várias frases, e
 # numa coluna de tabela ficam ilegíveis.
 REPOSITORY_SCOPE = "repositório"
+# Warnings about the API documentation (the OpenAPI contract of the revision swagger).
+DOCUMENTATION_SCOPE = "documentação"
+
+DOCUMENTATION_UPDATED = "updated"
+DOCUMENTATION_UNCHANGED = "unchanged"
+DOCUMENTATION_NOT_UPDATED = "not_updated"
 
 SEVERITY_INFO = "INFO"
 SEVERITY_WARNING = "WARNING"
@@ -109,6 +115,18 @@ class PublicationResult:
 
 
 @dataclass(frozen=True)
+class DocumentationResult:
+    """Whether the revision swagger got the repository contract, why not, and the warnings shown before."""
+
+    status: str = DOCUMENTATION_NOT_UPDATED
+    reason: Optional[str] = None
+    warnings: List[str] = field(default_factory=list)
+
+    def to_document(self) -> Dict[str, Any]:
+        return {"status": self.status, "reason": self.reason}
+
+
+@dataclass(frozen=True)
 class CompletenessSummary:
     """Completeness em regime INFORMATIVO no `validate`: nunca bloqueia (decisão 2)."""
 
@@ -130,6 +148,7 @@ class ValidateView:
     findings: List[Finding] = field(default_factory=list)
     governance: GovernanceResult = field(default_factory=GovernanceResult)
     publication: PublicationResult = field(default_factory=PublicationResult)
+    documentation: DocumentationResult = field(default_factory=DocumentationResult)
     completeness: CompletenessSummary = field(default_factory=CompletenessSummary)
 
     @property
@@ -203,6 +222,7 @@ class ValidateView:
                 "verified": self.publication.verified,
                 "divergences": list(self.publication.divergences),
             },
+            "documentation": self.documentation.to_document(),
             "completeness": {
                 "score": self.completeness.score,
                 "gatePercent": self.completeness.gate_percent,

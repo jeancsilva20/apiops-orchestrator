@@ -460,7 +460,7 @@ def test_documento_segue_o_contrato_v1(tmp_path):
     assert doc["schema"] == SCHEMA_SEN_PUBLISH_V1
     assert list(doc) == [
         "schema", "generatedAt", "executionMode", "api", "revision",
-        "governance", "publication", "warnings",
+        "governance", "publication", "documentation", "warnings",
     ]
     assert doc["executionMode"] == "pipeline"
     assert doc["revision"] == {"managerId": 9175, "revisionNumber": 2, "deployments": []}
@@ -674,10 +674,14 @@ def test_contract_is_written_after_the_flow(tmp_path):
     assert manager.written_swagger["paths"]["/x"]["get"]["operationId"] == "consultarX"
     assert view.publication.verified is True
     assert view.warnings == []
+    assert view.to_document()["documentation"] == {"status": "updated", "reason": None}
 
 
 def test_rejected_swagger_keeps_the_published_flow_and_warns(tmp_path):
     view = _servico(_ManagerRejectingTheSwagger()).publish(_repo(tmp_path, extras=ROUTE_X))
 
     assert view.publication.verified is True
-    assert any("recusou a gravação do contrato" in a and "Swagger inválido" in a for a in view.warnings)
+    [warning] = [a for a in view.warnings if "recusou a gravação do contrato" in a]
+    assert "Swagger inválido" in warning
+    assert view.documentation.status == "not_updated"
+    assert view.documentation.reason == warning

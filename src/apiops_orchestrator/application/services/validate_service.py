@@ -14,10 +14,10 @@ Recebe **ports**, nunca adapters concretos, espelhando o `CompletenessService`.
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
     ApiInaccessibleError,
@@ -51,8 +51,10 @@ from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
 from apiops_orchestrator.domain.models.validate_view import (
     SCHEMA_SEN_VALIDATE_V1,
+    DOCUMENTATION_SCOPE,
     REPOSITORY_SCOPE,
     SEVERITY_WARNING,
+    DocumentationResult,
     Finding,
     RequiredAttribute,
     CompletenessSummary,
@@ -113,11 +115,8 @@ def _only_inherits(no: Dict[str, Any]) -> bool:
     return not partition(no.get("interceptors"))[0]
 
 
-def _repository_warnings(warnings: List[str]) -> List[Finding]:
-    return [
-        Finding(severity=SEVERITY_WARNING, scope=REPOSITORY_SCOPE, message=warning)
-        for warning in warnings
-    ]
+def _repository_warnings(warnings: Sequence[str], scope: str = REPOSITORY_SCOPE) -> List[Finding]:
+    return [Finding(severity=SEVERITY_WARNING, scope=scope, message=warning) for warning in warnings]
 
 
 @dataclass
@@ -216,7 +215,6 @@ class ValidateService:
         # da gravação, e não se repete no resultado. Na esteira não há pergunta.
         if self._settings.pipeline_mode:
             findings.extend(_repository_warnings(assembled.warnings))
-        findings.extend(_repository_warnings(contract_warnings))
 
         step("Verificando a governança")
         precheck = self._governance.evaluate(draft, spec.get("apiTags"))
@@ -246,18 +244,31 @@ class ValidateService:
             )
 
         prepared = self._contract.prepare(revision["id"], contract, step)
-        if self._settings.pipeline_mode:
-            findings.extend(_repository_warnings(prepared.warnings))
+        # Short descriptions go only to the confirmation: after the write, the
+        # completeness suggestions already list them. What leaves the
+        # documentation goes to the confirmation in local and to the output in
+        # the pipeline, where there is no confirmation.
+        reported = list(prepared.warnings) if self._settings.pipeline_mode else []
+        findings.extend(_repository_warnings(reported, DOCUMENTATION_SCOPE))
 
-        written = self._e3_publish(assembled, revision, confirm, step, prepared)
+        written = self._e3_publish(
+            assembled,
+            revision,
+            confirm,
+            step,
+            prepared,
+            list(contract_warnings) + list(prepared.warnings),
+        )
         publication = written.result if written else PublicationResult(attempted=False)
 
+        documentation = DocumentationResult(warnings=reported)
         if written is not None:
-            findings.extend(
-                _repository_warnings(
-                    self._contract.write(revision["id"], prepared, written.published, step)
-                )
+            documentation = replace(
+                self._contract.write(revision["id"], prepared, written.published, step),
+                warnings=reported,
             )
+            if documentation.reason and documentation.reason not in reported:
+                findings.extend(_repository_warnings([documentation.reason], DOCUMENTATION_SCOPE))
             step("Calculando o quality score")
             completeness = self._e4_completeness(revision["id"])
         else:
@@ -294,6 +305,7 @@ class ValidateService:
                 blocked=False,
             ),
             publication=publication,
+            documentation=documentation,
             completeness=completeness,
         )
 
@@ -372,6 +384,7 @@ class ValidateService:
         confirm: Callable[[str], bool],
         step: Callable[[str], None] = lambda _: None,
         prepared: Optional[PreparedContract] = None,
+        documentation_warnings: Sequence[str] = (),
     ) -> Optional[WrittenRevision]:
         # Guarda 2 (D-9): em local a escrita é ato deliberado do dev.
         #
@@ -393,7 +406,7 @@ class ValidateService:
                 f"(id {revision['id']}).\n"
                 f"{contract_line}"
                 "Nenhum ambiente recebe deploy, e nada é promovido.",
-                list(assembled.warnings) + list(prepared.warnings if prepared else []),
+                list(assembled.warnings) + list(documentation_warnings),
             )
             if not confirm(question):
                 return None

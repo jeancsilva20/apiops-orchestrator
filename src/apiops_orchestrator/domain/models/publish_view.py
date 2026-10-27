@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from apiops_orchestrator.domain.models.deploy_model import DeployEnvironment
 from apiops_orchestrator.domain.models.validate_view import (
+    DocumentationResult,
     RequiredAttribute,
     GovernanceResult,
     PublicationResult,
@@ -58,6 +59,7 @@ class PublishView:
     revision: ValidateRevision
     governance: GovernanceResult = field(default_factory=GovernanceResult)
     publication: PublicationResult = field(default_factory=PublicationResult)
+    documentation: DocumentationResult = field(default_factory=DocumentationResult)
     # Avisos da montagem do payload e do pré-check: dizem o que vai mudar na
     # plataforma, ou quando o veredito da governança ficou para a gravação.
     warnings: List[str] = field(default_factory=list)
@@ -93,5 +95,6 @@ class PublishView:
                 "verified": self.publication.verified,
                 "divergences": list(self.publication.divergences),
             },
+            "documentation": self.documentation.to_document(),
             "warnings": list(self.warnings),
         })

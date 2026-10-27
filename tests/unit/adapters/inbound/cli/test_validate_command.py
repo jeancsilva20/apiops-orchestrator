@@ -28,12 +28,16 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
     ValidateError,
 )
 from apiops_orchestrator.domain.models.validate_view import (
+    DOCUMENTATION_SCOPE,
+    DOCUMENTATION_UNCHANGED,
+    DOCUMENTATION_UPDATED,
     SCHEMA_SEN_VALIDATE_V1,
     SEVERITY_INFO,
     SEVERITY_WARNING,
     Finding,
     RequiredAttribute,
     CompletenessSummary,
+    DocumentationResult,
     GovernanceResult,
     PublicationResult,
     RulerSnapshot,
@@ -157,6 +161,7 @@ def test_json_conforme_ao_contrato_v1():
         "findings",
         "governance",
         "publication",
+        "documentation",
         "completeness",
     ]
 
@@ -518,3 +523,36 @@ def test_responder_n_encerra_sem_relatorio():
     assert "Validação cancelada. Nada foi gravado." in output
     assert "Conformidade" not in output and "Validação  " not in output
     assert "sobrescreve a regua" not in output
+
+
+def test_text_shows_the_documentation_warnings_only_in_their_block():
+    short = "Estas descrições têm menos caracteres que o mínimo"
+    view = _view(
+        findings=[Finding(SEVERITY_WARNING, DOCUMENTATION_SCOPE, short)],
+        documentation=DocumentationResult(status=DOCUMENTATION_UPDATED, warnings=[short]),
+    )
+
+    resultado = runner.invoke(app, ["sen", "validate"], obj=_ctx(_ServicoFake(resultado=view)))
+    output = " ".join(resultado.output.split())
+
+    assert resultado.exit_code == 0
+    assert "Documentação atualizada sim" in output
+    assert output.count("menos caracteres que o mínimo") == 1
+    assert "O que vai mudar no Manager" not in output
+
+
+def test_text_reports_unchanged_documentation():
+    view = _view(documentation=DocumentationResult(status=DOCUMENTATION_UNCHANGED))
+
+    resultado = runner.invoke(app, ["sen", "validate"], obj=_ctx(_ServicoFake(resultado=view)))
+    output = " ".join(resultado.output.split())
+
+    assert "Documentação atualizada sem mudança" in output
+
+
+def test_json_carries_the_documentation_status():
+    view = _view(documentation=DocumentationResult(status=DOCUMENTATION_UNCHANGED))
+
+    resultado = runner.invoke(app, ["sen", "validate", "-o", "json"], obj=_ctx(_ServicoFake(resultado=view)))
+
+    assert json.loads(resultado.output)["documentation"] == {"status": "unchanged", "reason": None}

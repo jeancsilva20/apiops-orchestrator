@@ -282,7 +282,7 @@ def _contract_failures(view):
     markers = ("não foi gravado", "não é o que foi enviado", "recusou", "Não consegui", "não respondeu")
     return [
         a.message for a in view.findings
-        if a.scope == "repositório" and any(m in a.message for m in markers)
+        if a.scope in ("repositório", "documentação") and any(m in a.message for m in markers)
     ]
 
 
@@ -401,7 +401,7 @@ def test_6_same_route_without_documentation_lowers_the_completeness(
     assert _contract_failures(view) == []
     for removed in ("requestBody", "operationId", "resposta 201", "resposta 400"):
         assert f"POST {DOCUMENTED_PATH} · {removed}" in questions[0]
-    assert any("abaixo do mínimo" in a.message for a in view.findings)
+    assert "abaixo do mínimo" in questions[0]
     print(f"\n[completeness] undocumented new route {view.completeness.score} · documented {state['documented']}")
     assert view.completeness.score < state["documented"]
 

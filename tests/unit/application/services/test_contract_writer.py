@@ -13,6 +13,11 @@ from apiops_orchestrator.application.services.contract_writer import (
     ContractWriter,
     PreparedContract,
 )
+from apiops_orchestrator.domain.models.validate_view import (
+    DOCUMENTATION_NOT_UPDATED,
+    DOCUMENTATION_UNCHANGED,
+    DOCUMENTATION_UPDATED,
+)
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiTransportRejectedError,
     ManagerApiTransportUnavailableError,
@@ -153,29 +158,60 @@ def test_prepare_stops_the_contract_when_the_swagger_cannot_be_read():
 
 def test_nothing_is_written_when_prepare_stopped_the_contract():
     manager = FakeManager(_swagger())
+    prepared = PreparedContract(contract=_contract(), write=False, warnings=[SWAGGER_2_WARNING])
 
-    assert ContractWriter(manager, command="validate").write(REVISION_ID, _prepared(write=False), REVISION) == []
+    result = ContractWriter(manager, command="validate").write(REVISION_ID, prepared, REVISION)
+
+    assert (result.status, result.reason) == (DOCUMENTATION_NOT_UPDATED, SWAGGER_2_WARNING)
     assert manager.calls == []
 
 
 def test_unchanged_contract_is_not_written():
     manager = FakeManager(_swagger())
 
-    warnings = ContractWriter(manager, command="validate").write(REVISION_ID, _prepared(), REVISION)
+    result = ContractWriter(manager, command="validate").write(REVISION_ID, _prepared(), REVISION)
 
-    assert warnings == []
+    assert (result.status, result.reason) == (DOCUMENTATION_UNCHANGED, None)
     assert manager.calls == ["get_revision_swagger"]
+
+
+def test_documentation_changed_by_the_revision_write_is_updated_without_a_swagger_write():
+    before = _swagger(summary="Antigo", description="Antigo")
+    manager = FakeManager(_swagger(description="Consulta"))
+    prepared = PreparedContract(contract=_contract(), write=True, before=before)
+
+    result = ContractWriter(manager, command="validate").write(REVISION_ID, prepared, REVISION)
+
+    assert (result.status, result.reason) == (DOCUMENTATION_UPDATED, None)
+    assert manager.calls == ["get_revision_swagger"]
+
+
+def test_recreated_interceptors_alone_do_not_count_as_documentation():
+    before = _swagger(**{"x-interceptors": {"1": {"x-interceptor-type": "LOG"}}})
+    manager = FakeManager(_swagger(**{"x-interceptors": {"7": {"x-interceptor-type": "LOG"}}}))
+    prepared = PreparedContract(contract=_contract(), write=True, before=before)
+
+    result = ContractWriter(manager, command="validate").write(REVISION_ID, prepared, REVISION)
+
+    assert result.status == DOCUMENTATION_UNCHANGED
+
+
+def test_prepare_keeps_the_swagger_read_before_the_writes():
+    current = _swagger()
+    prepared = ContractWriter(FakeManager(current), command="validate").prepare(REVISION_ID, _contract())
+
+    assert prepared.before == current
 
 
 def test_changed_contract_is_written_and_verified():
     manager = FakeManager(_swagger())
     steps = []
 
-    warnings = ContractWriter(manager, command="validate").write(
+    result = ContractWriter(manager, command="validate").write(
         REVISION_ID, _prepared(_contract(operationId="consultar")), REVISION, steps.append
     )
 
-    assert warnings == []
+    assert (result.status, result.reason) == (DOCUMENTATION_UPDATED, None)
     assert manager.calls == [
         "get_revision_swagger",
         "update_revision_swagger",
@@ -187,55 +223,75 @@ def test_changed_contract_is_written_and_verified():
     assert steps == ["Montando o contrato", "Gravando o contrato no Manager", "Conferindo o contrato gravado"]
 
 
-def test_rejection_with_reasons_becomes_a_warning():
+def test_rejection_with_reasons_is_why_the_documentation_was_not_updated():
     rejection = ManagerApiTransportRejectedError(400, "Invalid Request", messages=["Schema inválido"])
     manager = FakeManager(_swagger(), put_error=rejection)
 
-    [warning] = ContractWriter(manager, command="publish").write(
+    result = ContractWriter(manager, command="publish").write(
         REVISION_ID, _prepared(_contract(operationId="consultar")), REVISION
     )
 
-    assert "recusou a gravação do contrato" in warning and "Schema inválido" in warning
-    assert "O fluxo foi gravado normalmente" in warning
+    assert result.status == DOCUMENTATION_NOT_UPDATED
+    assert "recusou a gravação do contrato" in result.reason and "Schema inválido" in result.reason
+    assert "O fluxo foi gravado normalmente" in result.reason
 
 
-def test_unavailable_platform_becomes_a_warning():
+def test_unavailable_platform_is_why_the_documentation_was_not_updated():
     manager = FakeManager(_swagger(), put_error=ManagerApiTransportUnavailableError("502"))
 
-    [warning] = ContractWriter(manager, command="publish").write(
+    result = ContractWriter(manager, command="publish").write(
         REVISION_ID, _prepared(_contract(operationId="consultar")), REVISION
     )
 
-    assert "não respondeu à gravação do contrato" in warning
+    assert result.status == DOCUMENTATION_NOT_UPDATED
+    assert "não respondeu à gravação do contrato" in result.reason
 
 
 def test_missing_route_stops_the_write():
     manager = FakeManager(_swagger())
     contract = RepositoryContract(operations={("GET", "/t"): {}, ("POST", "/t"): {"responses": OK}})
 
-    [warning] = ContractWriter(manager, command="validate").write(REVISION_ID, _prepared(contract), REVISION)
+    result = ContractWriter(manager, command="validate").write(REVISION_ID, _prepared(contract), REVISION)
 
-    assert "POST /t" in warning
+    assert result.status == DOCUMENTATION_NOT_UPDATED
+    assert "POST /t" in result.reason
     assert "update_revision_swagger" not in manager.calls
 
 
-def test_swagger_written_differently_becomes_a_warning():
+def test_swagger_written_differently_is_updated_with_the_divergence():
     written = _swagger(operationId="outro")
     manager = FakeManager(_swagger(), written_override=written)
 
-    [warning] = ContractWriter(manager, command="validate").write(
+    result = ContractWriter(manager, command="validate").write(
         REVISION_ID, _prepared(_contract(operationId="consultar")), REVISION
     )
 
-    assert "não é o que foi enviado" in warning and "GET /t · operationId" in warning
+    assert result.status == DOCUMENTATION_UPDATED
+    assert "não é o que foi enviado" in result.reason and "GET /t · operationId" in result.reason
 
 
-def test_runtime_changed_by_the_swagger_write_becomes_a_warning():
+def test_runtime_changed_by_the_swagger_write_is_updated_with_the_divergence():
     changed = dict(REVISION, workflowStageId=999)
     manager = FakeManager(_swagger(), revision=changed)
 
-    [warning] = ContractWriter(manager, command="validate").write(
+    result = ContractWriter(manager, command="validate").write(
         REVISION_ID, _prepared(_contract(operationId="consultar")), REVISION
     )
 
-    assert "`workflowStageId` era 420 e ficou 999" in warning
+    assert result.status == DOCUMENTATION_UPDATED
+    assert "`workflowStageId` era 420 e ficou 999" in result.reason
+
+
+def test_written_contract_that_cannot_be_read_back_is_updated_but_not_verified():
+    class RereadFails(FakeManager):
+        def get_revision(self, revision_id):
+            raise ManagerApiTransportUnavailableError("502")
+
+    manager = RereadFails(_swagger())
+
+    result = ContractWriter(manager, command="validate").write(
+        REVISION_ID, _prepared(_contract(operationId="consultar")), REVISION
+    )
+
+    assert result.status == DOCUMENTATION_UPDATED
+    assert "não consegui relê-lo para conferir" in result.reason

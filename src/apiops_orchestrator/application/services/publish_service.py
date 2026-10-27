@@ -20,6 +20,7 @@ esteira (V-24 §6).
 """
 
 import logging
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -123,7 +124,9 @@ class PublishService:
 
         step("Lendo o repositório")
         loaded = self._writer.load(repo_path)
-        contract, contract_warnings = self._contract.validate(loaded)
+        # Short descriptions are not repeated here: the completeness suggestions
+        # of the pipeline already list them.
+        contract, _ = self._contract.validate(loaded)
         spec = loaded.basic_info.get("spec") or {}
 
         step("Consultando a API no Manager")
@@ -164,7 +167,7 @@ class PublishService:
             )
 
         prepared = self._contract.prepare(revision["id"], contract, step)
-        warnings += contract_warnings + prepared.warnings
+        warnings += prepared.warnings
 
         written = self._writer.write_and_verify(
             revision,
@@ -173,7 +176,12 @@ class PublishService:
             write_label=f"Gravando a revisão {number} no Manager",
             rejection_target=f"da revisão {number}",
         )
-        warnings += self._contract.write(revision["id"], prepared, written.published, step)
+        documentation = replace(
+            self._contract.write(revision["id"], prepared, written.published, step),
+            warnings=list(prepared.warnings),
+        )
+        if documentation.reason and documentation.reason not in warnings:
+            warnings.append(documentation.reason)
         publication = written.result
 
         return PublishView(
@@ -200,6 +208,7 @@ class PublishService:
                 blocked=False,
             ),
             publication=publication,
+            documentation=documentation,
             warnings=warnings,
             deployments=_no_ar(api, revision),
         )
