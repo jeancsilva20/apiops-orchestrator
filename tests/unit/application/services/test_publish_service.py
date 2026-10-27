@@ -91,6 +91,12 @@ ALL_YAML = "destination:\n  url: https://backend\n"
 # Smallest contract an operation file declares; `_swagger_of` mirrors it.
 MINIMAL_CONTRACT = "summary: Rota de teste\nresponses:\n  '200':\n    description: Consulta realizada\n"
 
+# Added when a test declares no resource: a repository needs one (I-2).
+DEFAULT_RESOURCE = {
+    "resources/x/resource.yaml": 'name: "X"\n',
+    "resources/x/get_x.yaml": "path: /x\n" + MINIMAL_CONTRACT,
+}
+
 
 def _swagger_of(revision):
     """Revision swagger already holding `MINIMAL_CONTRACT` in every route."""
@@ -190,7 +196,10 @@ def _repo(tmp_path, basic_info=BASIC_INFO, extras=None):
         textwrap.dedent(basic_info), encoding="utf-8"
     )
     (tmp_path / "all.yaml").write_text(ALL_YAML, encoding="utf-8")
-    for file_path, conteudo in (extras or {}).items():
+    extras = dict(extras or {})
+    if not any(p.startswith("resources/") for p in extras):
+        extras.update(DEFAULT_RESOURCE)
+    for file_path, conteudo in extras.items():
         destination = tmp_path / file_path
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(textwrap.dedent(conteudo), encoding="utf-8")
@@ -685,3 +694,13 @@ def test_rejected_swagger_keeps_the_published_flow_and_warns(tmp_path):
     assert "Swagger inválido" in warning
     assert view.documentation.status == "not_updated"
     assert view.documentation.reason == warning
+
+
+def test_unread_file_is_warned_in_the_result(tmp_path):
+    extras = dict(DEFAULT_RESOURCE)
+    extras["resources/x/tarefas.yaml"] = "path: /tarefas\n"
+
+    view = _servico(ManagerFake()).publish(_repo(tmp_path, extras=extras))
+
+    assert view.warnings[0].startswith("O comando não lê o arquivo abaixo")
+    assert "`resources/x/tarefas.yaml` não é considerado operação" in view.warnings[0]

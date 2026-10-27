@@ -150,7 +150,7 @@ class PublishService:
 
         step("Verificando a governança")
         precheck = self._governance.evaluate(target, spec.get("apiTags"))
-        warnings = list(assembled.warnings)
+        warnings = self._writer.unread_files_warnings(loaded) + list(assembled.warnings)
         warnings += [f"Governança: {warning}" for warning in precheck.warnings]
         # Antes do bloqueio: com tag inválida o Manager aceitaria e apagaria
         # todas as `apiTags` — é o erro mais destrutivo, e é do repositório.

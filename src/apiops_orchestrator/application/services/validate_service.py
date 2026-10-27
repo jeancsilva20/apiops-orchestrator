@@ -182,6 +182,7 @@ class ValidateService:
 
         step("Lendo o repositório")
         loaded = self._writer.load(repo_path)
+        unread_warnings = self._writer.unread_files_warnings(loaded)
         contract, contract_warnings = self._contract.validate(loaded)
         spec = loaded.basic_info.get("spec") or {}
 
@@ -214,7 +215,7 @@ class ValidateService:
         # Em local, o que vai sair do Manager é mostrado na confirmação, antes
         # da gravação, e não se repete no resultado. Na esteira não há pergunta.
         if self._settings.pipeline_mode:
-            findings.extend(_repository_warnings(assembled.warnings))
+            findings.extend(_repository_warnings(unread_warnings + list(assembled.warnings)))
 
         step("Verificando a governança")
         precheck = self._governance.evaluate(draft, spec.get("apiTags"))
@@ -258,6 +259,7 @@ class ValidateService:
             step,
             prepared,
             list(contract_warnings) + list(prepared.warnings),
+            repository_warnings=unread_warnings,
         )
         publication = written.result if written else PublicationResult(attempted=False)
 
@@ -385,6 +387,7 @@ class ValidateService:
         step: Callable[[str], None] = lambda _: None,
         prepared: Optional[PreparedContract] = None,
         documentation_warnings: Sequence[str] = (),
+        repository_warnings: Sequence[str] = (),
     ) -> Optional[WrittenRevision]:
         # Guarda 2 (D-9): em local a escrita é ato deliberado do dev.
         #
@@ -406,7 +409,9 @@ class ValidateService:
                 f"(id {revision['id']}).\n"
                 f"{contract_line}"
                 "Nenhum ambiente recebe deploy, e nada é promovido.",
-                list(assembled.warnings) + list(documentation_warnings),
+                list(repository_warnings)
+                + list(assembled.warnings)
+                + list(documentation_warnings),
             )
             if not confirm(question):
                 return None

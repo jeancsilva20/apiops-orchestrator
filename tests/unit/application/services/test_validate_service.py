@@ -83,6 +83,12 @@ ALL_YAML = "destination:\n  url: https://backend\n"
 # Smallest contract an operation file declares; `_swagger_of` mirrors it.
 MINIMAL_CONTRACT = "summary: Rota de teste\nresponses:\n  '200':\n    description: Consulta realizada\n"
 
+# Added when a test declares no resource: a repository needs one (I-2).
+DEFAULT_RESOURCE = {
+    "resources/x/resource.yaml": 'name: "X"\n',
+    "resources/x/get_x.yaml": "path: /x\n" + MINIMAL_CONTRACT,
+}
+
 
 def _swagger_of(revision):
     """Revision swagger already holding `MINIMAL_CONTRACT` in every route."""
@@ -177,7 +183,10 @@ def _repo(tmp_path, basic_info=BASIC_INFO, extras=None):
         textwrap.dedent(basic_info), encoding="utf-8"
     )
     (tmp_path / "all.yaml").write_text(ALL_YAML, encoding="utf-8")
-    for file_path, conteudo in (extras or {}).items():
+    extras = dict(extras or {})
+    if not any(p.startswith("resources/") for p in extras):
+        extras.update(DEFAULT_RESOURCE)
+    for file_path, conteudo in extras.items():
         destination = tmp_path / file_path
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(textwrap.dedent(conteudo), encoding="utf-8")
@@ -1126,7 +1135,17 @@ def test_written_contract_is_reported_as_updated(tmp_path):
 
 
 def test_contract_equal_to_the_manager_is_reported_as_unchanged(tmp_path):
-    manager = ManagerFake()
+    draft = dict(
+        DRAFT,
+        resources=[
+            {
+                "name": "X",
+                "interceptors": [],
+                "operations": [{"method": "GET", "path": "/x", "interceptors": []}],
+            }
+        ],
+    )
+    manager = ManagerFake(draft=draft)
 
     view = _servico(manager).validate(_repo(tmp_path), confirm=SIM)
 
@@ -1141,3 +1160,38 @@ def test_route_documented_by_the_flow_write_is_reported_as_updated(tmp_path):
 
     assert "update_revision_swagger" not in manager.chamadas
     assert view.to_document()["documentation"] == {"status": "updated", "reason": None}
+
+
+# --- files the command does not read -----------------------------------------
+
+ROUTE_X_WITH_UNREAD_FILE = {
+    "resources/x/resource.yaml": 'name: "X"\n',
+    "resources/x/get_x.yaml": "path: /x\n" + MINIMAL_CONTRACT,
+    "resources/x/tarefas.yaml": "path: /tarefas\n",
+}
+
+
+def test_unread_file_is_warned_in_the_confirmation_before_the_write(tmp_path):
+    questions = []
+    manager = ManagerFake()
+
+    view = _servico(manager).validate(
+        _repo(tmp_path, extras=ROUTE_X_WITH_UNREAD_FILE),
+        confirm=lambda q: questions.append(q) or False,
+    )
+
+    [question] = questions
+    assert "Atenção:\n\nO comando não lê o arquivo abaixo" in question
+    assert "`resources/x/tarefas.yaml` não é considerado operação" in question
+    assert "update_revision" not in manager.chamadas
+    assert all("tarefas.yaml" not in a.message for a in view.findings)
+
+
+def test_unread_file_is_a_repository_finding_in_the_pipeline(tmp_path):
+    view = _servico(ManagerFake(), mode="pipeline").validate(
+        _repo(tmp_path, extras=ROUTE_X_WITH_UNREAD_FILE), confirm=SIM
+    )
+
+    [warning] = [a for a in view.findings if "tarefas.yaml" in a.message]
+    assert warning.scope == "repositório"
+    assert warning.severity == "WARNING"

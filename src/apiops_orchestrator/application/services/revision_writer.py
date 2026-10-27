@@ -14,6 +14,7 @@ Recebe **ports**, nunca adapters concretos.
 """
 
 import logging
+import posixpath
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple
@@ -23,9 +24,11 @@ from apiops_orchestrator.application.exceptions.manager_failure_messages import 
 )
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
     UnreadableFileError,
+    EmptyResourceError,
     GovernanceBlockedError,
     IdentityMismatchError,
     InvalidLayoutError,
+    NoResourceError,
     PublicationDivergenceError,
     PublicationRejectedError,
     DuplicateRouteError,
@@ -49,12 +52,41 @@ from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiTransportRejectedError,
 )
 from apiops_orchestrator.domain.services import revision_payload
+from apiops_orchestrator.domain.services.repo_layout import RESOURCES_FOLDER
 
 logger = logging.getLogger(__name__)
 
 # Recusas da gravação cujo motivo da plataforma orienta a correção do repositório.
 # As demais (sessão, acesso, tamanho, limite de taxa) usam a mensagem da família.
 _STATUS_WITH_REASON = frozenset({400, 409, 412, 422})
+
+
+def _hidden(file_path: str) -> bool:
+    """Path under a dot folder or dot file, such as `.github/` or `.gitlab-ci.yml`."""
+    return any(part.startswith(".") for part in file_path.split("/"))
+
+
+def _unread_reason(file_path: str) -> str:
+    """Why a `.yaml` left out by the discovery is not read."""
+    parts = file_path.split("/")
+    if parts[0] != RESOURCES_FOLDER:
+        return "não faz parte da estrutura da API"
+    if len(parts) == 2:
+        return (
+            "está solto em `resources/`, e cada recurso é uma pasta com o "
+            "`resource.yaml` e as operações"
+        )
+    if len(parts) > 3:
+        return f"está numa subpasta, e as operações ficam direto em `resources/{parts[1]}/`"
+    stem = posixpath.splitext(parts[2])[0]
+    return (
+        "não é considerado operação, porque o nome não começa com o método HTTP. "
+        f"Use `<método>_<path>.yaml`, como `get_{stem}.yaml`"
+    )
+
+
+def _unread_line(file_path: str, shown: str) -> str:
+    return f"`{shown}` {_unread_reason(file_path)}."
 
 
 @dataclass(frozen=True)
@@ -105,8 +137,46 @@ class RevisionWriter:
         if loaded.unreadable:
             file_path, _, reason = loaded.unreadable[0].partition(": ")
             raise UnreadableFileError(file_path, reason)
+        self._ensure_operations(loaded)
         self._ensure_no_duplicate_route(loaded)
         return loaded
+
+    @staticmethod
+    def _ensure_operations(loaded: LoadedRepository) -> None:
+        """I-2 and I-4: the API and each resource need at least one operation."""
+        if not loaded.resources:
+            raise NoResourceError(
+                [
+                    _unread_line(p, p)
+                    for p in loaded.ignored
+                    if p.startswith(RESOURCES_FOLDER + "/")
+                ]
+            )
+        empty: Dict[str, List[str]] = {}
+        for resource in loaded.resources:
+            if resource.operations:
+                continue
+            folder = posixpath.dirname(resource.file_path)
+            empty[folder] = [
+                _unread_line(p, p[len(folder) + 1 :])
+                for p in loaded.ignored
+                if p.startswith(folder + "/")
+            ]
+        if empty:
+            raise EmptyResourceError(empty)
+
+    @staticmethod
+    def unread_files_warnings(loaded: LoadedRepository) -> List[str]:
+        """Warning listing the `.yaml` files the command does not read, hidden ones aside."""
+        unread = [p for p in loaded.ignored if not _hidden(p)]
+        if not unread:
+            return []
+        opening = (
+            "O comando não lê o arquivo abaixo, e ele fica fora da gravação:"
+            if len(unread) == 1
+            else "O comando não lê os arquivos abaixo, e eles ficam fora da gravação:"
+        )
+        return [opening + "\n" + "\n".join(f"  - {_unread_line(p, p)}" for p in unread)]
 
     @staticmethod
     def _ensure_no_duplicate_route(loaded: LoadedRepository) -> None:

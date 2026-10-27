@@ -166,6 +166,44 @@ class DuplicateRouteError(ValidateError):
         self.repeated = repeated
 
 
+class NoResourceError(ValidateError):
+    """The repository has no resource under `resources/` (I-2)."""
+
+    def __init__(self, unread: List[str]):
+        listing = "".join(f"  - {line}\n" for line in unread)
+        super().__init__(
+            "O repositório não tem nenhum recurso em `resources/`.\n\n"
+            + (listing + "\n" if listing else "")
+            + "Cada recurso é uma pasta em `resources/`, com o `resource.yaml` e ao "
+            "menos um arquivo `<método>_<path>.yaml`. Uma API sem operação não pode "
+            "ser gravada no Manager. O comando parou antes de acessar o Manager."
+        )
+        self.unread = unread
+
+
+class EmptyResourceError(ValidateError):
+    """A resource folder has no operation file (I-4)."""
+
+    def __init__(self, empty: Dict[str, List[str]]):
+        lines: List[str] = []
+        for folder, unread in empty.items():
+            lines.append(f"`{folder}`")
+            lines.extend(f"  - {line}" for line in unread)
+        opening = (
+            "A pasta abaixo não tem nenhuma operação:"
+            if len(empty) == 1
+            else "As pastas abaixo não têm nenhuma operação:"
+        )
+        super().__init__(
+            opening
+            + "\n\n"
+            + "\n".join(lines)
+            + "\n\nTodo recurso precisa de ao menos um arquivo `<método>_<path>.yaml`. "
+            "O comando parou antes de acessar o Manager."
+        )
+        self.empty = empty
+
+
 class CustomNotFoundError(ValidateError):
     """O repositório referencia um `Custom` que não existe no tenant (W-2).
 
