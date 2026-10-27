@@ -206,9 +206,22 @@ def removed_items(current: Dict[str, Any], contract: RepositoryContract) -> List
             if name not in declared:
                 items.append(f"components.{section}.{name}")
 
+    # A path-item parameter moves into each operation on write: it only leaves a
+    # repository route that does not declare it. A route only in the Manager is
+    # removed by the flow write, which already warns about it.
     for path, item in (current.get("paths") or {}).items():
-        if isinstance(item, dict) and item.get("parameters"):
-            items.append(f"{path} · parameters do path")
+        if not isinstance(item, dict):
+            continue
+        shared = [p for p in item.get("parameters") or [] if isinstance(p, dict) and "$ref" not in p]
+        for route, fields in contract.operations.items():
+            if route[1] != path:
+                continue
+            declared = {parameter_key(p) for p in fields.get("parameters") or []}
+            for parameter in shared:
+                if parameter_key(parameter) not in declared:
+                    items.append(
+                        f"{route_label(route)} · parâmetro {parameter.get('name')} ({parameter.get('in')})"
+                    )
 
     for route, operation in document_operations(current):
         fields = contract.operations.get(route)
@@ -229,7 +242,8 @@ def removed_items(current: Dict[str, Any], contract: RepositoryContract) -> List
                     items.append(
                         f"{label} · parâmetro {parameter.get('name')} ({parameter.get('in')})"
                     )
-    return items
+    # The same parameter may sit both in the path item and in the operation.
+    return list(dict.fromkeys(items))
 
 
 # --- comparison --------------------------------------------------------------

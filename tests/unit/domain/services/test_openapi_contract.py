@@ -279,7 +279,7 @@ def test_removed_items_lists_what_the_repository_does_not_declare():
         "info.contact",
         "tags",
         "components.schemas.Legado",
-        "/tarefas/{id} · parameters do path",
+        "GET /tarefas/{id} · parâmetro id (path)",
         "GET /tarefas/{id} · operationId",
         "GET /tarefas/{id} · resposta 404",
         "GET /tarefas/{id} · parâmetro expand (query)",
@@ -302,6 +302,33 @@ def test_nothing_is_removed_when_the_repository_declares_it_all():
     del current["paths"]["/tarefas/{id}"]["parameters"]
 
     assert oc.removed_items(current, contract) == []
+
+
+def test_path_item_parameter_declared_in_the_route_does_not_leave():
+    contract = _contract(parameters=[{"name": "id", "in": "path", "required": True}, {"name": "expand", "in": "query"}])
+
+    items = oc.removed_items(_current(), contract)
+
+    assert all("parâmetro id" not in item for item in items)
+
+
+def test_path_item_parameter_of_a_route_only_in_the_manager_is_left_to_the_flow_warning():
+    current = _current()
+    current["paths"]["/tarefas/{id}"]["delete"] = {"responses": {"204": {"description": "Removida"}}}
+    contract = _contract(parameters=[{"name": "id", "in": "path", "required": True}, {"name": "expand", "in": "query"}])
+
+    items = oc.removed_items(current, contract)
+
+    assert all("DELETE" not in item for item in items)
+
+
+def test_parameter_in_the_path_item_and_in_the_operation_is_listed_once():
+    current = _current()
+    current["paths"]["/tarefas/{id}"]["get"]["parameters"].append({"name": "id", "in": "path", "required": True})
+
+    items = oc.removed_items(current, _contract())
+
+    assert items.count("GET /tarefas/{id} · parâmetro id (path)") == 1
 
 
 # --- comparison --------------------------------------------------------------
