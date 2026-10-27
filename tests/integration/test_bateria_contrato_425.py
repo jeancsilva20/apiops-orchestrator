@@ -401,7 +401,7 @@ def test_6_same_route_without_documentation_lowers_the_completeness(
     assert _contract_failures(view) == []
     for removed in ("requestBody", "operationId", "resposta 201", "resposta 400"):
         assert f"POST {DOCUMENTED_PATH} · {removed}" in questions[0]
-    assert "abaixo do mínimo" in questions[0]
+    assert "menos caracteres que o mínimo" in questions[0]
     print(f"\n[completeness] undocumented new route {view.completeness.score} · documented {state['documented']}")
     assert view.completeness.score < state["documented"]
 

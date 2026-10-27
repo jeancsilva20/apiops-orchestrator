@@ -9,10 +9,11 @@ from apiops_orchestrator.domain.services.openapi_contract_validator import valid
 
 OK = {"200": {"description": "Consulta realizada"}}
 GOOD_SUMMARY = "Consulta de tarefas"
+GOOD_DESCRIPTION = "Consulta as tarefas abertas do time"
 
 
 def _op(method, path, **fields):
-    data = {"path": path, "summary": GOOD_SUMMARY, "responses": OK}
+    data = {"path": path, "description": GOOD_DESCRIPTION, "summary": GOOD_SUMMARY, "responses": OK}
     data.update(fields)
     file = f"resources/t/{method.lower()}_{path.strip('/').replace('/', '_')}.yaml"
     return SimpleNamespace(method=method, data=data, file_path=file)
@@ -347,6 +348,7 @@ def test_short_descriptions_become_a_single_warning():
         "GET",
         "/tarefas",
         summary="",
+        description="",
         responses={"200": {"description": "OK"}},
         parameters=[{"name": "page", "in": "query"}],
     )
@@ -356,13 +358,32 @@ def test_short_descriptions_become_a_single_warning():
     assert result.errors == []
     [warning] = result.warnings
     for item in (
-        "get_tarefas.yaml · summary",
-        "get_tarefas.yaml · responses.200",
-        "get_tarefas.yaml · parameters.page (query)",
-        "components.yaml · schemas.Tarefa",
-        "components.yaml · schemas.Tarefa.properties.id",
+        "get_tarefas.yaml · summary (vazia)",
+        "get_tarefas.yaml · description (vazia)",
+        "get_tarefas.yaml · responses.200 (2 caracteres)",
+        "get_tarefas.yaml · parameters.page (query) (vazia)",
+        "components.yaml · schemas.Tarefa (vazia)",
+        "components.yaml · schemas.Tarefa.properties.id (vazia)",
     ):
         assert item in warning
+
+
+def test_warning_shows_only_the_rules_that_apply_with_their_minimum():
+    operation = _op(
+        "GET",
+        "/tarefas",
+        summary="Lista as tarefas",
+        responses={"200": {"description": "OK"}, "404": {"description": "Nada"}},
+    )
+
+    [warning] = _run(_resource(operation)).warnings
+
+    assert warning.startswith("Estas descrições têm menos caracteres que o mínimo")
+    assert "Descrição de resposta: mínimo de 5 caracteres" in warning
+    assert "get_tarefas.yaml · responses.200 (2 caracteres)" in warning
+    assert "get_tarefas.yaml · responses.404 (4 caracteres)" in warning
+    for other in ("`summary`", "parâmetro", "schema", "propriedade"):
+        assert other not in warning
 
 
 def test_summary_falls_back_to_the_description():
@@ -371,8 +392,76 @@ def test_summary_falls_back_to_the_description():
     assert _run(_resource(operation)).warnings == []
 
 
-def test_enum_schema_warning_explains_the_completeness_rule():
+def test_short_summary_taken_from_the_description_says_so():
+    without_summary = _op("GET", "/saude", description="OK")
+    without_summary.data.pop("summary")
+    short_summary = _op("GET", "/tarefas", summary="Abc")
+
+    [warning] = _run(_resource(without_summary, short_summary)).warnings
+
+    assert "get_saude.yaml · summary (2 caracteres, da description)" in warning
+    assert "get_tarefas.yaml · summary (3 caracteres)" in warning
+    assert "Rota sem `summary` usa a `description` no lugar" in warning
+
+
+def test_route_description_needs_ten_characters_and_empty_counts():
+    short = _op("GET", "/saude", description="ok")
+    empty = _op("GET", "/tarefas", description="")
+    long_enough = _op("GET", "/letras", description="Consulta letras")
+
+    [warning] = _run(_resource(short, empty, long_enough)).warnings
+
+    assert "Descrição da rota: mínimo de 10 caracteres" in warning
+    assert "get_saude.yaml · description (2 caracteres)" in warning
+    assert "get_tarefas.yaml · description (vazia)" in warning
+    assert "get_letras.yaml" not in warning
+
+
+def test_short_declared_summary_has_no_description_note():
+    [warning] = _run(_resource(_op("GET", "/tarefas", summary="Abc"))).warnings
+
+    assert "get_tarefas.yaml · summary (3 caracteres)" in warning
+    assert "da description" not in warning and "usa a `description`" not in warning
+
+
+def test_enum_schema_warning_says_what_it_is_and_what_to_do():
     components = {"schemas": {"Status": {"type": "string", "enum": ["A"], "description": "Status da tarefa"}}}
     [warning] = _run(components=components).warnings
-    assert "schemas.Status sem propriedades" in warning
-    assert "declare o `enum` onde ele é usado" in warning
+    assert warning.startswith("Estes schemas não têm `properties`, que o completeness cobra")
+    assert (
+        "Tipo simples ou lista: declare-o direto na propriedade que o usa, no lugar do `$ref`, e apague o schema"
+        in warning
+    )
+    assert "components.yaml · schemas.Status (texto com `enum`)" in warning
+    assert "Objeto" not in warning
+
+
+def test_schemas_without_properties_are_grouped_by_kind():
+    described = "Schema de teste do laboratório"
+    components = {
+        "schemas": {
+            "Codigo": {"type": "integer", "description": described},
+            "Vazio": {"type": "object", "description": described},
+            "Lista": {"type": "array", "items": {"type": "string"}, "description": described},
+            "Composto": {"allOf": [{"$ref": "#/components/schemas/Vazio"}], "description": described},
+            "Mapa": {"type": "object", "additionalProperties": {"type": "string"}, "description": described},
+        }
+    }
+
+    [warning] = _run(components=components).warnings
+
+    simple, obj, composite = warning.split("\n\n")[1:]
+    assert simple.startswith("Tipo simples ou lista: declare-o direto na propriedade que o usa")
+    assert "schemas.Codigo (número inteiro)" in simple and "schemas.Lista (lista)" in simple
+    assert obj == "Objeto: declare as propriedades, com tipo e descrição\n  - components.yaml · schemas.Vazio"
+    assert composite.startswith("Composição ou mapa: acrescente `properties: {}` ao schema")
+    assert "schemas.Composto (composição)" in composite and "schemas.Mapa (mapa)" in composite
+
+
+def test_short_descriptions_and_schemas_without_properties_are_two_warnings():
+    components = {"schemas": {"Status": {"type": "string", "enum": ["A"], "description": "Curto"}}}
+
+    descriptions, schemas = _run(components=components).warnings
+
+    assert descriptions.startswith("Estas descrições têm menos caracteres que o mínimo")
+    assert schemas.startswith("Estes schemas não têm `properties`")

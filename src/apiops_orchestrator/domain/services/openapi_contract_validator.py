@@ -6,7 +6,7 @@ warnings, which do not.
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterator, List, Optional, Sequence
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from apiops_orchestrator.domain.services.openapi_contract import (
     GOVERNED_SECTIONS,
@@ -40,10 +40,22 @@ _BOUNDS = {"int32": (-(2**31), 2**31 - 1), "int64": (-(2**63), 2**63 - 1)}
 
 # Minimum description lengths the Manager completeness asks for.
 MIN_SUMMARY = 5
+MIN_OPERATION_DESCRIPTION = 10
 MIN_RESPONSE = 5
 MIN_PARAMETER = 5
 MIN_PROPERTY = 9
 MIN_SCHEMA = 10
+
+# Rule, label shown to the user and minimum, in the order the warning lists them.
+_DESCRIPTION_RULES = (
+    ("summary", "`summary`", MIN_SUMMARY),
+    ("description", "Descrição da rota", MIN_OPERATION_DESCRIPTION),
+    ("response", "Descrição de resposta", MIN_RESPONSE),
+    ("parameter", "Descrição de parâmetro", MIN_PARAMETER),
+    ("schema", "Descrição de schema", MIN_SCHEMA),
+    ("property", "Descrição de propriedade", MIN_PROPERTY),
+)
+_MINIMUMS = {rule: minimum for rule, _, minimum in _DESCRIPTION_RULES}
 
 # Maps whose keys are names, not fields: an `x-` key there is not an extension.
 _NAME_MAPS = frozenset({
@@ -65,11 +77,18 @@ class _Validation:
     def __init__(self, components: Dict[str, Any]):
         self.components = components
         self.errors: List[str] = []
-        self.short_descriptions: List[str] = []
+        self.short_descriptions: List[Tuple[str, str, int, bool]] = []
+        self.without_properties: List[Tuple[str, str, str]] = []
 
     def error(self, file: str, position: Optional[str], problem: str) -> None:
         where = f"`{file}`" + (f", em `{position}`" if position else "")
         self.errors.append(f"{where}: {problem}")
+
+    def check_length(self, rule: str, location: str, text: Any, from_description: bool = False) -> None:
+        """Records a description shorter than the minimum of its rule."""
+        length = len(str(text or "").strip())
+        if length < _MINIMUMS[rule]:
+            self.short_descriptions.append((rule, location, length, from_description))
 
 
 def validate(
@@ -115,7 +134,11 @@ def validate(
                 + "; ele precisa ser único na API",
             )
 
-    warnings = [_descriptions_warning(v.short_descriptions)] if v.short_descriptions else []
+    warnings = []
+    if v.short_descriptions:
+        warnings.append(_descriptions_warning(v.short_descriptions))
+    if v.without_properties:
+        warnings.append(_properties_warning(v.without_properties))
     return ValidationResult(errors=v.errors, warnings=warnings)
 
 
@@ -369,8 +392,8 @@ def _response(v: _Validation, file: str, position: str, response: Any) -> None:
     description = response.get("description")
     if not isinstance(description, str):
         v.error(file, position, "toda resposta precisa de `description`")
-    elif len(description.strip()) < MIN_RESPONSE:
-        v.short_descriptions.append(f"{file} · {position}")
+    else:
+        v.check_length("response", f"{file} · {position}", description)
     for name, header in (response.get("headers") or {}).items():
         _header(v, file, f"{position}.headers.{name}", header)
     for media_type, media in (response.get("content") or {}).items():
@@ -431,22 +454,17 @@ def _components(v: _Validation) -> None:
 def _schema_descriptions(v: _Validation, name: str, schema: Any) -> None:
     if not isinstance(schema, dict) or "$ref" in schema:
         return
-    if len(str(schema.get("description") or "").strip()) < MIN_SCHEMA:
-        v.short_descriptions.append(f"{COMPONENTS_FILE} · schemas.{name}")
+    v.check_length("schema", f"{COMPONENTS_FILE} · schemas.{name}", schema.get("description"))
     if "properties" not in schema:
-        note = (
-            " (o completeness acusa schema com `enum` declarado à parte; para não "
-            "perder nota, declare o `enum` onde ele é usado)"
-            if "enum" in schema
-            else ""
-        )
-        v.short_descriptions.append(f"{COMPONENTS_FILE} · schemas.{name} sem propriedades{note}")
+        kind, detail = _schema_kind(schema)
+        v.without_properties.append((kind, f"{COMPONENTS_FILE} · schemas.{name}", detail))
     for prop_name, prop in (schema.get("properties") or {}).items():
         if isinstance(prop, dict) and "$ref" not in prop:
-            if len(str(prop.get("description") or "").strip()) < MIN_PROPERTY:
-                v.short_descriptions.append(
-                    f"{COMPONENTS_FILE} · schemas.{name}.properties.{prop_name}"
-                )
+            v.check_length(
+                "property",
+                f"{COMPONENTS_FILE} · schemas.{name}.properties.{prop_name}",
+                prop.get("description"),
+            )
 
 
 # --- parameters and operations ------------------------------------------------
@@ -486,8 +504,7 @@ def _parameter_list(v: _Validation, file: str, parameters: Any) -> None:
             _example(v, file, f"{position}.examples.{example_name}", example, schema)
         for media_type, media in (parameter.get("content") or {}).items():
             _media(v, file, f"{position}.content.{media_type}", media)
-        if len(str(parameter.get("description") or "").strip()) < MIN_PARAMETER:
-            v.short_descriptions.append(f"{file} · {position}")
+        v.check_length("parameter", f"{file} · {position}", parameter.get("description"))
 
 
 def _resource_parameters(v: _Validation, file: str, parameters: Any, paths: Sequence[str]) -> None:
@@ -580,17 +597,85 @@ def _operation(
 
     _security(v, file, "security", data.get("security"))
 
-    summary = data.get("summary") or data.get("description") or ""
-    if len(str(summary).strip()) < MIN_SUMMARY:
-        v.short_descriptions.append(f"{file} · summary")
+    from_description = not data.get("summary") and bool(data.get("description"))
+    v.check_length(
+        "summary",
+        f"{file} · summary",
+        data.get("summary") or data.get("description"),
+        from_description=from_description,
+    )
+    v.check_length("description", f"{file} · description", data.get("description"))
 
 
-def _descriptions_warning(short: Sequence[str]) -> str:
+def _length(length: int, from_description: bool) -> str:
+    text = "vazia" if length == 0 else f"{length} caractere{'s' if length != 1 else ''}"
+    return f"{text}, da description" if from_description else text
+
+
+def _descriptions_warning(short: Sequence[Tuple[str, str, int, bool]]) -> str:
+    """One warning listing, per rule that applies, the descriptions below its minimum."""
+    blocks = []
+    for rule, label, minimum in _DESCRIPTION_RULES:
+        items = [(location, length, source) for r, location, length, source in short if r == rule]
+        if items:
+            block = f"{label}: mínimo de {minimum} caracteres\n" + "\n".join(
+                f"  - {location} ({_length(length, source)})" for location, length, source in items
+            )
+            if any(source for _, _, source in items):
+                block += (
+                    "\n  Rota sem `summary` usa a `description` no lugar: declare um `summary` "
+                    "ou aumente a `description`."
+                )
+            blocks.append(block)
     return (
-        "Estas descrições do contrato estão abaixo do mínimo que o completeness do "
-        "Manager cobra, e baixam a nota da API:\n"
-        + "\n".join(f"  - {s}" for s in short)
-        + "\n\nO mínimo é: `summary`, descrição de resposta e de parâmetro com mais de 4 "
-        "caracteres; descrição de propriedade com 9 ou mais; descrição de schema com "
-        "mais de 9, e schema com propriedades."
+        "Estas descrições têm menos caracteres que o mínimo e baixam a nota de completeness da API:\n\n"
+        + "\n\n".join(blocks)
+    )
+
+
+_SIMPLE_TYPES = {"string": "texto", "integer": "número inteiro", "number": "número", "boolean": "booleano"}
+
+# Kind, label shown to the user and what to do, in the order the warning lists them.
+_SCHEMA_KINDS = (
+    (
+        "simple",
+        "Tipo simples ou lista",
+        "declare-o direto na propriedade que o usa, no lugar do `$ref`, e apague o schema",
+    ),
+    ("object", "Objeto", "declare as propriedades, com tipo e descrição"),
+    (
+        "composite",
+        "Composição ou mapa",
+        "acrescente `properties: {}` ao schema; o contrato não muda e ele deixa de ser acusado",
+    ),
+)
+
+
+def _schema_kind(schema: Dict[str, Any]) -> Tuple[str, str]:
+    """Kind of a schema without `properties` and how the warning describes it."""
+    if any(key in schema for key in ("allOf", "oneOf", "anyOf")):
+        return "composite", "composição"
+    kind = schema.get("type")
+    if kind == "array":
+        return "simple", "lista"
+    if kind in _SIMPLE_TYPES:
+        return "simple", _SIMPLE_TYPES[kind] + (" com `enum`" if "enum" in schema else "")
+    if "additionalProperties" in schema:
+        return "composite", "mapa"
+    return "object", ""
+
+
+def _properties_warning(without_properties: Sequence[Tuple[str, str, str]]) -> str:
+    """One warning listing, per kind, the schemas without `properties`."""
+    blocks = []
+    for kind, label, action in _SCHEMA_KINDS:
+        items = [(location, detail) for k, location, detail in without_properties if k == kind]
+        if items:
+            blocks.append(
+                f"{label}: {action}\n"
+                + "\n".join(f"  - {location}" + (f" ({detail})" if detail else "") for location, detail in items)
+            )
+    return (
+        "Estes schemas não têm `properties`, que o completeness cobra em todo schema de "
+        "`components`, e baixam a nota da API:\n\n" + "\n\n".join(blocks)
     )
