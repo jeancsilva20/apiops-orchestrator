@@ -65,7 +65,14 @@ def _destination(block: Dict[str, Any]) -> Tuple[Optional[str], Optional[Any]]:
     destination = block.get("destination") or {}
     if not isinstance(destination, dict):
         return None, None
-    return destination.get("url") or None, destination.get("timeout")
+    return destination.get("url") or None, _timeout(destination.get("timeout"))
+
+
+def _timeout(value: Any) -> Any:
+    """The timeout as the Manager keeps it: a number declared in the YAML goes as text."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value)
+    return value
 
 
 def _live(remote: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:

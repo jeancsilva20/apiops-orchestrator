@@ -998,3 +998,29 @@ def test_conferir_acusa_rota_que_o_manager_nao_moveu():
     assert (
         "o recurso Tarefas (rota GET /tarefas) foi enviado mas não está no Manager"
     ) in divergences
+
+# --- timeout -------------------------------------------------------------------
+
+
+def test_timeout_declared_as_number_goes_as_the_text_the_manager_keeps():
+    """The Manager returns `timeout` as text; a number in the YAML failed the E3.1 verification."""
+    operation = _Op("GET", {"path": "/r", "destination": {"url": "", "timeout": 20}})
+    resource = _Rec({"name": "R", "destination": {"url": "https://r", "timeout": 15}}, [operation])
+
+    body = _montar({"destination": {"url": "https://raiz", "timeout": 30}}, [resource]).body
+
+    assert body["timeout"] == "30"
+    assert body["resources"][0]["timeout"] == "15"
+    assert body["resources"][0]["operations"][0]["timeout"] == "20"
+    assert revision_payload.verify(body, json.loads(json.dumps(body))) == []
+
+
+def test_timeout_declared_as_text_or_left_empty_goes_as_declared():
+    operation = _Op("GET", {"path": "/r", "destination": {"url": "", "timeout": ""}})
+    resource = _Rec({"name": "R", "destination": {"url": "", "timeout": "timeout_api"}}, [operation])
+
+    body = _montar({"destination": {"url": "https://raiz"}}, [resource]).body
+
+    assert body["timeout"] is None
+    assert body["resources"][0]["timeout"] == "timeout_api"
+    assert body["resources"][0]["operations"][0]["timeout"] == ""
