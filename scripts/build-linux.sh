@@ -9,7 +9,7 @@
 # monta um venv limpo, empacota com PyInstaller em arquivo único, confere que nenhum
 # segredo entrou no binário e gera, em dist/sen-<versão>/, o sen-<versão>-linux-x64.tar.gz
 # (o `sen`, o instalador e o `.sen.example`) e, ao lado dele, o README do dev
-# (scripts/README-executavel.md), o mesmo do pacote Windows.
+# (scripts/README-executavel.md) com a versão preenchida, o mesmo do pacote Windows.
 set -euo pipefail
 
 PYINSTALLER_VERSAO="6.22.3"
@@ -94,7 +94,8 @@ tr -d '\r' <"${RAIZ}/src/apiops_orchestrator/.sen.example" >"${PACOTE}/.sen.exam
 chmod 755 "${PACOTE}/install.sh"
 chmod 644 "${PACOTE}/.sen.example"
 # O README fica fora do tar.gz: quem baixa precisa lê-lo antes de extrair.
-tr -d '\r' <"${RAIZ}/scripts/README-executavel.md" >"${ENTREGA}/README.md"
+# Sai com a versão no lugar de <versão>, para os comandos funcionarem colados.
+tr -d '\r' <"${RAIZ}/scripts/README-executavel.md" | sed "s/<versão>/${VERSAO}/g" >"${ENTREGA}/README.md"
 TARBALL="${ENTREGA}/${NOME}.tar.gz"
 tar -C "$BUILD" --owner=0 --group=0 -czf "$TARBALL" "$NOME"
 

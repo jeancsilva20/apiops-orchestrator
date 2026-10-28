@@ -8,7 +8,8 @@
     confere que nenhum .sen/.sen_session/.env entrou no binário e gera, em
     dist/sen-<versão>/, o sen-<versão>-windows-x64.zip (o `sen.exe`, o
     instalador, o `install.cmd` e o `.sen.example`) e, ao lado dele, o README
-    do dev (scripts/README-executavel.md), o mesmo do pacote Linux.
+    do dev (scripts/README-executavel.md) com a versão preenchida, o mesmo do
+    pacote Linux.
 
 .EXAMPLE
     .\scripts\build-exe.ps1
@@ -93,7 +94,9 @@ try {
     # O README fica fora do zip: quem baixa precisa lê-lo antes de extrair.
     $entrega = Join-Path $dist "sen-$versao"
     New-Item -ItemType Directory -Force -Path $entrega | Out-Null
-    Copy-Item -Force "scripts\README-executavel.md" (Join-Path $entrega "README.md")
+    # Sai com a versão no lugar de <versão>, para os comandos funcionarem colados.
+    $readme = (Get-Content -Raw -Encoding UTF8 "scripts\README-executavel.md").Replace("<versão>", $versao)
+    [IO.File]::WriteAllText((Join-Path $entrega "README.md"), $readme)
     $zip = Join-Path $entrega "$nome.zip"
     if (Test-Path $zip) { Remove-Item -Force $zip }
     Compress-Archive -Path $pacote -DestinationPath $zip

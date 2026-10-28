@@ -26,6 +26,8 @@ O `sen` fica em `%LOCALAPPDATA%\sen`.
 
 ## Linux
 
+No terminal, na pasta onde o arquivo foi baixado:
+
 ```bash
 tar -xzf sen-<versão>-linux-x64.tar.gz
 ./sen-<versão>-linux-x64/install.sh
