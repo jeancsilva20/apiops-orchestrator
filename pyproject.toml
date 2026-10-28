@@ -5,7 +5,7 @@ name = "apiops-orchestrator"
 # bundle por padrao — configurar o empacotador para copiala (PyInstaller:
 # --copy-metadata apiops-orchestrator) ou selar a versao em arquivo ao lado do binario,
 # caso contrario `sen --version` cai no fallback estatico do cli_version().
-version = "0.1.0"
+version = "0.1.1"
 description = "Ferramenta de linha de comando para automação e boas práticas em ApiOps."
 authors = ["Your Name <you@example.com>"]
 license = "n"

@@ -38,8 +38,8 @@ def test_version_flag():
     """Test the --version flag."""
     result = runner.invoke(app, ["sen", "--version"])
     assert result.exit_code == 0
-    assert "sen 0.1.0" in result.output
-    assert "apiops-orchestrator 0.1.0" in result.output
+    assert "sen 0.1.1" in result.output
+    assert "apiops-orchestrator 0.1.1" in result.output
     assert f"python {platform.python_version()}" in result.output
 
 def test_verbose_flag():
