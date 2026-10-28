@@ -9,6 +9,12 @@ CLI do APIOps Orchestrator. Nada mais precisa estar instalado: baixe o pacote do
 
 O instalador coloca o `sen` na sua pasta de usuário, põe no PATH e pede a credencial: `client_id` e `client_secret`, ou o Basic já pronto. No fim, ele apaga a pasta extraída, que não é mais necessária.
 
+## Release notes
+
+### 0.1.1
+
+- Adição do suporte a campos que atualizam a documentação swagger do Manager.
+
 ## Windows
 
 1. Extraia o zip.
