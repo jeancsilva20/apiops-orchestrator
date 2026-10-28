@@ -28,6 +28,7 @@ from apiops_orchestrator.domain.services import (
     openapi_contract,
     openapi_contract_validator,
     revision_payload,
+    swagger_flow,
 )
 from apiops_orchestrator.domain.models.validate_view import (
     DOCUMENTATION_NOT_UPDATED,
@@ -63,8 +64,8 @@ def _bullets(items: Sequence[str]) -> str:
     return "\n".join(f"  - {item}" for item in items)
 
 
-def _updated(reason: Optional[str]) -> DocumentationResult:
-    return DocumentationResult(status=DOCUMENTATION_UPDATED, reason=reason)
+def _updated(reason: Optional[str], aligned: Sequence[str] = ()) -> DocumentationResult:
+    return DocumentationResult(status=DOCUMENTATION_UPDATED, reason=reason, aligned=list(aligned))
 
 
 def _not_updated(reason: Optional[str]) -> DocumentationResult:
@@ -134,7 +135,10 @@ class ContractWriter:
         approved: Dict[str, Any],
         step: Callable[[str], None] = lambda _: None,
     ) -> DocumentationResult:
-        """Writes the contract over the current swagger and verifies it; says whether it was updated."""
+        """Writes the contract over the current swagger, aligned to the written flow, and verifies it.
+
+        Says whether the documentation was updated and where the swagger was aligned.
+        """
         if not prepared.write:
             return _not_updated(prepared.warnings[0] if prepared.warnings else None)
 
@@ -151,7 +155,29 @@ class ContractWriter:
             )
         if openapi_contract.is_swagger_2(current):
             return _not_updated(SWAGGER_2_WARNING)
-        missing = openapi_contract.missing_routes(current, prepared.contract)
+
+        # The Manager does not always carry into the swagger what the revision
+        # write changed, and the swagger write rebuilds the flow from it.
+        base = current
+        aligned = swagger_flow.differences(current, approved)
+        if aligned:
+            blocked = swagger_flow.unsupported(approved)
+            logger.info(
+                "%s.contract.swagger_out_of_flow total=%d blocked=%d",
+                self._command,
+                len(aligned),
+                len(blocked),
+            )
+            if blocked:
+                return _not_updated(
+                    "O contrato não foi gravado: o swagger da revisão não acompanha o "
+                    "fluxo gravado, e o fluxo usa o que o swagger não carrega:\n"
+                    + _bullets(blocked)
+                    + "\n\nO fluxo foi gravado. Confira a revisão no Manager."
+                )
+            base = swagger_flow.align(current, approved)
+
+        missing = openapi_contract.missing_routes(base, prepared.contract)
         if missing:
             logger.info("%s.contract.missing_routes total=%d", self._command, len(missing))
             return _not_updated(
@@ -162,7 +188,7 @@ class ContractWriter:
                 "a revisão no Manager."
             )
 
-        document = openapi_contract.apply_contract(current, prepared.contract)
+        document = openapi_contract.apply_contract(base, prepared.contract)
         if openapi_contract.same_document(document, current):
             # The revision write may have changed the documentation already
             # (route description, new route): that run still updated it.
@@ -196,7 +222,8 @@ class ContractWriter:
             return _updated(
                 self._failure_warning(
                     "O contrato foi enviado, mas não consegui relê-lo para conferir.", exc
-                )
+                ),
+                aligned,
             )
 
         differences = openapi_contract.verify_contract(document, written)
@@ -212,10 +239,11 @@ class ContractWriter:
                 "O Manager aceitou o contrato, mas o que ficou gravado não é o que foi "
                 "enviado:\n"
                 + _bullets(differences)
-                + "\n\nO fluxo continua gravado. Confira a revisão no Manager."
+                + "\n\nO fluxo continua gravado. Confira a revisão no Manager.",
+                aligned,
             )
         logger.info("%s.contract.written", self._command)
-        return _updated(None)
+        return _updated(None, aligned)
 
     def _failure_warning(self, text: str, exc: ManagerApiError) -> str:
         logger.info("%s.contract.failure type=%s", self._command, type(exc).__name__)

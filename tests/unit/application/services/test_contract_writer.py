@@ -26,7 +26,26 @@ from apiops_orchestrator.domain.services.openapi_contract import RepositoryContr
 
 REVISION_ID = 9554
 OK = {"200": {"description": "Consulta realizada"}}
-REVISION = {"id": REVISION_ID, "workflowId": 139, "workflowStageId": 420, "interceptors": [], "resources": []}
+REVISION = {
+    "id": REVISION_ID,
+    "workflowId": 139,
+    "workflowStageId": 420,
+    "interceptors": [],
+    "resources": [{"name": "T", "interceptors": [], "operations": [{"method": "GET", "path": "/t", "interceptors": []}]}],
+}
+LOG = {
+    "x-interceptor-position": 1,
+    "x-interceptor-type": "LOG",
+    "x-interceptor-content": "{}",
+    "x-interceptor-execution-point": "FIRST",
+    "x-interceptor-status": "REFERENCE",
+}
+
+
+def _revision_with(**operation):
+    revision = copy.deepcopy(REVISION)
+    revision["resources"][0]["operations"][0].update(operation)
+    return revision
 
 
 def _swagger(**operation):
@@ -36,6 +55,7 @@ def _swagger(**operation):
         "openapi": "3.0.0",
         "info": {"title": "T", "version": "1.0.0"},
         "servers": [{"url": "/t"}],
+        "x-resources": {"T": {"x-interceptors": {}}},
         "paths": {"/t": {"get": get}},
     }
 
@@ -180,20 +200,27 @@ def test_documentation_changed_by_the_revision_write_is_updated_without_a_swagge
     manager = FakeManager(_swagger(description="Consulta"))
     prepared = PreparedContract(contract=_contract(), write=True, before=before)
 
-    result = ContractWriter(manager, command="validate").write(REVISION_ID, prepared, REVISION)
+    result = ContractWriter(manager, command="validate").write(
+        REVISION_ID, prepared, _revision_with(description="Consulta")
+    )
 
     assert (result.status, result.reason) == (DOCUMENTATION_UPDATED, None)
     assert manager.calls == ["get_revision_swagger"]
 
 
 def test_recreated_interceptors_alone_do_not_count_as_documentation():
-    before = _swagger(**{"x-interceptors": {"1": {"x-interceptor-type": "LOG"}}})
-    manager = FakeManager(_swagger(**{"x-interceptors": {"7": {"x-interceptor-type": "LOG"}}}))
+    before = _swagger(**{"x-interceptors": {"1": LOG}})
+    manager = FakeManager(_swagger(**{"x-interceptors": {"7": LOG}}))
     prepared = PreparedContract(contract=_contract(), write=True, before=before)
+    flow = _revision_with(
+        interceptors=[{"id": 5, "position": 1, "type": "Log", "content": "{}", "executionPoint": "FIRST",
+                       "status": "REFERENCE"}]
+    )
 
-    result = ContractWriter(manager, command="validate").write(REVISION_ID, prepared, REVISION)
+    result = ContractWriter(manager, command="validate").write(REVISION_ID, prepared, flow)
 
     assert result.status == DOCUMENTATION_UNCHANGED
+    assert manager.calls == ["get_revision_swagger"]
 
 
 def test_prepare_keeps_the_swagger_read_before_the_writes():
@@ -295,3 +322,76 @@ def test_written_contract_that_cannot_be_read_back_is_updated_but_not_verified()
 
     assert result.status == DOCUMENTATION_UPDATED
     assert "não consegui relê-lo para conferir" in result.reason
+
+
+# --- swagger aligned to the flow ----------------------------------------------------
+
+
+def test_swagger_in_sync_with_the_flow_is_not_aligned():
+    manager = FakeManager(_swagger())
+
+    result = ContractWriter(manager, command="validate").write(
+        REVISION_ID, _prepared(_contract(operationId="consultar")), REVISION
+    )
+
+    assert (result.status, result.aligned) == (DOCUMENTATION_UPDATED, [])
+    assert "aligned" not in result.to_document()
+
+
+def test_route_the_manager_left_out_of_the_swagger_is_created():
+    swagger = _swagger()
+    del swagger["paths"]["/t"]
+    manager = FakeManager(swagger)
+    flow = _revision_with(description="Consulta T")
+
+    result = ContractWriter(manager, command="publish").write(REVISION_ID, _prepared(), flow)
+
+    assert (result.status, result.reason) == (DOCUMENTATION_UPDATED, None)
+    assert result.to_document()["aligned"] == ["GET /t: criada"]
+    created = manager.sent["paths"]["/t"]["get"]
+    assert created["x-resource-name"] == "T"
+    assert (created["description"], created["summary"], created["responses"]) == ("Consulta T", "Consulta", OK)
+
+
+def test_stale_interceptors_are_replaced_by_the_flow_ones():
+    manager = FakeManager(_swagger(**{"x-interceptors": {"3": LOG}}))
+
+    result = ContractWriter(manager, command="validate").write(REVISION_ID, _prepared(), REVISION)
+
+    assert result.aligned == ["GET /t: interceptors"]
+    assert manager.sent["paths"]["/t"]["get"]["x-interceptors"] == {}
+
+
+def test_route_the_flow_no_longer_has_leaves_the_swagger():
+    swagger = _swagger()
+    swagger["paths"]["/t"]["post"] = {"responses": OK, "x-resource-name": "T", "x-interceptors": {}}
+    manager = FakeManager(swagger)
+
+    result = ContractWriter(manager, command="validate").write(REVISION_ID, _prepared(), REVISION)
+
+    assert result.aligned == ["POST /t: tirada"]
+    assert "post" not in manager.sent["paths"]["/t"]
+
+
+def test_flow_the_swagger_cannot_carry_stops_the_alignment():
+    swagger = _swagger()
+    del swagger["paths"]["/t"]
+    manager = FakeManager(swagger)
+    flow = _revision_with(certificateId=12)
+
+    result = ContractWriter(manager, command="validate").write(REVISION_ID, _prepared(), flow)
+
+    assert result.status == DOCUMENTATION_NOT_UPDATED
+    assert "GET /t: certificateId" in result.reason
+    assert "update_revision_swagger" not in manager.calls
+
+
+def test_rejected_alignment_is_not_reported_as_aligned():
+    swagger = _swagger()
+    del swagger["paths"]["/t"]
+    rejection = ManagerApiTransportRejectedError(400, "Invalid Request", messages=["Invalid interceptors"])
+    manager = FakeManager(swagger, put_error=rejection)
+
+    result = ContractWriter(manager, command="validate").write(REVISION_ID, _prepared(), REVISION)
+
+    assert (result.status, result.aligned) == (DOCUMENTATION_NOT_UPDATED, [])

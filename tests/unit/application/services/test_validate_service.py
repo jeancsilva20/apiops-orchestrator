@@ -34,6 +34,7 @@ from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiGovernanceBlockedError,
     ManagerApiTransportRejectedError,
 )
+from apiops_orchestrator.domain.services import swagger_flow
 
 API = {
     "id": 417,
@@ -91,17 +92,18 @@ DEFAULT_RESOURCE = {
 
 
 def _swagger_of(revision):
-    """Revision swagger already holding `MINIMAL_CONTRACT` in every route."""
-    paths = {}
-    for resource in revision.get("resources") or []:
-        for operation in resource.get("operations") or []:
-            paths.setdefault(operation.get("path"), {})[str(operation.get("method")).lower()] = {
-                "summary": "Rota de teste",
-                "parameters": [],
-                "responses": {"200": {"description": "Consulta realizada"}},
-                "x-resource-name": resource.get("name"),
-            }
-    return {"openapi": "3.0.0", "info": {"title": "API", "version": "1.0.0"}, "paths": paths}
+    """Revision swagger as the Manager exports it, already holding `MINIMAL_CONTRACT` in every route."""
+    document = swagger_flow.align({"openapi": "3.0.0", "info": {"title": "API", "version": "1.0.0"}}, revision)
+    for item in document["paths"].values():
+        for operation in item.values():
+            operation.update(
+                {
+                    "summary": "Rota de teste",
+                    "parameters": [],
+                    "responses": {"200": {"description": "Consulta realizada"}},
+                }
+            )
+    return document
 
 
 class ManagerFake:

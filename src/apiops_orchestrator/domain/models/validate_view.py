@@ -121,9 +121,14 @@ class DocumentationResult:
     status: str = DOCUMENTATION_NOT_UPDATED
     reason: Optional[str] = None
     warnings: List[str] = field(default_factory=list)
+    # Where the swagger did not describe the written flow and was aligned to it.
+    aligned: List[str] = field(default_factory=list)
 
     def to_document(self) -> Dict[str, Any]:
-        return {"status": self.status, "reason": self.reason}
+        document: Dict[str, Any] = {"status": self.status, "reason": self.reason}
+        if self.aligned:
+            document["aligned"] = list(self.aligned)
+        return document
 
 
 @dataclass(frozen=True)
