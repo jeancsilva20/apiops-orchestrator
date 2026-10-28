@@ -121,6 +121,22 @@ def test_extract_contract_keeps_only_the_contract_fields():
     }
 
 
+def test_empty_root_security_is_absent_and_an_empty_operation_security_is_kept():
+    """The Manager keeps `security: []` of an operation (public route) and drops the root one."""
+    operation = _op("GET", {"path": "/health", "security": [], "responses": OK})
+
+    contract = oc.extract_contract(
+        basic_info={"spec": {"security": [], "tags": [{"name": "Saude"}]}},
+        components={},
+        resources=[_resource({}, operation)],
+    )
+    document = oc.apply_contract(_current(), contract)
+
+    assert contract.root == {"tags": [{"name": "Saude"}]}
+    assert "security" not in document
+    assert contract.operations[("GET", "/health")]["security"] == []
+
+
 def test_declared_summary_is_kept():
     operation = _op("GET", {"path": "/t", "description": "Descrição longa", "summary": "Resumo", "responses": OK})
 

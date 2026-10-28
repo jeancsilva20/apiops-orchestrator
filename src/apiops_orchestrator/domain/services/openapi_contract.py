@@ -83,6 +83,9 @@ def extract_contract(
     """Contract declared in the repository, with the resource parameters in each operation."""
     spec = (basic_info or {}).get("spec") or {}
     root = {f: normalize_yaml(spec[f]) for f in ROOT_FIELDS if spec.get(f) is not None}
+    # The Manager keeps an empty root `security` as absent; both mean no global requirement.
+    if root.get("security") == []:
+        del root["security"]
 
     governed = {
         section: normalize_yaml(value)
