@@ -1024,3 +1024,51 @@ def test_timeout_declared_as_text_or_left_empty_goes_as_declared():
     assert body["timeout"] is None
     assert body["resources"][0]["timeout"] == "timeout_api"
     assert body["resources"][0]["operations"][0]["timeout"] == ""
+
+
+# --- Mock ----------------------------------------------------------------------
+
+DRAFT_COM_MOCK = {
+    "id": 1,
+    "api": {},
+    "resources": [],
+    "interceptors": [
+        {"id": 10, "idTemp": 10, "type": "Mock", "executionPoint": "FIRST", "position": 1,
+         "status": "REFERENCE",
+         "content": '{"body": "{}", "status": "200", "headers": "Content-Type: application/json"}'},
+    ],
+}
+
+
+def test_mock_with_object_body_and_numeric_status_goes_as_the_text_the_manager_keeps():
+    """The Manager refused `body: {}` and `status: 200` with "Interceptor 'Mock' with invalid fields"."""
+    root = {"interceptors_request": [{"type": "Mock", "content": {
+        "body": {}, "status": 200, "headers": "Content-Type: application/json"}}]}
+
+    assembled = _montar(root, draft=DRAFT_COM_MOCK)
+
+    mock = assembled.body["interceptors"][0]
+    assert mock["id"] == 10
+    assert json.loads(mock["content"]) == {
+        "body": "{}", "status": "200", "headers": "Content-Type: application/json"}
+    published = _publicado_com(dict(mock))
+    assert revision_payload.verify(assembled.body, published, expected=assembled.expected) == []
+
+
+def test_new_mock_with_object_body_goes_as_json_text():
+    op = _Op("GET", {"path": "/x", "interceptors_request": [
+        {"type": "Mock", "content": {"body": {"situação": "UP"}, "status": 503}}]})
+
+    body = _montar({}, [_Rec({"name": "R"}, [op])]).body
+
+    mock = body["resources"][0]["operations"][0]["interceptors"][0]
+    assert json.loads(mock["content"]) == {"body": '{"situação": "UP"}', "status": "503"}
+
+
+def test_mock_declared_as_text_goes_as_declared():
+    root = {"interceptors_request": [{"type": "Mock", "content": {
+        "body": '{"message" : "OK"}', "status": "204", "headers": None}}]}
+
+    mock = _montar(root).body["interceptors"][0]
+
+    assert json.loads(mock["content"]) == {"body": '{"message" : "OK"}', "status": "204", "headers": None}

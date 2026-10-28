@@ -75,6 +75,19 @@ def _timeout(value: Any) -> Any:
     return value
 
 
+def _mock_content(content: Any) -> Any:
+    """The Mock content as the Manager keeps it: an object `body` and a numeric `status` go as text."""
+    if not isinstance(content, dict):
+        return content
+    mock = dict(content)
+    if isinstance(mock.get("body"), (dict, list)):
+        mock["body"] = json.dumps(mock["body"], ensure_ascii=False)
+    status = mock.get("status")
+    if isinstance(status, int) and not isinstance(status, bool):
+        mock["status"] = str(status)
+    return mock
+
+
 def _live(remote: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Itens governados que o escopo tem de fato na plataforma, sem tombstones."""
     own = partition((remote or {}).get("interceptors"))[0]
@@ -301,6 +314,8 @@ def assemble(
 
     def _content(declared: Dict[str, Any]) -> Any:
         """O wire quer `content` como string JSON (ver `build_new_item`)."""
+        if declared.get("type") == "Mock":
+            return _mock_content(declared.get("content"))
         if declared.get("type") == "Custom":
             custom_id = declared.get("customInterceptorId")
             live = resolver_custom(custom_id) if (resolver_custom and custom_id) else None
