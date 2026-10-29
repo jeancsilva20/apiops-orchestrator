@@ -103,6 +103,7 @@ function Remove-PastaExtraida {
     foreach ($arquivo in $arquivosDoPacote) {
         try { Remove-Item -Force -ErrorAction Stop (Join-Path $origem $arquivo) } catch { }
     }
+    try { Remove-Item -Force -ErrorAction Stop (Join-Path $origem "README.md") } catch { }
     try {
         if (-not (Get-ChildItem -Force $origem)) { Remove-Item -Force -ErrorAction Stop $origem }
     }
@@ -130,7 +131,7 @@ if ($daPastaExtraida) {
         Copy-Item -Force (Join-Path $origem $arquivo) $Destino
     }
 }
-# O README passou a acompanhar os pacotes, fora deles: o de versões antigas sai.
+# O README vai dentro do pacote baixado e não é instalado: o de versões antigas sai.
 Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Destino "README.md")
 Get-ChildItem -Force $Destino | Unblock-File
 

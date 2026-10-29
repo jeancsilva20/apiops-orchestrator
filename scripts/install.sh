@@ -67,6 +67,7 @@ apagar_pasta_extraida() {
     for arquivo in "${ARQUIVOS_DO_PACOTE[@]}"; do
         rm -f "${ORIGEM}/${arquivo}"
     done
+    rm -f "${ORIGEM}/README.md"
     if [[ "$ORIGEM" != "$PWD" ]]; then
         rmdir "$ORIGEM" 2>/dev/null || true
     fi
@@ -94,7 +95,7 @@ if [[ "$ORIGEM" != "$DESTINO" ]]; then
     install -m 755 "${ORIGEM}/install.sh" "${DESTINO}/install.sh"
     install -m 644 "${ORIGEM}/.sen.example" "${DESTINO}/.sen.example"
 fi
-# O README passou a acompanhar os pacotes, fora deles: o de versões antigas sai.
+# O README vai dentro do pacote baixado e não é instalado: o de versões antigas sai.
 rm -f "${DESTINO}/README.md"
 
 # O .sen nasce sempre do gabarito da versão instalada, levando só a credencial.

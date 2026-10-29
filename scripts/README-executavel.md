@@ -17,25 +17,23 @@ O instalador coloca o `sen` na sua pasta de usuário, põe no PATH e pede a cred
 
 ## Windows
 
-1. Extraia o zip.
-2. Na pasta extraída, dê dois cliques em `install.cmd`. Se o Windows pedir confirmação para executar, confirme.
+1. Na pasta do instalador, dê dois cliques em `install.cmd`. Se o Windows pedir confirmação para executar, confirme.
 
    Ou, no PowerShell:
 
    ```powershell
-   powershell -ExecutionPolicy Bypass -File "<pasta extraída>\install.ps1"
+   powershell -ExecutionPolicy Bypass -File "<caminho da pasta>\install.ps1"
    ```
 
-3. Abra um terminal novo.
+2. Abra um terminal novo.
 
 O `sen` fica em `%LOCALAPPDATA%\sen`.
 
 ## Linux
 
-No terminal, na pasta onde o arquivo foi baixado:
+No terminal, na pasta onde se encontra o instalador:
 
 ```bash
-tar -xzf sen-<versão>-linux-x64.tar.gz
 ./sen-<versão>-linux-x64/install.sh
 ```
 

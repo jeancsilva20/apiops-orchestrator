@@ -7,9 +7,9 @@
     requirements.txt + o pacote), empacota com PyInstaller em arquivo único,
     confere que nenhum .sen/.sen_session/.env entrou no binário e gera, em
     dist/sen-<versão>/, o sen-<versão>-windows-x64.zip (o `sen.exe`, o
-    instalador, o `install.cmd` e o `.sen.example`) e, ao lado dele, o README
-    do dev (scripts/README-executavel.md) com a versão preenchida, o mesmo do
-    pacote Linux.
+    instalador, o `install.cmd`, o `.sen.example` e o README do dev,
+    scripts/README-executavel.md, com a versão preenchida). O README vai
+    dentro do zip, o mesmo do pacote Linux.
 
 .EXAMPLE
     .\scripts\build-exe.ps1
@@ -91,12 +91,13 @@ try {
     Copy-Item "src\apiops_orchestrator\.sen.example" $pacote
     Copy-Item "scripts\install.ps1" $pacote
     Copy-Item "scripts\install.cmd" $pacote
-    # O README fica fora do zip: quem baixa precisa lê-lo antes de extrair.
+    # O README entra no zip, com a versão no lugar de <versão>, para os comandos funcionarem colados.
+    $readme = (Get-Content -Raw -Encoding UTF8 "scripts\README-executavel.md").Replace("<versão>", $versao)
+    [IO.File]::WriteAllText((Join-Path $pacote "README.md"), $readme)
     $entrega = Join-Path $dist "sen-$versao"
     New-Item -ItemType Directory -Force -Path $entrega | Out-Null
-    # Sai com a versão no lugar de <versão>, para os comandos funcionarem colados.
-    $readme = (Get-Content -Raw -Encoding UTF8 "scripts\README-executavel.md").Replace("<versão>", $versao)
-    [IO.File]::WriteAllText((Join-Path $entrega "README.md"), $readme)
+    $readmeSolto = Join-Path $entrega "README.md"
+    if (Test-Path $readmeSolto) { Remove-Item -Force $readmeSolto }
     $zip = Join-Path $entrega "$nome.zip"
     if (Test-Path $zip) { Remove-Item -Force $zip }
     Compress-Archive -Path $pacote -DestinationPath $zip
