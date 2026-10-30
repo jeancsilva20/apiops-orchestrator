@@ -17,7 +17,7 @@ O instalador coloca o `sen` na sua pasta de usuário, põe no PATH e pede a cred
 
 ## Windows
 
-1. Extraia o zip.
+1. Extraia o zip: botão direito em `sen-<versão>-windows-x64.zip` > **Extrair tudo**. Não rode o instalador de dentro do zip aberto no Explorador de Arquivos.
 2. Na pasta extraída, dê dois cliques em `install.cmd`. Se o Windows pedir confirmação para executar, confirme.
 
    Ou, no PowerShell:
@@ -32,10 +32,9 @@ O `sen` fica em `%LOCALAPPDATA%\sen`.
 
 ## Linux
 
-No terminal, na pasta onde o arquivo foi baixado:
+No terminal, na pasta onde você extraiu o pacote (a que contém a pasta `sen-<versão>-linux-x64`):
 
 ```bash
-tar -xzf sen-<versão>-linux-x64.tar.gz
 ./sen-<versão>-linux-x64/install.sh
 ```
 
