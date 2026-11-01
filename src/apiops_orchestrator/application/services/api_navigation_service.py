@@ -34,6 +34,7 @@ from apiops_orchestrator.domain.services import governance_check as gov
 from apiops_orchestrator.domain.services import tenant_catalog as tenant
 from apiops_orchestrator.domain.services import access_control as access
 from apiops_orchestrator.domain.services import interceptor_types as itypes
+from apiops_orchestrator.domain.services import traffic
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiError,
@@ -698,6 +699,125 @@ class ApiNavigationService:
                 f"Tipo {name!r} não está na referência. Veja os nomes com: sen list interceptors"
             )
         return itypes.describe_type(kind)
+
+    # ------------------------------------------------------------------ trace e analytics
+
+    # Teto da amostra lida pelo `get analytics`: acima disso o volume pede o
+    # modo de exportação em JSON (futuro), não a tela.
+    ANALYTICS_SAMPLE_CAP = 2000
+    ANALYTICS_PAGE = 500
+
+    @staticmethod
+    def _call_filters(
+        api_id: Optional[int],
+        environment_id: Optional[int],
+        uri: Optional[str],
+        errors: bool,
+        status_from: Optional[int],
+        status_to: Optional[int],
+        operation_id: Optional[int] = None,
+        revision_id: Optional[int] = None,
+    ) -> Dict[str, str]:
+        filters: Dict[str, str] = {}
+        if api_id is not None:
+            filters["apiId"] = str(api_id)
+        if environment_id is not None:
+            filters["environmentId"] = str(environment_id)
+        if operation_id is not None:
+            filters["operationId"] = str(operation_id)
+        if revision_id is not None:
+            filters["revisionId"] = str(revision_id)
+        if uri:
+            filters["uri"] = uri
+            filters["regex"] = "false"
+        filters.update(traffic.status_filters(errors=errors, status_from=status_from, status_to=status_to))
+        return filters
+
+    def calls(
+        self,
+        *,
+        since: Optional[str] = None,
+        until: Optional[str] = None,
+        api_id: Optional[int] = None,
+        environment_id: Optional[int] = None,
+        uri: Optional[str] = None,
+        errors: bool = False,
+        status_from: Optional[int] = None,
+        status_to: Optional[int] = None,
+        operation_id: Optional[int] = None,
+        revision_id: Optional[int] = None,
+        page: int = 1,
+        limit: int = 20,
+    ) -> Dict[str, Any]:
+        """Uma página do trace de chamadas da janela, sem credenciais."""
+        try:
+            begin, end, info = traffic.window(since, until)
+        except ValueError as exc:
+            raise NavigationError(str(exc)) from exc
+        filters = self._call_filters(api_id, environment_id, uri, errors, status_from, status_to, operation_id, revision_id)
+        page_data = self._read(
+            lambda: self.manager_api.list_calls(begin, end, page=page, page_size=limit, filters=filters),
+            api_id=api_id,
+        )
+        return {
+            "window": info,
+            "filters": filters,
+            "page": page,
+            "pageSize": limit,
+            "total": page_data.total,
+            "calls": [traffic.describe_call(c) for c in page_data.rows],
+        }
+
+    def trace(self, trace_id: str, *, include_headers: bool = True) -> Dict[str, Any]:
+        """Uma chamada pelo trace id: identificação, tempos, passos do pipeline, headers mascarados."""
+        raw = self._read(lambda: self.manager_api.get_call(trace_id))
+        if not raw:
+            raise NavigationError(
+                f"Chamada {trace_id!r} não encontrada (o trace guarda só os últimos 7 dias). "
+                "Liste chamadas com: sen list calls --api <id> --since 24h"
+            )
+        return traffic.describe_call_detail(raw, include_headers=include_headers)
+
+    def analytics(
+        self,
+        *,
+        since: Optional[str] = None,
+        until: Optional[str] = None,
+        api_id: Optional[int] = None,
+        environment_id: Optional[int] = None,
+        uri: Optional[str] = None,
+        errors: bool = False,
+        sample: int = 500,
+        top: int = 5,
+    ) -> Dict[str, Any]:
+        """Volumetria, erros, latência e tops sobre uma amostra (até `sample`) da janela."""
+        try:
+            begin, end, info = traffic.window(since, until)
+        except ValueError as exc:
+            raise NavigationError(str(exc)) from exc
+        sample = max(1, min(int(sample), self.ANALYTICS_SAMPLE_CAP))
+        filters = self._call_filters(api_id, environment_id, uri, errors, None, None)
+        rows: list = []
+        total = 0
+        page = 1
+        while len(rows) < sample:
+            size = min(self.ANALYTICS_PAGE, sample - len(rows))
+            page_data = self._read(
+                lambda: self.manager_api.list_calls(begin, end, page=page, page_size=size, filters=filters),
+                api_id=api_id,
+            )
+            total = page_data.total
+            if not page_data.rows:
+                break
+            rows.extend(page_data.rows)
+            if len(page_data.rows) < size or len(rows) >= total:
+                break
+            page += 1
+        summary = traffic.analytics_summary(rows, total=total, top=top)
+        summary["window"] = info
+        summary["filters"] = filters
+        summary["sampleCap"] = self.ANALYTICS_SAMPLE_CAP
+        return summary
 
     # ------------------------------------------------------------------ falhas
 

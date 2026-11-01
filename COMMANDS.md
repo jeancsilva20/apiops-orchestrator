@@ -33,6 +33,9 @@ Convenções:
 | Só um ponto de execução? E o que está em THIRD? | `sen get interceptors --id 400 --point FIRST|SECOND|THIRD` (THIRD aparece em `outros pontos`) |
 | O que o `content` de um tipo de interceptor carrega? | `sen get interceptor-type --type "Rate limit"` (sem `--type`: todos) |
 | Quem é este usuário, de que times e roles? Quem está num time? O que uma role permite? | `sen get user --username u` · `sen get team --name t` · `sen list roles` · `sen get role --id <uuid ou nome>` · `sen list permissions --product "API Platform"` |
+| O que aconteceu numa chamada (trace id)? | `sen get trace --id <trace id>` |
+| Quais chamadas chegaram? Só erros? | `sen list calls [--api N] [--env E] [--since 24h] [--errors] [--uri x]` |
+| Volumetria, taxa de erro, latência, top operações/apps/origens? | `sen get analytics [--api N] [--since 7d] [--errors]` |
 | Que ambientes, workflows, atributos e tipos de interceptor existem? | `sen list environments` · `sen list workflows` · `sen list attributes` · `sen list interceptors` |
 | O que um stage exige? | `sen get workflow --id 327` |
 | Variáveis de ambiente? | `sen list variables [--env 1] [--key x]` · `sen get environment --id 1` |
@@ -181,6 +184,19 @@ Access tokens emitidos: id, dono, app, status, expiração, APIs alcançadas. O 
 
 ---
 
+## Trace e analytics
+
+Fonte: `GET /calls` e `GET /calls/{id}` do Manager (doc 10). A plataforma guarda e serve só os **últimos 7 dias**; janelas maiores são encolhidas e o comando avisa. Datas em UTC. Credenciais da chamada (`accessToken`, `appSecret`, `appToken`, `clientId`) são descartadas, e headers de credencial (`authorization`, `cookie`, `set-cookie`, `x-api-key`, `client_id`, `client_secret`, `x-auth-token`…) saem mascarados.
+
+### `sen list calls [--api N] [--env E] [--since 24h] [--until agora] [--errors] [--status-from A --status-to B] [--uri trecho] [--operation-id O] [--revision-id R] [--limit 20] [--page 1]`
+Chamadas da janela: trace id, quando, API, método, URI, status, duração, app. `--since`/`--until` aceitam `30m`, `24h`, `7d`, `YYYY-MM-DD` ou ISO. `--errors` é 400–599. O rodapé traz o total da janela e a página.
+
+### `sen get trace --id <trace id> [--no-headers]`
+Uma chamada pelo trace id (é o mesmo `x-request-id` que o gateway devolve): método, URI, status e resultado; API, revisão, recurso, operação, ambiente; tempos total/gateway/backend e tamanhos; app, dono do token, origem, cache, billing; os **passos do pipeline** (`timeMillis` e mensagem de cada interceptor/roteamento) e os headers de request e response, mascarados.
+
+### `sen get analytics [--api N] [--env E] [--since 24h] [--until] [--errors] [--uri x] [--sample 500] [--top 5]`
+Queries prontas sobre uma amostra das chamadas mais recentes da janela (até `--sample`, teto 2000; o total da janela vem sempre): classes de status e taxa de erro; latência média, p50, p95, máx, gateway e backend; rankings de status, APIs, operações, apps, ambientes e origens; chamadas por hora; erros recentes com trace id. Quando a amostra é parcial, o comando diz e aponta `--sample` ou `sen list calls -o json` por página. Volumes maiores ficam para um modo de exportação em JSON, previsto.
+
 ## Pessoas e gateway
 
 ### `sen list users [--query texto]`
@@ -222,7 +238,8 @@ Pools de gateway e quantas rotas cada um serve.
 
 ## O que não está disponível pela CLI (e por quê)
 
-- **Trace de chamadas** (`/calls`): a rota responde 400 ao token da CLI em todas as combinações de parâmetros testadas; fica para quando a assinatura exigida for conhecida.
+- **Analytics do produto (OpenSearch, Query Lab)**: o motor `/analytics/internal/search` exige a sessão do portal e devolve a página de login ao token da CLI; a CLI usa `/calls` do Manager (7 dias) para trace e analytics prontos.
+- **Trace além de 7 dias**: a plataforma não serve.
 - **Binding de atributos feito no painel da UI**: viaja numa rota assinada que a CLI não lê. Só os `apiTags` contam.
 - **Relatórios do Adaptive Governance v2** (`maturity-reports`, dashboards, discovery): usam UUIDs próprios dessincronizados do Manager.
 - **Criação/edição de apps, planos, tokens, usuários**: fora do escopo (a CLI de navegação é somente leitura).

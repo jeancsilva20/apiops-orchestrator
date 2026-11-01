@@ -86,7 +86,7 @@ sen_app = typer.Typer(
 
 list_app = typer.Typer(
     name="list",
-    help="Lista APIs (com filtros por dono/time/contexto/stage) e os catálogos do tenant: donos, ambientes, variáveis, workflows, atributos, interceptors, apps, planos, tokens, usuários, times, roles, permissões, gateway.",
+    help="Lista APIs (com filtros por dono/time/contexto/stage) e os catálogos do tenant: donos, ambientes, variáveis, workflows, atributos, interceptors, apps, planos, tokens, usuários, times, roles, permissões, chamadas (trace), gateway.",
 )
 
 
@@ -97,7 +97,7 @@ def list_callback(ctx: typer.Context):
             "[bold yellow]Nenhum subcomando informado.[/bold yellow] "
             "Disponíveis: sen list api · owners · environments · variables · workflows · "
             "attributes · interceptors · apps · plans · tokens · users · teams · roles · "
-            "permissions · inbounds · gateway-pools (consulte: sen list --help)"
+            "permissions · calls · inbounds · gateway-pools (consulte: sen list --help)"
         )
         raise typer.Exit(code=2)
 
@@ -1983,6 +1983,7 @@ from apiops_orchestrator.adapters.inbound.cli.navigation_cli import (  # noqa: E
     get_app,
     list_apps,
     list_attributes,
+    list_calls,
     list_environments,
     list_gateway_pools,
     list_inbounds,
@@ -2017,3 +2018,4 @@ list_app.command("gateway-pools")(list_gateway_pools)
 list_app.command("owners")(list_owners)
 list_app.command("roles")(list_roles)
 list_app.command("permissions")(list_permissions)
+list_app.command("calls")(list_calls)

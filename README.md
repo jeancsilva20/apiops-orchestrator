@@ -60,6 +60,7 @@ Run `sen --help` or `sen <command> --help` for the authoritative option list. Al
 | `sen list users` / `sen list teams` | Access Control users and teams | `--query` |
 | `sen get user` / `sen get team` / `sen list roles` / `sen get role` / `sen list permissions` | Access Control in depth: a user's teams and roles, a team's members, roles and their permissions | `--username`, `--name`, `--id`, `--product` |
 | `sen list owners` | APIs grouped by owner, with context and teams | |
+| `sen list calls` / `sen get trace` / `sen get analytics` | Gateway calls of the last 7 days, one call by trace id (pipeline steps, masked headers), and ready-made analytics (volume, errors, latency, rankings) | `--api`, `--env`, `--since`, `--until`, `--errors`, `--id`, `--sample` |
 | `sen get interceptor-type` | Reference of each interceptor type's `content` fields (doc 06 + tenant) | `--type` |
 | `sen list inbounds` / `sen list gateway-pools` | Gateway inbound addresses and pools | |
 

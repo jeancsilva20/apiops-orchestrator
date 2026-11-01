@@ -7,6 +7,7 @@ from requests.exceptions import RequestException
 
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ApiCatalogPage,
+    CallsPage,
     ManagerApiGovernanceBlockedError,
     ManagerApiPort,
     ManagerApiResponseTooLargeError,
@@ -649,6 +650,34 @@ class ManagerApiAdapter(ManagerApiPort):
                 str(p.get("code") or p.get("name")) for p in payload if isinstance(p, dict)
             ]
         return []
+
+    # --- trace de chamadas ---------------------------------------------------
+
+    def list_calls(
+        self,
+        begin: str,
+        end: str,
+        page: int = 1,
+        page_size: int = 20,
+        filters: Optional[Dict[str, str]] = None,
+    ) -> CallsPage:
+        params: Dict[str, str] = {
+            "actualPage": str(page),
+            "pageSize": str(page_size),
+            "beginDate": begin,
+            "endDate": end,
+        }
+        for key, value in (filters or {}).items():
+            if value is not None and str(value) != "":
+                params[key] = str(value)
+        payload = self._request("GET", "calls", params=params)
+        if not isinstance(payload, dict):
+            return CallsPage(rows=[], total=0)
+        rows = [r for r in (payload.get("calls") or []) if isinstance(r, dict)]
+        return CallsPage(rows=rows, total=_wire_int(payload.get("callsSize")) or 0)
+
+    def get_call(self, call_id: str) -> Optional[Dict[str, Any]]:
+        return self._optional(f"calls/{call_id}")
 
     def list_inbounds(self) -> List[Dict[str, Any]]:
         payload = self._request(

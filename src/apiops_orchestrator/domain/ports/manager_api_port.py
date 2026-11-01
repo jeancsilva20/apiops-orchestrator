@@ -85,6 +85,14 @@ class ApiCatalogPage:
     total: int
 
 
+@dataclass(frozen=True)
+class CallsPage:
+    """Uma página do trace de chamadas (`/calls`) e o total da janela (`callsSize`)."""
+
+    rows: List[Dict[str, Any]]
+    total: int
+
+
 class ManagerApiPort(ABC):
     @abstractmethod
     def get_apis(self) -> list[Dict[str, Any]]:
@@ -276,6 +284,27 @@ class ManagerApiPort(ABC):
     @abstractmethod
     def list_permissions(self, product_name: str) -> List[str]:
         """`GET /user-management/v1/account-settings/permissions?productName=…`: catálogo de códigos."""
+
+    # --- trace de chamadas (leitura; mapeamento APIM 10) ---------------------
+
+    @abstractmethod
+    def list_calls(
+        self,
+        begin: str,
+        end: str,
+        page: int = 1,
+        page_size: int = 20,
+        filters: Optional[Dict[str, str]] = None,
+    ) -> "CallsPage":
+        """`GET /calls`: janela de no máximo 7 dias, datas `yyyy-MM-dd'T'HH:mm:ss` (UTC).
+
+        `filters` são os parâmetros da rota (`apiId`, `environmentId`, `httpStatusFrom`,
+        `httpStatusTo`, `uri`, `regex`, `operationId`, `resourceId`, `revisionId`).
+        """
+
+    @abstractmethod
+    def get_call(self, call_id: str) -> Optional[Dict[str, Any]]:
+        """`GET /calls/{id}`: a chamada com headers e o `trace` do pipeline; `None` se não existe."""
 
     @abstractmethod
     def list_inbounds(self) -> List[Dict[str, Any]]:

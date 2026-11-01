@@ -41,7 +41,7 @@ get_app = typer.Typer(
     help=(
         "Lê o Manager em níveis de detalhe crescentes, sem repositório local: api → resources → "
         "interceptors → custom/swagger; governance e impact; workflow, environment, app, plan; "
-        "user, team, role; interceptor-type (referência de content)."
+        "user, team, role; interceptor-type (referência de content); trace e analytics de chamadas."
     ),
     no_args_is_help=True,
 )
@@ -1640,5 +1640,227 @@ def get_interceptor_type_command(
             rprint(_dim("um tipo: sen get interceptor-type --type \"<nome>\" · catálogo vivo do tenant: sen list interceptors"))
         else:
             _one(document)
+
+    display_output(document, output_format=output, text_callback=_text)
+
+
+
+# ===========================================================================
+# Trace de chamadas e analytics prontos (GET /calls, GET /calls/{id}).
+# Janela máxima de 7 dias (limite da plataforma). Credenciais nunca aparecem:
+# tokens/secrets da chamada são descartados e headers de credencial mascarados.
+# ===========================================================================
+
+
+def _since_option() -> Any:
+    return typer.Option(None, "--since", help="Início da janela: 24h, 7d, 30m, YYYY-MM-DD ou ISO (UTC). Padrão: 24h.")
+
+
+def _until_option() -> Any:
+    return typer.Option(None, "--until", help="Fim da janela (mesmos formatos). Padrão: agora.")
+
+
+def _fmt_ms(value: Any) -> str:
+    return "-" if value is None else f"{value} ms"
+
+
+def list_calls(
+    ctx: typer.Context,
+    api_id: Optional[int] = _api_option("Só chamadas desta API (id)."),
+    environment_id: Optional[int] = typer.Option(None, "--env", help="Só chamadas deste ambiente (id)."),
+    since: Optional[str] = _since_option(),
+    until: Optional[str] = _until_option(),
+    errors: bool = typer.Option(False, "--errors", help="Só erros (status 400–599)."),
+    status_from: Optional[int] = typer.Option(None, "--status-from", help="Status HTTP mínimo."),
+    status_to: Optional[int] = typer.Option(None, "--status-to", help="Status HTTP máximo."),
+    uri: Optional[str] = typer.Option(None, "--uri", help="Trecho da URI chamada."),
+    operation_id: Optional[int] = typer.Option(None, "--operation-id", help="Só esta operação (id do Manager)."),
+    revision_id: Optional[int] = typer.Option(None, "--revision-id", help="Só esta revisão (id do Manager)."),
+    limit: int = typer.Option(20, "--limit", help="Chamadas por página (máx. 500)."),
+    page: int = typer.Option(1, "--page", help="Página."),
+    output: OutputFormat = _output_option(),
+):
+    """Chamadas recentes no gateway (trace): quando, API, operação, status, latência, app."""
+    if limit <= 0 or limit > 500 or page <= 0:
+        _print_error("--limit vai de 1 a 500 e --page começa em 1.")
+        raise typer.Exit(code=1)
+    document = _run(
+        ctx,
+        "list calls",
+        output,
+        lambda: _service(ctx).calls(
+            since=since, until=until, api_id=api_id, environment_id=environment_id, uri=uri,
+            errors=errors, status_from=status_from, status_to=status_to,
+            operation_id=operation_id, revision_id=revision_id, page=page, limit=limit,
+        ),
+    )
+
+    def _text() -> None:
+        window = document.get("window") or {}
+        rprint(
+            _dim(
+                f"janela {_literal(window.get('begin'))} → {_literal(window.get('end'))} UTC"
+                + (" (encolhida ao limite de 7 dias)" if window.get("clamped") else "")
+                + f" · {document.get('total')} chamada(s) · página {document.get('page')} de {max(1, -(-int(document.get('total') or 0) // int(document.get('pageSize') or 1)))}"
+            )
+        )
+        calls = document.get("calls") or []
+        if not calls:
+            rprint("[yellow]Nenhuma chamada nessa janela/filtro.[/yellow]")
+            return
+        _grade(
+            [
+                (
+                    str(c.get("traceId") or ""),
+                    str(c.get("when") or "")[11:19] + " " + str(c.get("when") or "")[:10],
+                    f"{(c.get('api') or {}).get('name') or '-'} ({(c.get('api') or {}).get('id')})",
+                    str(c.get("method") or "-"),
+                    str(c.get("uri") or "-"),
+                    str(c.get("status") if c.get("status") is not None else "-"),
+                    _fmt_ms(c.get("durationMillis")),
+                    str(c.get("app") or "-"),
+                )
+                for c in calls
+            ],
+            header=("TRACE ID", "QUANDO (UTC)", "API", "MÉTODO", "URI", "STATUS", "DURAÇÃO", "APP"),
+            justify=(None, None, None, None, None, "right", "right", None),
+        )
+        rprint(_dim("detalhe de uma chamada: sen get trace --id <TRACE ID> · resumo: sen get analytics [--api N]"))
+
+    display_output(document, output_format=output, text_callback=_text)
+
+
+@get_app.command("trace")
+def get_trace_command(
+    ctx: typer.Context,
+    trace_id: str = typer.Option(..., "--id", help="Trace id (= request id) da chamada, de sen list calls ou do header x-request-id."),
+    no_headers: bool = typer.Option(False, "--no-headers", help="Omite os headers de request/response."),
+    output: OutputFormat = _output_option(),
+):
+    """Uma chamada pelo trace id: identificação, tempos, passos do pipeline e headers (mascarados)."""
+    document = _run(ctx, "get trace", output, lambda: _service(ctx).trace(trace_id, include_headers=not no_headers))
+
+    def _text() -> None:
+        api = document.get("api") or {}
+        env = document.get("environment") or {}
+        status = document.get("status")
+        color = "green" if isinstance(status, int) and status < 400 else "red"
+        rprint(
+            f"[bold]{_literal(document.get('method'))} {_literal(document.get('uri'))}[/bold]  "
+            + f"[{color}]{status}[/{color}] "
+            + _dim(f"{_literal(document.get('result') or '-')}" + (f" ({_literal(document.get('errorType'))})" if document.get("errorType") else ""))
+        )
+        rprint(_dim(f"trace {_literal(document.get('traceId'))} · {_literal(document.get('when'))}"))
+        rprint(
+            _dim(
+                f"API {_literal(api.get('name') or '-')} ({api.get('id')}) · revisão {document.get('revisionId')} · "
+                f"recurso {_literal((document.get('resource') or {}).get('name') or '-')} · operação {_literal((document.get('operation') or {}).get('name') or '-')} · "
+                f"ambiente {_literal(env.get('name') or env.get('id'))}"
+            )
+        )
+        rprint(
+            _dim(
+                f"tempos: total {_fmt_ms(document.get('durationMillis'))} · gateway {_fmt_ms(document.get('gatewayMillis'))} · "
+                f"backend {_fmt_ms(document.get('targetMillis'))} (status do backend {document.get('targetStatus') or '-'}) · "
+                f"request {document.get('requestBytes')} B · response {document.get('responseBytes')} B"
+            )
+        )
+        rprint(
+            _dim(
+                f"app {_literal(document.get('app') or '-')} · dono do token {_literal(document.get('tokenOwner') or '-')} · "
+                f"origem {_literal(document.get('caller') or '-')} · cache {document.get('cache')} · billing {document.get('billing')}"
+            )
+        )
+        steps = document.get("trace") or []
+        totals = document.get("totals") or {}
+        rprint("\n[bold cyan]PIPELINE[/bold cyan]  " + _dim(f"{totals.get('steps', 0)} passo(s) · {totals.get('traceMillis', 0)} ms somados"))
+        for step in steps:
+            ms = f"{step.get('timeMillis')} ms" if step.get("timeMillis") is not None else "-"
+            rprint(f"  {step.get('step'):>3}. {ms:>8}  {_literal(step.get('message'))}")
+            if step.get("data") not in (None, "", {}, []):
+                data = step["data"]
+                text = json.dumps(data, ensure_ascii=False) if isinstance(data, (dict, list)) else str(data)
+                rprint("               " + _dim(_literal(text[:300] + ("…" if len(text) > 300 else ""))))
+        for key, title in (("requestHeaders", "REQUEST HEADERS"), ("responseHeaders", "RESPONSE HEADERS")):
+            if key in document:
+                headers = document.get(key) or []
+                rprint(f"\n[bold cyan]{title}[/bold cyan]  " + _dim(f"{len(headers)}"))
+                for h in headers:
+                    rprint(f"  {_literal(h.get('name'))}: {_literal(h.get('value'))}")
+
+    display_output(document, output_format=output, text_callback=_text)
+
+
+@get_app.command("analytics")
+def get_analytics_command(
+    ctx: typer.Context,
+    api_id: Optional[int] = _api_option("Só esta API (id). Ausente: o tenant inteiro."),
+    environment_id: Optional[int] = typer.Option(None, "--env", help="Só este ambiente (id)."),
+    since: Optional[str] = _since_option(),
+    until: Optional[str] = _until_option(),
+    errors: bool = typer.Option(False, "--errors", help="Resume só os erros (400–599)."),
+    uri: Optional[str] = typer.Option(None, "--uri", help="Trecho da URI chamada."),
+    sample: int = typer.Option(500, "--sample", help="Chamadas lidas para o resumo (máx. 2000; o total da janela vem de qualquer jeito)."),
+    top: int = typer.Option(5, "--top", help="Tamanho dos rankings."),
+    output: OutputFormat = _output_option(),
+):
+    """Analytics prontos: volumetria, erros, latência e rankings (operações, apps, ambientes, origens)."""
+    document = _run(
+        ctx,
+        "get analytics",
+        output,
+        lambda: _service(ctx).analytics(
+            since=since, until=until, api_id=api_id, environment_id=environment_id, uri=uri, errors=errors, sample=sample, top=top
+        ),
+    )
+
+    def _text() -> None:
+        window = document.get("window") or {}
+        rprint(
+            f"[bold]{document.get('total')} chamada(s)[/bold]  "
+            + _dim(
+                f"janela {_literal(window.get('begin'))} → {_literal(window.get('end'))} UTC"
+                + (" (encolhida ao limite de 7 dias)" if window.get("clamped") else "")
+                + f" · resumo sobre {document.get('sample')} mais recentes"
+            )
+        )
+        classes = document.get("classes") or {}
+        rate = document.get("errorRate")
+        rprint(
+            f"status: 2xx {classes.get('2xx', 0)} · 3xx {classes.get('3xx', 0)} · 4xx {classes.get('4xx', 0)} · 5xx {classes.get('5xx', 0)}"
+            + (f" · outros {classes.get('other', 0)}" if classes.get("other") else "")
+            + ("" if rate is None else f"  → erros {rate * 100:.1f}%")
+        )
+        lat = document.get("latencyMillis") or {}
+        rprint(
+            _dim(
+                f"latência: média {lat.get('avg')} ms · p50 {lat.get('p50')} · p95 {lat.get('p95')} · máx {lat.get('max')} · "
+                f"gateway {lat.get('gatewayAvg')} · backend {lat.get('targetAvg')}"
+            )
+        )
+        for key, title in (
+            ("topStatus", "STATUS"), ("topApis", "APIS"), ("topOperations", "OPERAÇÕES"),
+            ("topApps", "APPS"), ("topEnvironments", "AMBIENTES"), ("topCallers", "ORIGENS"),
+        ):
+            rows = document.get(key) or []
+            if not rows or (key == "topApis" and api_id is not None):
+                continue
+            rprint(f"\n[bold cyan]{title}[/bold cyan]")
+            for r in rows:
+                rprint(f"  {r.get('calls'):>6}  {_literal(r.get('key'))}")
+        by_hour = document.get("byHour") or []
+        if by_hour:
+            rprint("\n[bold cyan]POR HORA (UTC)[/bold cyan]")
+            peak = max(r["calls"] for r in by_hour) or 1
+            for r in by_hour[-24:]:
+                bar = "█" * max(1, round(20 * r["calls"] / peak))
+                rprint(f"  {_literal(r.get('hour'))}  {r.get('calls'):>6}  {_dim(bar)}")
+        recent = document.get("recentErrors") or []
+        if recent:
+            rprint("\n[bold cyan]ERROS RECENTES[/bold cyan]")
+            for e in recent:
+                rprint(f"  {e.get('status')}  {_literal(e.get('method'))} {_literal(e.get('uri'))}  " + _dim(f"{_literal(e.get('when'))} · trace {_literal(e.get('traceId'))}"))
+        if (document.get("total") or 0) > (document.get("sample") or 0):
+            rprint(_dim(f"\namostra parcial ({document.get('sample')} de {document.get('total')}): aumente --sample (até {document.get('sampleCap')}) ou use sen list calls -o json por página"))
 
     display_output(document, output_format=output, text_callback=_text)

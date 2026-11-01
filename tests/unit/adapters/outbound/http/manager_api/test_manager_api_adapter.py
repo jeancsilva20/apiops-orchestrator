@@ -771,3 +771,31 @@ def test_access_control_404_is_absence(mock_settings):
         mock_request.side_effect = HttpClient4xxError(status_code=401, title="Unauthorized", detail="x")
         with pytest.raises(ManagerApiTransportRejectedError):
             adapter.get_user("nope")
+
+
+# --------------------------------------------------------------------------- trace de chamadas
+
+
+def test_list_calls_sends_window_and_filters_and_reads_total(mock_settings):
+    adapter = _adapter(mock_settings)
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.return_value = {"calls": [{"id": "t1"}, "lixo"], "callsSize": "23"}
+        page = adapter.list_calls("2026-10-31T21:00:00", "2026-11-01T21:00:00", page=2, page_size=5, filters={"apiId": "400", "uri": "", "httpStatusFrom": None})
+    assert page.rows == [{"id": "t1"}] and page.total == 23
+    assert mock_request.call_args.kwargs["url"] == "http://urltest.com/api-manager/api/v3/calls"
+    assert mock_request.call_args.kwargs["params"] == {
+        "actualPage": "2", "pageSize": "5", "beginDate": "2026-10-31T21:00:00", "endDate": "2026-11-01T21:00:00", "apiId": "400",
+    }
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.return_value = "nope"
+        assert adapter.list_calls("a", "b").rows == []
+
+
+def test_get_call_detail_and_absence(mock_settings):
+    adapter = _adapter(mock_settings)
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.return_value = {"id": "t1", "trace": "[]"}
+        assert adapter.get_call("t1") == {"id": "t1", "trace": "[]"}
+        assert mock_request.call_args.kwargs["url"] == "http://urltest.com/api-manager/api/v3/calls/t1"
+        mock_request.side_effect = HttpClient4xxError(status_code=404, title="Not Found", detail="x")
+        assert adapter.get_call("nope") is None

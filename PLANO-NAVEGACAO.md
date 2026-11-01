@@ -25,7 +25,10 @@ Legenda: ✅ coberto e testado · 🔶 coberto com limite · ⛔ indisponível p
 | Maturidade e sugestões | `sen completeness --id N --revision REVID` | ✅ | doc 05 |
 | Árvore canônica (repositório) | `sen export api --id N [--dir]` | ✅ | round-trip com `sen diag structure` |
 | Timeline/auditoria | — | ⛔ | não há endpoint isolado; a UI compõe dos saves (doc 09) |
-| Trace de chamadas | — | ⛔ | `/calls` responde 400 ao token da CLI em todas as combinações (doc 10) |
+| Chamadas recentes com filtros (API, ambiente, erros, status, URI, operação, revisão) | `sen list calls [--since 24h] [--errors] …` | ✅ | `GET /calls` (doc 10); janela ≤ 7 dias, datas `yyyy-MM-dd'T'HH:mm:ss` UTC |
+| Uma chamada pelo trace id, com o pipeline e headers mascarados | `sen get trace --id` | ✅ | `GET /calls/{id}`; `id == traceId == requestID`; `trace` é string JSON de passos |
+| Analytics prontos: volumetria, erros, latência, rankings, por hora | `sen get analytics [--api N] [--since 7d] [--errors]` | 🔶 | amostra até 2000 chamadas; o Query Lab do Analytics (OpenSearch) exige sessão do portal |
+| Exportação de alto volume em JSON | — | ⏳ previsto | paginar `/calls` até o fim e gravar em arquivo |
 
 ## 2. Donos das APIs
 

@@ -640,3 +640,64 @@ def test_interceptor_types_and_point_filter():
     with pytest.raises(NavigationError) as info:
         service.interceptors(400, point="fourth")
     assert "ponto de execução desconhecido" in info.value.message
+
+
+# --------------------------------------------------------------------------- trace e analytics
+
+
+def _calls_port():
+    from apiops_orchestrator.domain.ports.manager_api_port import CallsPage
+
+    port = _port()
+    rows = [
+        {"id": f"t{i}", "traceId": f"t{i}", "apiId": 400, "apiName": "A", "resultStatus": 200 if i % 2 else 500, "durationMillis": 10 * i,
+         "receivedOnDate": f"2026-11-01T1{i}:00:00Z", "accessToken": "SECRET", "appName": "CI"}
+        for i in range(1, 8)
+    ]
+    port.list_calls.side_effect = lambda begin, end, page=1, page_size=20, filters=None: CallsPage(
+        rows=rows[(page - 1) * page_size: page * page_size], total=len(rows)
+    )
+    port.get_call.return_value = {**rows[0], "requestHeaders": "authorization: Basic SECRET", "trace": "[{\"timeMillis\":2,\"message\":\"m\"}]"}
+    return port
+
+
+def test_calls_page_and_filters():
+    port = _calls_port()
+    service = ApiNavigationService(port, session=None)
+    document = service.calls(since="6h", api_id=400, environment_id=9, uri="/token", errors=True, page=2, limit=3)
+    assert document["total"] == 7 and [c["traceId"] for c in document["calls"]] == ["t4", "t5", "t6"]
+    assert document["filters"] == {"apiId": "400", "environmentId": "9", "uri": "/token", "regex": "false", "httpStatusFrom": "400", "httpStatusTo": "599"}
+    assert document["window"]["clamped"] is False and "SECRET" not in str(document)
+    call = port.list_calls.call_args
+    assert call.kwargs["page"] == 2 and call.kwargs["page_size"] == 3
+    with pytest.raises(NavigationError):
+        service.calls(since="bogus")
+
+
+def test_trace_detail_and_not_found():
+    port = _calls_port()
+    service = ApiNavigationService(port, session=None)
+    document = service.trace("t1")
+    assert document["trace"][0]["message"] == "m" and document["requestHeaders"][0]["masked"] is True
+    assert "SECRET" not in str(document)
+    port.get_call.return_value = None
+    with pytest.raises(NavigationError) as info:
+        service.trace("nope")
+    assert "7 dias" in info.value.message
+
+
+def test_analytics_reads_pages_up_to_the_sample():
+    port = _calls_port()
+    service = ApiNavigationService(port, session=None)
+    service.ANALYTICS_PAGE = 3
+    summary = service.analytics(since="24h", api_id=400, sample=5, top=2)
+    assert summary["sample"] == 5 and summary["total"] == 7
+    assert port.list_calls.call_count == 2  # 3 + 2
+    assert summary["classes"]["5xx"] == 2 and summary["topApps"] == [{"key": "CI", "calls": 5}]
+    assert summary["sampleCap"] == service.ANALYTICS_SAMPLE_CAP and summary["filters"] == {"apiId": "400"}
+
+    port.list_calls.reset_mock()
+    summary = service.analytics(sample=100)
+    assert summary["sample"] == 7 and port.list_calls.call_count == 3  # pára quando a página vem curta
+    with pytest.raises(NavigationError):
+        service.analytics(since="2h", until="3h")
