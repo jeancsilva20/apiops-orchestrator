@@ -17,6 +17,12 @@
 # Geração (Windows): [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("<client_id>:<client_secret>"))
 SEN_CREDENTIALS=""
 
-# Orchestrator Auth API do ECAD.
+# Orchestrator Auth API. O par abaixo é concatenado (AUTH_HOST + AUTH_LOGIN_PATH):
+# confirme que corresponde ao ambiente em que a sua credencial é válida — o
+# recorte entre host e path varia por ambiente.
 AUTH_HOST="https://api-dev.ecad.org.br"
 AUTH_LOGIN_PATH="/orq-auth/v1/oauth2/token"
+
+# O Manager alvo dos demais comandos é o HOST, definido à parte (.env ou
+# ambiente) e INDEPENDENTE do AUTH_HOST. Ausente, assume
+# https://platform-production.sensedia.com. Confira com `sen list api --limit 5`.

@@ -3,6 +3,7 @@
 Summary of recent changes in the project. Each item includes date, category, title and author.
 
 ## Recent History
+- 2026-11-01 — CLI/Auth — "Settings remove aspas de variaveis de auth vindas do ambiente do processo; README, .env.example e .sen.example alinhados ao codigo (comandos, precedencia de fontes, local do .sen_session, HOST vs AUTH_HOST)" — Author: Jean Silva — Type: Correção
 - 2026-09-24 — CLI — "Spec sen completeness: decisões seladas (grill + sondas 24/09), ADR 0008 (port dedicada + AG direto), backlog — sem código" — Author: Jean Silva — Type: Documentação
 - 2026-09-17 — CLI/Auth — "Credenciais de login migram para .sen no pacote; sessao .sen_session co-residente (precedencia processo > .sen > .env)" — Author: Isaac Machado — Type: Nova funcionalidade
 - 2026-09-17 — CLI/Auth — "sen login: resposta migrada para envelope extra_info com validação por perfil (BREAKING)" — Author: Isaac Machado — Type: Nova funcionalidade

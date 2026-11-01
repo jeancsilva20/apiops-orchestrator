@@ -8,6 +8,8 @@ APIOps Orchestrator in Python is built to compose, validate, plan and apply chan
 ## Table of Contents
 - [Overview](#overview)
 - [Features](#features)
+- [CLI Commands](#cli-commands)
+- [Configuration](#configuration)
 - [How to Run](#how-to-run)
 - [Folder Structure](#folder-structure)
 - [Tech Stack](#tech-stack)
@@ -15,33 +17,47 @@ APIOps Orchestrator in Python is built to compose, validate, plan and apply chan
 
 ## Overview
 
-The APIOps Orchestrator is a Python tool for composing, validating and processing API Artifacts (e.g. OpenAPI) for the Sensedia API Management. It ships with a CLI (`sen`) for authentication and API listing, and also runs the legacy artifact validation flow as a script.
+The APIOps Orchestrator is a Python tool for composing, validating and processing API Artifacts (e.g. OpenAPI) for the Sensedia API Management. It ships as a CLI (`sen`) that authenticates against the Orchestrator Auth API and then talks to the Sensedia Manager to list, validate, publish and deploy APIs.
 
 ## Features
 
-- **Authentication (`sen login`):** Authenticate against the Orchestrator Auth API and store the session locally (details: `docs/features/sen-login.md`).
-- **Structure Validation:** Verify if the artifacts folder (`artifacts`) in an API repository follows the predefined folder and file structure rules.
-- **File Importing:** List all the file paths within the (`artifacts`) folder for future processing.
+- **Authentication (`sen login`):** authenticates against the Orchestrator Auth API and stores the session locally.
+- **Listing (`sen list api`):** lists the APIs and revisions visible in the Manager.
+- **Governance score (`sen completeness`):** shows the completeness of an API revision.
+- **Validation (`sen validate`):** validates the API repository and writes to the Draft revision to get the governance verdict.
+- **Publishing (`sen publish`) and deployment (`sen deploy`):** pipeline-only operations against the target revision/environment.
 
 ## CLI Commands
 
+Run `sen --help` or `sen <command> --help` for the authoritative option list. All commands accept `--output/-o` with `text` (default), `json` or `yaml`.
+
+| Command | What it does | Notes |
+|---|---|---|
+| `sen login` | Authenticates and saves the session locally | Required before every other command |
+| `sen list api` | Lists APIs in the Manager | `--id`, `--query`, `--limit`, `--offset`, `--all`, `--revisions/-r` |
+| `sen completeness` | Completeness of an API revision | `--id`, `--revision`, `--score-only` |
+| `sen validate` | Validates the repository and writes to Draft | `--repo` (default: current directory) |
+| `sen publish` | Publishes to the environment revision | Pipeline only (`EXECUTION_MODE=pipeline`) |
+| `sen deploy` | Deploys the revision to the environment | Pipeline only (`EXECUTION_MODE=pipeline`) |
+
 ### `sen login`
 
-Authenticates the user against the Orchestrator Auth API and saves the session locally for subsequent executions.
-
+```bash
+# 1. Generate the credential blob — Base64 of client_id:secret, no "Basic" prefix:
+printf '%s:%s' "<client_id>" "<client_secret>" | base64          # Linux/macOS
+```
 ```powershell
-# 1. Generate the credential blob (Base64 of client_id:secret — no "Basic" prefix):
-[Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("<client_id>:<secret>"))
+[Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("<client_id>:<secret>"))   # Windows
+```
 
-# 2. Copy src/apiops_orchestrator/.sen.example to src/apiops_orchestrator/.sen,
-#    then fill in the three mandatory keys (they are ONLY read from .sen, not .env):
-#    SEN_CREDENTIALS=<blob from step 1>
-#    AUTH_HOST=https://api-consulting.sensedia.com
-#    AUTH_LOGIN_PATH=/cli-2/orq-auth/v1/oauth2/token
-
+```bash
+# 2. Copy src/apiops_orchestrator/.sen.example to src/apiops_orchestrator/.sen
+#    and fill in SEN_CREDENTIALS, AUTH_HOST and AUTH_LOGIN_PATH.
 # 3. Run:
 poetry run sen login
 ```
+
+The session is written to `.sen_session` in the **package directory** (`src/apiops_orchestrator/`, next to `.sen`; in the frozen executable, next to the binary). It is hidden, owner-only and git-ignored.
 
 > **Nota (console script `sen`):** o binário `sen` é criado a partir de
 > `[tool.poetry.scripts]` no `pyproject.toml` quando o próprio pacote é
@@ -52,12 +68,40 @@ poetry run sen login
 > alternativa `python src/apiops_orchestrator/main.py sen <comando>`
 > (ou `poetry run python ...`) continua funcionando e aceita os mesmos comandos.
 
-The credential file lives in the **package directory** (`src/apiops_orchestrator/.sen`, git-ignored) — see
-[`docs/features/sen-login.md`](docs/features/sen-login.md).
+## Configuration
 
-The session file is stored at the **project root** as `.sen_session` (hidden, owner-only, git-ignored — see ADR 0006).
-Full behavior (exit codes, session file and privacy) is documented in
-[`docs/features/sen-login.md`](docs/features/sen-login.md).
+### Where values come from
+
+Precedence, highest first:
+
+1. **Process environment** (shell `export`, pipeline vault)
+2. **`.sen`** in the package directory (`src/apiops_orchestrator/.sen`) — template: `.sen.example`
+3. **`.env`** in the project root — template: `.env.example`
+
+The two files are gap-filled into the environment (never overriding what is already set), so a value exported in the shell always wins. Any of the three sources can provide any key.
+
+> **Quotes:** `VAR="value"` is unwrapped by dotenv when it comes from `.sen`/`.env`, but exported directly in the environment the quotes stay **inside** the value. `Settings` strips a symmetric pair of quotes (single or double) from `HOST`, `AUTH_HOST`, `AUTH_LOGIN_PATH`, `AUTH_VALIDATE_PATH` and `SEN_CREDENTIALS`, so both forms work. A lone quote on one side is kept — that is data, not wrapping.
+
+### Variables
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `SEN_CREDENTIALS` | for `sen login` | Base64 of `client_id:secret`, no `Basic` prefix |
+| `AUTH_HOST` | yes | Host of the Orchestrator Auth API |
+| `AUTH_LOGIN_PATH` | yes | Token path; concatenated to `AUTH_HOST` |
+| `AUTH_VALIDATE_PATH` | no | Session validation path. Default: `{AUTH_LOGIN_PATH}/validation` |
+| `HOST` | no (has default) | **Sensedia Manager** targeted by `list`, `completeness`, `validate`, `publish`, `deploy` |
+| `EXECUTION_MODE` | no | `local` (default) or `pipeline` |
+| `TEMPLATE_API_ID` | pipeline only | Golden Path API id; inject from the vault |
+| `TARGET_REVISION_NUMBER` | pipeline only | Revision **number** as shown in the UI (1=Draft, 2=DEV, 3=HML, 4=PRD) |
+| `TARGET_ENVIRONMENT_ID` | pipeline only | Manager id of the environment receiving `sen deploy` |
+
+> **`HOST` defaults to `https://platform-production.sensedia.com`.** `AUTH_HOST` and `HOST` are independent: authenticating against one environment does **not** point the Manager commands at it. If you work against a non-default Manager, set `HOST` explicitly — otherwise `validate`, `publish` and `deploy` act on the default one. Check the target before any write operation:
+> ```bash
+> sen list api --limit 5      # the APIs listed are the ones your commands will act on
+> ```
+
+See `.env.example` and `src/apiops_orchestrator/.sen.example` for annotated templates.
 
 ## How To Run
 
@@ -108,38 +152,23 @@ The Poetry flow keeps using `pyproject.toml` + `poetry.lock` as before — untou
 
 Both options produce an isolated environment; pick ONE of them per machine/clone.
 
-All commands below use the local interpreter directly:
-```powershell
-.\.venv\Scripts\python.exe
+### 2. Configure the credentials
+
+Follow [Configuration](#configuration): copy `src/apiops_orchestrator/.sen.example` to `.sen` and fill in `SEN_CREDENTIALS`, `AUTH_HOST` and `AUTH_LOGIN_PATH`. Set `HOST` if the Manager is not the default one.
+
+### 3. Run
+
+```bash
+poetry run sen login
+poetry run sen list api --limit 10
 ```
 
-### 2. Configuration (Optional for tests)
-
-This step is optional if you only want to run tests. Before running the main script, you can configure the path to the API repository that will be processed.
-
-1.  **Environment Variables (.env)**
-    Create a `.env` file in the project root, copying the content of `.env.example`. This file will be used to set the environment variables required by the orchestrator.
-
-2.  Open `src/apiops_orchestrator/main.py`.
-3.  Find and edit `repo_path` (around line 51) so it points to the **absolute path** of your local API repository (ex: `api-repo-cep`).
-    ```python
-    repo_path = Path(
-        r"C:\caminho\absoluto\para\seu\api-repo-cep"  # Update this to your local repository path.
-    )
-    ```
-
-### 3. Running the code
-
-Run the script from the project root:
+With the pip environment, use the local interpreter:
 ```powershell
-.\.venv\Scripts\python.exe src\apiops_orchestrator\main.py
+.\.venv\Scripts\sen.exe login
 ```
-The script will print the location of the artifacts folder, validate its structure and list the files found.
 
-Equivalent with the Poetry environment:
-```powershell
-poetry run python src/apiops_orchestrator/main.py
-```
+`sen --help` and `sen --version` answer without any `.env`/`.sen`: configuration is only loaded by the command that actually needs it.
 
 ### Tests
 
@@ -154,17 +183,18 @@ poetry run pytest
 ```
 
 ## Folder Structure
-- `src/apiops_orchestrator/main.py` — Main orchestration script entry point.
+- `src/apiops_orchestrator/main.py` — CLI entry point and lazy Composition Root.
 - `src/apiops_orchestrator/config/settings.py` — Configuration and environment variables.
-- `src/apiops_orchestrator/adapters/*` — Inbound/outbound adapters
+- `src/apiops_orchestrator/adapters/*` — Inbound (CLI) and outbound (HTTP, files) adapters.
 - `src/apiops_orchestrator/application/*` — Application use cases and services.
 - `src/apiops_orchestrator/domain/*` — Domain models, ports, and services.
-- `src/apiops_orchestrator/infrastructure/*` — Infrastructure integrations.
+- `src/apiops_orchestrator/infrastructure/*` — Infrastructure integrations (HTTP client, session storage, logging).
 - `tests/unit/...` — Unit tests.
 
 ## Tech Stack
 - Python 3.12+
-- Pydantic Settings (environment configuration/.env)
+- Typer + Rich (CLI)
+- Pydantic Settings (environment configuration)
 - Pytest (testing)
 - Dependency management: pip + requirements.txt (standard) or Poetry (optional)
 
@@ -180,4 +210,3 @@ poetry run pytest
 
 ---
 Check also `CHANGELOG.md` for the project's changing history.
-
