@@ -32,6 +32,8 @@ from apiops_orchestrator.application.services.manager_failure_translator import 
 )
 from apiops_orchestrator.domain.services import governance_check as gov
 from apiops_orchestrator.domain.services import tenant_catalog as tenant
+from apiops_orchestrator.domain.services import access_control as access
+from apiops_orchestrator.domain.services import interceptor_types as itypes
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiError,
@@ -420,7 +422,12 @@ class ApiNavigationService:
         operation: Optional[str] = None,
         effective: bool = False,
         include_content: bool = False,
+        point: Optional[str] = None,
     ) -> Dict[str, Any]:
+        try:
+            wanted = nav.normalize_point(point)
+        except ValueError as exc:
+            raise NavigationError(str(exc)) from exc
         api, revision = self.revision(api_id, number, revision_id)
         document = nav.scope_flows(
             api,
@@ -429,6 +436,7 @@ class ApiNavigationService:
             operation=operation,
             effective=effective,
             include_content=include_content,
+            point=wanted,
         )
         if document is None:
             selector = " ".join(
@@ -627,6 +635,69 @@ class ApiNavigationService:
 
     def gateway_pools(self) -> list:
         return [tenant.describe_gateway_pool(p) for p in self._read(self.manager_api.list_gateway_pools)]
+
+    # ------------------------------------------------------------------ access control
+
+    def roles(self, query: Optional[str] = None) -> list:
+        rows = self._read(lambda: self.manager_api.list_policies(query))
+        documents = [access.describe_role(p) for p in rows if access.role_matches(p, query)]
+        documents.sort(key=lambda r: str(r["name"] or "").lower())
+        return documents
+
+    def role(self, role_id: str) -> Dict[str, Any]:
+        policy = self._read(lambda: self.manager_api.get_policy(role_id))
+        if not policy:
+            # Aceita o NOME da role: resolve pelo catálogo antes de desistir.
+            candidates = [
+                p for p in self._read(lambda: self.manager_api.list_policies(role_id))
+                if str(p.get("name") or "").lower() == role_id.lower()
+            ]
+            if len(candidates) != 1:
+                raise NavigationError(
+                    f"Role {role_id!r} não encontrada. Liste as existentes com: sen list roles"
+                )
+            policy = self._read(lambda: self.manager_api.get_policy(str(candidates[0]["id"]))) or candidates[0]
+        permissions = self._safe(lambda: self.manager_api.get_policy_permissions(str(policy["id"])), [])
+        users = self._safe(lambda: self.manager_api.get_policy_users(str(policy["id"])), [])
+        return access.role_document(policy, permissions, users)
+
+    def user(self, username: str) -> Dict[str, Any]:
+        raw = self._read(lambda: self.manager_api.get_user(username))
+        if not raw:
+            raise NavigationError(
+                f"Usuário {username!r} não encontrado. Busque com: sen list users --query {username}"
+            )
+        groups = self._safe(lambda: self.manager_api.get_user_groups(username), [])
+        policies = self._safe(lambda: self.manager_api.get_user_policies(username), [])
+        return access.user_document(raw, groups, policies)
+
+    def team(self, name: str) -> Dict[str, Any]:
+        raw = self._read(lambda: self.manager_api.get_group(name))
+        if not raw:
+            raise NavigationError(
+                f"Time {name!r} não encontrado. Liste os existentes com: sen list teams"
+            )
+        users = self._safe(lambda: self.manager_api.get_group_users(name), [])
+        return access.team_document(raw, users)
+
+    def permissions(self, product: str) -> Dict[str, Any]:
+        codes = self._read(lambda: self.manager_api.list_permissions(product))
+        return access.permissions_document(product, codes)
+
+    # ------------------------------------------------------------------ referência de tipos
+
+    @staticmethod
+    def interceptor_types() -> list:
+        return [itypes.describe_type(t) for t in itypes.all_types()]
+
+    @staticmethod
+    def interceptor_type(name: str) -> Dict[str, Any]:
+        kind = itypes.find_type(name)
+        if kind is None:
+            raise NavigationError(
+                f"Tipo {name!r} não está na referência. Veja os nomes com: sen list interceptors"
+            )
+        return itypes.describe_type(kind)
 
     # ------------------------------------------------------------------ falhas
 

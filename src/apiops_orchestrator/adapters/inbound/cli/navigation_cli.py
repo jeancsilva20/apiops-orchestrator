@@ -39,8 +39,9 @@ SERVICE_KEY = "api_navigation_service_factory"
 get_app = typer.Typer(
     name="get",
     help=(
-        "Lê uma API do Manager em níveis de detalhe crescentes, sem precisar do "
-        "repositório local: api → resources → interceptors → custom/swagger."
+        "Lê o Manager em níveis de detalhe crescentes, sem repositório local: api → resources → "
+        "interceptors → custom/swagger; governance e impact; workflow, environment, app, plan; "
+        "user, team, role; interceptor-type (referência de content)."
     ),
     no_args_is_help=True,
 )
@@ -398,6 +399,19 @@ def _print_scope(scope: Dict[str, Any], effective: bool, content: bool) -> None:
         _print_items(items, inner + "   ", own_ids=own_ids, content=content)
     if not any(flows.get(p) for p in ("request", "response")):
         rprint(inner + _dim("(nenhum interceptor " + ("executa" if effective else "próprio") + ")"))
+    others = scope.get("other") or []
+    if others:
+        rprint(f"{inner}[bold]outros pontos[/bold] " + _dim("(fora de FIRST/SECOND: não governados pelo repositório, mas executam)"))
+        for item in others:
+            rprint(
+                f"{inner}   [cyan][{item.get('id')}][/cyan] {str(item.get('position')):<3} "
+                f"{_literal(item.get('type') or '-'):<22} {_dim(_literal(item.get('executionPoint')))} "
+                f"{_dim(_literal(item.get('summary') or ''))}"
+            )
+            if content and item.get("content") is not None:
+                text = json.dumps(item["content"], indent=2, ensure_ascii=False) if isinstance(item["content"], (dict, list)) else str(item["content"])
+                for line in text.splitlines():
+                    rprint(f"{inner}         {_literal(line)}")
 
 
 @get_app.command("interceptors")
@@ -422,6 +436,11 @@ def get_interceptors(
     content: bool = typer.Option(
         False, "--content", help="Inclui o conteúdo (configuração) de cada interceptor."
     ),
+    point: Optional[str] = typer.Option(
+        None,
+        "--point",
+        help="Só um ponto de execução: FIRST/request, SECOND/response ou THIRD.",
+    ),
     item: Optional[int] = typer.Option(
         None, "--item", help="Zoom em UM interceptor pelo id do Manager: conteúdo inteiro."
     ),
@@ -429,8 +448,8 @@ def get_interceptors(
 ):
     """Fluxo de interceptors por escopo (nível 3) ou um interceptor inteiro (--item)."""
     _check_revision_options(revision, revision_id)
-    if item is not None and (resource or operation or effective or content):
-        _print_error("--item não combina com --resource, --operation, --effective ou --content.")
+    if item is not None and (resource or operation or effective or content or point):
+        _print_error("--item não combina com --resource, --operation, --effective, --content ou --point.")
         raise typer.Exit(code=1)
 
     if item is not None:
@@ -472,6 +491,14 @@ def get_interceptors(
                 )
             if data.get("parentId") is not None:
                 rprint(_dim(f"marcação REMOVED do item herdado [{data['parentId']}]"))
+            reference = document.get("reference")
+            if reference:
+                bits = [f"{len(reference['known'])} campo(s) conhecido(s)"]
+                if reference.get("unknown"):
+                    bits.append("fora da referência: " + ", ".join(reference["unknown"]))
+                if reference.get("missing"):
+                    bits.append("esperados ausentes: " + ", ".join(reference["missing"]))
+                rprint(_dim("referência do tipo: " + _literal(" · ".join(bits)) + f" → sen get interceptor-type --type \"{_literal(reference['type'])}\""))
             body = data.get("content")
             rprint("\n[bold]content[/bold]")
             if isinstance(body, dict) and data.get("type") == "Custom" and "script" in body:
@@ -499,6 +526,7 @@ def get_interceptors(
             operation=operation,
             effective=effective,
             include_content=content,
+            point=point,
         ),
     )
 
@@ -515,6 +543,8 @@ def get_interceptors(
         if not content:
             hints.append("--content inclui a configuração")
         hints.append("--item <id> abre um interceptor")
+        if document.get("point"):
+            mode += f" · só {document['point']}"
         rprint(_dim(f"modo: {mode}  ({' · '.join(hints)})\n"))
         for scope in document.get("scopes") or []:
             _print_scope(scope, effective=effective, content=content)
@@ -1388,5 +1418,227 @@ def reveal_variable_command(
             )
         )
         rprint(_literal(document.get("value") if document.get("value") is not None else "(vazio)"))
+
+    display_output(document, output_format=output, text_callback=_text)
+
+
+
+# ===========================================================================
+# Donos das APIs, Access Control (roles, usuários, times, permissões) e
+# referência de tipos de interceptor.
+# ===========================================================================
+
+
+def list_owners(
+    ctx: typer.Context,
+    output: OutputFormat = _output_option(),
+):
+    """Quem é dono de cada API: APIs por dono, contexto e time (lê o catálogo inteiro)."""
+    from apiops_orchestrator.domain.services.tenant_catalog import owners_summary
+
+    factory = (ctx.obj or {}).get("api_listing_service_factory")
+    if not callable(factory):
+        _print_error("Serviço de listagem de APIs indisponível no contexto.")
+        raise typer.Exit(code=1)
+    rows = _run(
+        ctx,
+        "list owners",
+        output,
+        lambda: owners_summary(factory().list_apis(query=None, offset=0, limit=None)),
+    )
+
+    def _text() -> None:
+        if not rows:
+            rprint("[yellow]Nenhuma API visível.[/yellow]")
+            return
+        _grade(
+            [
+                (
+                    str(r.get("owner")),
+                    str(r.get("total")),
+                    ", ".join(r.get("contexts") or []) or "-",
+                    ", ".join(r.get("teams") or []) or "-",
+                    ", ".join(f"{a['id']} {a['name']}" for a in (r.get("apis") or [])[:6])
+                    + (" …" if len(r.get("apis") or []) > 6 else ""),
+                )
+                for r in rows
+            ],
+            header=("DONO", "APIS", "CONTEXTO", "TIMES", "APIS (id nome)"),
+            justify=(None, "right", None, None, None),
+        )
+        rprint(_dim("APIs de um dono: sen list api --all --owner <dono> · de um time: sen list api --all --team <time>"))
+
+    display_output(rows, output_format=output, text_callback=_text)
+
+
+def list_roles(
+    ctx: typer.Context,
+    query: Optional[str] = typer.Option(None, "--query", help="Filtra por nome ou descrição."),
+    output: OutputFormat = _output_option(),
+):
+    """Roles (policies) do Access Control e os produtos que cada uma habilita."""
+    rows = _run(ctx, "list roles", output, lambda: _service(ctx).roles(query))
+
+    def _text() -> None:
+        if not rows:
+            rprint("[yellow]Nenhuma role com esse filtro.[/yellow]")
+            return
+        _grade(
+            [
+                (
+                    str(r.get("name") or ""),
+                    "Sensedia" if r.get("managedBySensedia") else "tenant",
+                    ", ".join(str(p.get("name")) for p in r.get("products") or []) or "-",
+                    str(r.get("description") or "-"),
+                    str(r.get("id") or ""),
+                )
+                for r in rows
+            ],
+            header=("ROLE", "GERIDA POR", "PRODUTOS", "DESCRIÇÃO", "ID"),
+        )
+        rprint(_dim("permissões e usuários: sen get role --id <ID ou nome>"))
+
+    display_output(rows, output_format=output, text_callback=_text)
+
+
+@get_app.command("role")
+def get_role_command(
+    ctx: typer.Context,
+    role_id: str = typer.Option(..., "--id", help="Id (UUID) ou nome exato da role."),
+    output: OutputFormat = _output_option(),
+):
+    """Uma role: permissões por produto e quem a tem."""
+    document = _run(ctx, "get role", output, lambda: _service(ctx).role(role_id))
+
+    def _text() -> None:
+        totals = document.get("totals") or {}
+        rprint(
+            f"[bold]{_literal(document.get('name'))}[/bold]  "
+            + _dim(f"role {document.get('id')} · {'gerida pela Sensedia' if document.get('managedBySensedia') else 'do tenant'} · "
+                   f"{totals.get('permissions', 0)} permissão(ões) em {totals.get('products', 0)} produto(s) · {totals.get('users', 0)} usuário(s)")
+        )
+        if document.get("description"):
+            rprint(_dim(_literal(document["description"])))
+        for block in document.get("permissions") or []:
+            rprint(f"\n[bold cyan]{_literal(block.get('product'))}[/bold cyan]  " + _dim(f"{len(block.get('permissions') or [])} permissão(ões)"))
+            for perm in block.get("permissions") or []:
+                rprint(f"  {_literal(perm.get('code'))}  " + _dim(_literal(perm.get('name') or '')))
+        users = document.get("users") or []
+        rprint("\n[bold cyan]USUÁRIOS[/bold cyan]  " + _dim(f"{len(users)}"))
+        for u in users:
+            rprint(f"  {_literal(u.get('username'))}  " + _dim(f"{_literal(u.get('status') or '-')}"))
+
+    display_output(document, output_format=output, text_callback=_text)
+
+
+@get_app.command("user")
+def get_user_command(
+    ctx: typer.Context,
+    username: str = typer.Option(..., "--username", help="Username exato (sen list users)."),
+    output: OutputFormat = _output_option(),
+):
+    """Um usuário: status, times e roles (e se é Super Admin)."""
+    document = _run(ctx, "get user", output, lambda: _service(ctx).user(username))
+
+    def _text() -> None:
+        rprint(
+            f"[bold]{_literal(document.get('username'))}[/bold]  "
+            + _dim(f"{_literal(document.get('name') or '-')} · {_literal(document.get('status') or '-')} · "
+                   f"{_literal(document.get('providerType') or '-')}"
+                   + (" · MFA" if document.get("mfaEnabled") else "")
+                   + (" · [bold]Super Admin[/bold]" if document.get("isSuperAdmin") else ""))
+        )
+        rprint(_dim(f"e-mail {_literal(document.get('email') or '-')} · criado em {_literal(document.get('createdAt') or '-')}"))
+        teams = document.get("teams") or []
+        rprint("\n[bold cyan]TIMES[/bold cyan]  " + _dim(f"{len(teams)}"))
+        for t in teams:
+            rprint(f"  {_literal(t.get('name'))}  " + _dim(_literal(t.get('description') or '')))
+        roles = document.get("roles") or []
+        rprint("\n[bold cyan]ROLES[/bold cyan]  " + _dim(f"{len(roles)}"))
+        for r in roles:
+            rprint(f"  {_literal(r.get('name'))}  " + _dim(_literal(r.get('description') or '')))
+        rprint(_dim("\nAPIs deste dono: sen list api --all --owner " + _literal(document.get("username"))))
+
+    display_output(document, output_format=output, text_callback=_text)
+
+
+@get_app.command("team")
+def get_team_command(
+    ctx: typer.Context,
+    name: str = typer.Option(..., "--name", help="Nome exato do time (sen list teams)."),
+    output: OutputFormat = _output_option(),
+):
+    """Um time: descrição e membros. É o nome usado em visibilidade GROUP e nos workflows."""
+    document = _run(ctx, "get team", output, lambda: _service(ctx).team(name))
+
+    def _text() -> None:
+        members = document.get("members") or []
+        rprint(f"[bold]{_literal(document.get('name'))}[/bold]  " + _dim(f"{len(members)} membro(s)"))
+        if document.get("description"):
+            rprint(_dim(_literal(document["description"])))
+        for m in members:
+            rprint(f"  {_literal(m.get('username'))}  " + _dim(f"{_literal(m.get('name') or '-')} · {_literal(m.get('status') or '-')}"))
+        rprint(_dim(f"\nAPIs do time: sen list api --all --team \"{_literal(document.get('name'))}\" · workflows: sen list workflows"))
+
+    display_output(document, output_format=output, text_callback=_text)
+
+
+def list_permissions(
+    ctx: typer.Context,
+    product: str = typer.Option("API Platform", "--product", help='Produto: "API Platform", "Access Control", "Adaptive Governance", "Analytics", …'),
+    output: OutputFormat = _output_option(),
+):
+    """Catálogo de códigos de permissão de um produto, agrupado por domínio."""
+    document = _run(ctx, "list permissions", output, lambda: _service(ctx).permissions(product))
+
+    def _text() -> None:
+        totals = document.get("totals") or {}
+        rprint(f"[bold]{_literal(document.get('product'))}[/bold]  " + _dim(f"{totals.get('codes', 0)} permissão(ões) em {totals.get('domains', 0)} domínio(s)"))
+        for block in document.get("domains") or []:
+            rprint(f"\n  [bold]{_literal(block.get('domain'))}[/bold]")
+            for code in block.get("codes") or []:
+                rprint(f"     {_literal(code)}")
+
+    display_output(document, output_format=output, text_callback=_text)
+
+
+@get_app.command("interceptor-type")
+def get_interceptor_type_command(
+    ctx: typer.Context,
+    type_name: Optional[str] = typer.Option(None, "--type", help='Nome do tipo como aparece em `type` (ex.: "Rate limit"). Ausente: todos.'),
+    output: OutputFormat = _output_option(),
+):
+    """Referência do `content` de um tipo de interceptor: campos, pontos, exemplo (doc 06 + tenant)."""
+    service = _service(ctx)
+    document = _run(
+        ctx,
+        "get interceptor-type",
+        output,
+        lambda: service.interceptor_type(type_name) if type_name else service.interceptor_types(),
+    )
+
+    def _one(kind: Dict[str, Any]) -> None:
+        rprint(
+            f"[bold]{_literal(kind.get('type'))}[/bold]  "
+            + _dim(f"{_literal(kind.get('group'))} · pontos: {', '.join(kind.get('executionPoints') or []) or '-'}")
+        )
+        fields = kind.get("fields") or []
+        if not fields:
+            rprint("  " + _dim("sem campos próprios conhecidos (além de " + ", ".join(kind.get("commonFields") or []) + ")"))
+        for f in fields:
+            rprint(f"  {_literal(f.get('name')):<36} {_dim(_literal(f.get('meaning') or ''))}")
+        if kind.get("example"):
+            rprint("  " + _dim("exemplo: " + _literal(json.dumps(kind["example"], ensure_ascii=False))))
+        if kind.get("note"):
+            rprint("  " + _dim(_literal(kind["note"])))
+
+    def _text() -> None:
+        if isinstance(document, list):
+            for kind in document:
+                _one(kind)
+                rprint("")
+            rprint(_dim("um tipo: sen get interceptor-type --type \"<nome>\" · catálogo vivo do tenant: sen list interceptors"))
+        else:
+            _one(document)
 
     display_output(document, output_format=output, text_callback=_text)

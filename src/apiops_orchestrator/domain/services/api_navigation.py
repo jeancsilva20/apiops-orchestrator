@@ -115,6 +115,12 @@ def _by_point(items: Sequence[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]
     return {"request": request, "response": response}
 
 
+def _other_points(items: Optional[Sequence[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    """Itens fora de FIRST/SECOND (ex.: THIRD): não governados, mas existem e executam."""
+    _, preserved = partition(items)
+    return sorted(preserved, key=lambda i: (str(i.get("executionPoint") or ""), i.get("position") or 0))
+
+
 def _live(items: Optional[Sequence[Dict[str, Any]]]) -> List[Dict[str, Any]]:
     """Governados vivos: FIRST/SECOND sem a marcação REMOVED, por `position`."""
     governed, _ = partition(items)
@@ -550,6 +556,9 @@ def describe_scope(
             for point, items in _by_point(scope.own).items()
         },
     }
+    document["other"] = [
+        describe_item(i, include_content=include_content) for i in _other_points(scope.raw.get("interceptors"))
+    ]
     if scope.resource_key is not None:
         document["resource"] = scope.resource_key
     if effective:
@@ -568,21 +577,53 @@ def scope_flows(
     operation: Optional[str] = None,
     effective: bool = False,
     include_content: bool = False,
+    point: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Fluxos de interceptors dos escopos selecionados; `None` se o seletor não casa."""
+    """Fluxos de interceptors dos escopos selecionados; `None` se o seletor não casa.
+
+    `point` (FIRST/SECOND/THIRD ou request/response/third) deixa só esse ponto
+    de execução em cada escopo; os outros pontos saem vazios.
+    """
     tree = scope_tree(revision)
     scopes = select_scopes(tree, resource=resource, operation=operation)
     if not scopes:
         return None
+    wanted = normalize_point(point)
+    documents = [describe_scope(s, effective=effective, include_content=include_content) for s in scopes]
+    if wanted is not None:
+        for document in documents:
+            for bucket in ("own", "effective"):
+                if bucket in document:
+                    for key in list(document[bucket]):
+                        if _POINT_OF_BUCKET[key] != wanted:
+                            document[bucket][key] = []
+            document["other"] = [i for i in document["other"] if i.get("executionPoint") == wanted]
+            document["removes"] = [r for r in document["removes"] if r.get("executionPoint") == wanted]
     return {
         "api": api_header(api),
         "revision": revision_header(api, revision),
         "mode": "effective" if effective else "own",
-        "scopes": [
-            describe_scope(s, effective=effective, include_content=include_content)
-            for s in scopes
-        ],
+        "point": wanted,
+        "scopes": documents,
     }
+
+
+_POINT_ALIASES = {
+    "FIRST": "FIRST", "REQUEST": "FIRST", "1": "FIRST",
+    "SECOND": "SECOND", "RESPONSE": "SECOND", "2": "SECOND",
+    "THIRD": "THIRD", "3": "THIRD",
+}
+_POINT_OF_BUCKET = {"request": "FIRST", "response": "SECOND"}
+
+
+def normalize_point(point: Optional[str]) -> Optional[str]:
+    """`request`/`FIRST`/`1` → FIRST; `response`/`SECOND`/`2` → SECOND; `third`/`3` → THIRD."""
+    if point is None or not str(point).strip():
+        return None
+    key = str(point).strip().upper()
+    if key not in _POINT_ALIASES:
+        raise ValueError(f"ponto de execução desconhecido: {point!r} (use FIRST, SECOND ou THIRD)")
+    return _POINT_ALIASES[key]
 
 
 # --------------------------------------------------------------------------- nível 4
@@ -604,6 +645,9 @@ def describe_interceptor(
 ) -> Dict[str, Any]:
     described = describe_item(item, include_content=True)
     described.pop("summary", None)
+    from apiops_orchestrator.domain.services.interceptor_types import check_fields
+
+    reference = check_fields(item.get("type"), described.get("content"))
     return {
         "api": api_header(api),
         "revision": revision_header(api, revision),
@@ -620,4 +664,5 @@ def describe_interceptor(
             "parentId": tombstone_target(item) if item.get("status") == STATUS_REMOVED else None,
             "governed": layout.is_governed(item.get("executionPoint")),
         },
+        "reference": reference,
     }

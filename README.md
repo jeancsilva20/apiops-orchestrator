@@ -34,7 +34,7 @@ Run `sen --help` or `sen <command> --help` for the authoritative option list. Al
 | Command | What it does | Notes |
 |---|---|---|
 | `sen login` | Authenticates and saves the session locally | Required before every other command |
-| `sen list api` | Lists APIs in the Manager | `--id`, `--query`, `--limit`, `--offset`, `--all`, `--revisions/-r` |
+| `sen list api` | Lists APIs in the Manager | `--id`, `--query`, `--limit`, `--offset`, `--all`, `--revisions/-r`, `--owner`, `--team`, `--context`, `--workflow`, `--stage`, `--wide/-w` |
 | `sen completeness` | Completeness of an API revision | `--id`, `--revision`, `--score-only` |
 | `sen validate` | Validates the repository and writes to Draft | `--repo` (default: current directory) |
 | `sen publish` | Publishes to the environment revision | Pipeline only (`EXECUTION_MODE=pipeline`) |
@@ -58,6 +58,9 @@ Run `sen --help` or `sen <command> --help` for the authoritative option list. Al
 | `sen list plans` / `sen get plan` | Plans, their API and the interceptors a plan adds | `--api`, `--query` |
 | `sen list tokens` | Issued access tokens (owner, app, status, expiry; never the code) | `--app`, `--api` |
 | `sen list users` / `sen list teams` | Access Control users and teams | `--query` |
+| `sen get user` / `sen get team` / `sen list roles` / `sen get role` / `sen list permissions` | Access Control in depth: a user's teams and roles, a team's members, roles and their permissions | `--username`, `--name`, `--id`, `--product` |
+| `sen list owners` | APIs grouped by owner, with context and teams | |
+| `sen get interceptor-type` | Reference of each interceptor type's `content` fields (doc 06 + tenant) | `--type` |
 | `sen list inbounds` / `sen list gateway-pools` | Gateway inbound addresses and pools | |
 
 ### `sen login`
@@ -90,7 +93,7 @@ The session is written to `.sen_session` in the **package directory** (`src/apio
 
 ### Exploring an environment without the source (`sen get`, `sen export`)
 
-> The complete, per-command reference (every option, what each level shows, what is masked and what is not reachable) is in [COMMANDS.md](COMMANDS.md).
+> The complete, per-command reference (every option, what each level shows, what is masked and what is not reachable) is in [COMMANDS.md](COMMANDS.md). The coverage plan by area (API data, owners, access control, governance, apps, plans, environments, interceptors in FIRST/SECOND/THIRD, interceptor content), with what was validated against the APIM/AG mapping and what is out of reach, is in [PLANO-NAVEGACAO.md](PLANO-NAVEGACAO.md).
 
 The `get` and `export` groups read an API straight from the Manager, so a person — or a coding agent such as Claude Code that only has the CLI — can inspect APIs **without a local copy of the repository**. Every command is read-only, accepts `-o json`/`-o yaml`, and each level of detail points to the next:
 

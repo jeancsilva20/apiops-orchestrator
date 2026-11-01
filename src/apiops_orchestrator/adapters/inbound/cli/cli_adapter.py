@@ -75,13 +75,18 @@ main_app = typer.Typer(
 
 sen_app = typer.Typer(
     name="sen",
-    help="CLI do APIOps: framework GitOps para automatizar, padronizar e gerenciar suas APIs.",
+    help=(
+        "CLI do APIOps: framework GitOps para automatizar, padronizar e gerenciar suas APIs. "
+        "Navegue o ambiente sem repositório local com `list` (catálogos), `get` (níveis de "
+        "detalhe de uma API, governança, consumo, access control), `export` (árvore canônica) "
+        "e `reveal` (desmascarar um valor). Referência completa: COMMANDS.md."
+    ),
     no_args_is_help=True,
 )
 
 list_app = typer.Typer(
     name="list",
-    help="Lista APIs e os catálogos do tenant (ambientes, variáveis, workflows, atributos, interceptors, apps, planos, tokens, usuários, times, gateway).",
+    help="Lista APIs (com filtros por dono/time/contexto/stage) e os catálogos do tenant: donos, ambientes, variáveis, workflows, atributos, interceptors, apps, planos, tokens, usuários, times, roles, permissões, gateway.",
 )
 
 
@@ -90,9 +95,9 @@ def list_callback(ctx: typer.Context):
     if ctx.invoked_subcommand is None:
         rprint(
             "[bold yellow]Nenhum subcomando informado.[/bold yellow] "
-            "Disponíveis: sen list api · environments · variables · workflows · "
-            "attributes · interceptors · apps · plans · tokens · users · teams · "
-            "inbounds · gateway-pools (consulte: sen list --help)"
+            "Disponíveis: sen list api · owners · environments · variables · workflows · "
+            "attributes · interceptors · apps · plans · tokens · users · teams · roles · "
+            "permissions · inbounds · gateway-pools (consulte: sen list --help)"
         )
         raise typer.Exit(code=2)
 
@@ -576,13 +581,32 @@ def list_apis(
     revisions: bool = typer.Option(
         False, "--revisions", "-r", help="Mostra as revisões da API informada em --id."
     ),
+    owner: Optional[str] = typer.Option(None, "--owner", help="Só APIs deste dono (username)."),
+    team: Optional[str] = typer.Option(None, "--team", help="Só APIs com visibilidade deste time."),
+    context: Optional[str] = typer.Option(
+        None, "--context", help="Só APIs com este contexto: organization, group ou me."
+    ),
+    workflow_id: Optional[int] = typer.Option(None, "--workflow", help="Só APIs cuja revisão corrente está neste workflow (id)."),
+    stage_id: Optional[int] = typer.Option(None, "--stage", help="Só APIs cuja revisão corrente está neste stage (id)."),
+    wide: bool = typer.Option(
+        False, "--wide", "-w", help="Acrescenta as colunas OWNER, CONTEXT, TEAM e STAGE."
+    ),
     output: OutputFormat = typer.Option(
         OutputFormat.TEXT, "--output", "-o", help="Formato da saída (text, json, yaml)."
     ),
 ):
     """
-    Lista as APIs do Sensedia Manager.
+    Lista as APIs do Sensedia Manager (com filtros por dono, time, contexto, workflow e stage).
     """
+    from apiops_orchestrator.application.services.api_listing_service import CatalogFilters
+
+    filters = CatalogFilters(owner=owner, team=team, context=context, workflow_id=workflow_id, stage_id=stage_id)
+    if context is not None and context.lower() not in ("organization", "group", "me"):
+        _print_error("--context aceita organization, group ou me.")
+        raise typer.Exit(code=1)
+    if filters.active and api_id is not None:
+        _print_error("Os filtros --owner/--team/--context/--workflow/--stage não combinam com --id.")
+        raise typer.Exit(code=1)
     try:
         service_factory = (ctx.obj or {}).get("api_listing_service_factory")
         if not callable(service_factory):
@@ -632,7 +656,7 @@ def list_apis(
             apis = service.list_apis(api_id=api_id)
         elif all_apis:
             # Sem janela: o service lê o catálogo em páginas até o fim.
-            apis = service.list_apis(query=query, offset=0, limit=None)
+            apis = service.list_apis(query=query, offset=0, limit=None, **_filters_kw(filters))
         else:
             # Caso desnudo envia os defaults AO PIPELINE (A3-2): a janela
             # client-side so eh real se os valores alcancarem o window().
@@ -640,6 +664,7 @@ def list_apis(
                 query=query,
                 offset=offset if offset is not None else DEFAULT_WINDOW_OFFSET,
                 limit=limit if limit is not None else DEFAULT_WINDOW_LIMIT,
+                **_filters_kw(filters),
             )
 
         if not apis:
@@ -647,22 +672,35 @@ def list_apis(
             return
 
         def print_text():
-            _render_grade(
-                [_listing_cells(entry) for entry in apis],
-                column_justify=("right", None, None, None, "right"),
-                column_decorators=(
-                    (lambda v: Text(str(v), style="dim")),
-                    None,
-                    None,
-                    None,
-                    None,
-                ),
-            )
+            if wide:
+                _render_grade(
+                    [_listing_cells(entry) + _wide_cells(entry) for entry in apis],
+                    header=LIST_HEADER + WIDE_HEADER,
+                    column_justify=("right", None, None, None, "right", None, None, None, None),
+                    column_decorators=((lambda v: Text(str(v), style="dim")),),
+                )
+            else:
+                _render_grade(
+                    [_listing_cells(entry) for entry in apis],
+                    column_justify=("right", None, None, None, "right"),
+                    column_decorators=(
+                        (lambda v: Text(str(v), style="dim")),
+                        None,
+                        None,
+                        None,
+                        None,
+                    ),
+                )
             if api_id is None:
                 _window_footer(limit, offset, all_visible=all_apis)
+            if filters.active:
+                rprint(_filters_footer(filters))
 
         display_output(
-            [entry.to_listing_dict() for entry in apis],
+            [
+                {**entry.to_listing_dict(), **_wide_dict(entry)} if wide else entry.to_listing_dict()
+                for entry in apis
+            ],
             output_format=output,
             text_callback=print_text,
         )
@@ -674,6 +712,55 @@ def list_apis(
         raise typer.Exit(code=1)
     except Exception as e:
         _exit_on_unexpected(e, command="list api")
+
+
+WIDE_HEADER = ("OWNER", "CONTEXT", "TEAM", "STAGE")
+
+
+def _filters_kw(filters) -> dict:
+    return {"filters": filters} if filters.active else {}
+
+
+def _filters_footer(filters) -> str:
+    parts = [
+        f"--{name} {value}"
+        for name, value in (
+            ("owner", filters.owner),
+            ("team", filters.team),
+            ("context", filters.context),
+            ("workflow", filters.workflow_id),
+            ("stage", filters.stage_id),
+        )
+        if value is not None
+    ]
+    return f"[dim]filtros: {escape(' '.join(parts))}[/dim]"
+
+
+def _last_revision(entry: ApiCatalogEntry):
+    return next((r for r in entry.revisions if r.revisionNumber == entry.lastRevisionNumber), None)
+
+
+def _wide_dict(entry: ApiCatalogEntry) -> dict:
+    last = _last_revision(entry)
+    return {
+        "owner": entry.owner,
+        "contextType": entry.contextType.value if entry.contextType is not None else None,
+        "contextGroupName": entry.contextGroupName,
+        "workflowId": last.workflowId if last else None,
+        "workflowStageId": last.workflowStageId if last else None,
+    }
+
+
+def _wide_cells(entry: ApiCatalogEntry) -> tuple:
+    wide = _wide_dict(entry)
+    stage = wide["workflowStageId"]
+    workflow = wide["workflowId"]
+    return (
+        str(wide["owner"] or "-"),
+        str(wide["contextType"] or "-"),
+        str(wide["contextGroupName"] or "-"),
+        f"{stage} (wf {workflow})" if stage is not None else "-",
+    )
 
 
 REVISIONS_HEADER = (
@@ -1903,6 +1990,9 @@ from apiops_orchestrator.adapters.inbound.cli.navigation_cli import (  # noqa: E
     list_plans,
     list_teams,
     list_tokens,
+    list_owners,
+    list_permissions,
+    list_roles,
     list_users,
     list_variables,
     list_workflows,
@@ -1924,3 +2014,6 @@ list_app.command("users")(list_users)
 list_app.command("teams")(list_teams)
 list_app.command("inbounds")(list_inbounds)
 list_app.command("gateway-pools")(list_gateway_pools)
+list_app.command("owners")(list_owners)
+list_app.command("roles")(list_roles)
+list_app.command("permissions")(list_permissions)

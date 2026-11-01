@@ -595,6 +595,61 @@ class ManagerApiAdapter(ManagerApiPort):
     def list_groups(self, keyword: Optional[str] = None) -> List[Dict[str, Any]]:
         return self._user_management("groups", keyword)
 
+    # --- access control -------------------------------------------------------
+
+    def _um_optional(self, endpoint: str) -> Optional[Dict[str, Any]]:
+        try:
+            payload = self._request("GET", endpoint, base_path=USER_MANAGEMENT_BASE_PATH)
+        except ManagerApiTransportRejectedError as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+        return payload if isinstance(payload, dict) else None
+
+    def _um_list(self, endpoint: str) -> List[Dict[str, Any]]:
+        payload = self._request("GET", endpoint, base_path=USER_MANAGEMENT_BASE_PATH)
+        return _unwrap_list(payload, ("pageContent", "content", "data", "items"))
+
+    def get_user(self, username: str) -> Optional[Dict[str, Any]]:
+        return self._um_optional(f"users/{username}")
+
+    def get_user_groups(self, username: str) -> List[Dict[str, Any]]:
+        return self._um_list(f"users/{username}/groups")
+
+    def get_user_policies(self, username: str) -> List[Dict[str, Any]]:
+        return self._um_list(f"users/{username}/policies")
+
+    def get_group(self, name: str) -> Optional[Dict[str, Any]]:
+        return self._um_optional(f"groups/{name}")
+
+    def get_group_users(self, name: str) -> List[Dict[str, Any]]:
+        return self._um_list(f"groups/{name}/users")
+
+    def list_policies(self, keyword: Optional[str] = None) -> List[Dict[str, Any]]:
+        return self._user_management("policies", keyword)
+
+    def get_policy(self, policy_id: str) -> Optional[Dict[str, Any]]:
+        return self._um_optional(f"policies/{policy_id}")
+
+    def get_policy_permissions(self, policy_id: str) -> List[Dict[str, Any]]:
+        return self._um_list(f"policies/{policy_id}/permissions")
+
+    def get_policy_users(self, policy_id: str) -> List[Dict[str, Any]]:
+        return self._um_list(f"policies/{policy_id}/users")
+
+    def list_permissions(self, product_name: str) -> List[str]:
+        payload = self._request(
+            "GET",
+            "account-settings/permissions",
+            base_path=USER_MANAGEMENT_BASE_PATH,
+            params={"productName": product_name},
+        )
+        if isinstance(payload, list):
+            return [str(p) for p in payload if isinstance(p, (str, int))] or [
+                str(p.get("code") or p.get("name")) for p in payload if isinstance(p, dict)
+            ]
+        return []
+
     def list_inbounds(self) -> List[Dict[str, Any]]:
         payload = self._request(
             "GET", "inbounds", params={"actualPage": "1", "pageSize": "100", "size": "0"}

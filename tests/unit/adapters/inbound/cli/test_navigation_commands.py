@@ -223,7 +223,7 @@ def test_get_interceptors_own_mode_and_selectors():
     assert "remove" in out and "[19191]" in out and "OAuth" in out
     assert "(nenhum interceptor próprio)" in out
     service.interceptors.assert_called_once_with(
-        400, None, None, resource="Token", operation="POST /x", effective=False, include_content=False
+        400, None, None, resource="Token", operation="POST /x", effective=False, include_content=False, point=None
     )
 
 
@@ -256,7 +256,7 @@ def test_get_interceptors_effective_marks_origin_and_prints_content():
     assert "EXECUTA" in out and "herdado" in out and "próprio" in out
     assert '"grantTypes"' in out  # --content imprime a configuração
     service.interceptors.assert_called_once_with(
-        400, None, None, resource=None, operation=None, effective=True, include_content=True
+        400, None, None, resource=None, operation=None, effective=True, include_content=True, point=None
     )
 
 
@@ -683,3 +683,131 @@ def test_reveal_variable_text_raw_and_errors():
 
     assert _invoke(["reveal", "variable", "--env", "7"], service).exit_code != 0  # --key obrigatório
     assert _invoke(["reveal"], service).exit_code != 0
+
+
+# --------------------------------------------------------------------------- donos, access control, tipos, --point, list api filtros
+
+
+def test_list_owners_uses_the_listing_service():
+    from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter import _translate_row
+
+    listing = MagicMock()
+    listing.list_apis.return_value = [
+        _translate_row({"apiId": 1, "apiName": "A", "owner": "paulo", "contextType": "GROUP", "contextGroupName": "APIOps"}),
+        _translate_row({"apiId": 2, "apiName": "B", "owner": "ana", "contextType": "ME"}),
+    ]
+    result = runner.invoke(app, ["sen", "list", "owners"], obj={"api_listing_service_factory": lambda: listing, "api_navigation_service_factory": lambda: MagicMock()})
+    assert result.exit_code == 0, result.output
+    out = " ".join(result.output.split())
+    assert "paulo" in out and "APIOps" in out and "1 A" in out and "sen list api --all --owner" in out
+    listing.list_apis.assert_called_once_with(query=None, offset=0, limit=None)
+
+    result = runner.invoke(app, ["sen", "list", "owners", "-o", "json"], obj={"api_listing_service_factory": lambda: listing, "api_navigation_service_factory": lambda: MagicMock()})
+    assert json.loads(result.output)[0]["owner"] == "ana"  # empate: ordem alfabética
+
+
+def test_access_control_commands():
+    service = MagicMock()
+    service.roles.return_value = [{"id": "r1", "name": "Admin", "description": "all", "managedBySensedia": True, "usersChangeable": False, "products": [{"id": "p", "name": "API Platform", "inlinePermission": None}]}]
+    result = _invoke(["list", "roles", "--query", "adm"], service)
+    assert result.exit_code == 0 and "Admin" in result.output and "Sensedia" in result.output
+    service.roles.assert_called_once_with("adm")
+
+    service.role.return_value = {
+        "id": "r1", "name": "Admin", "description": "all", "managedBySensedia": True, "usersChangeable": False, "products": [],
+        "permissions": [{"product": "API Platform", "productId": "p", "permissions": [{"code": "api-platform.apis.view", "name": "View", "description": None}]}],
+        "users": [{"username": "paulo", "status": "CREATED"}], "totals": {"permissions": 1, "products": 1, "users": 1},
+    }
+    result = _invoke(["get", "role", "--id", "Admin"], service)
+    assert result.exit_code == 0, result.output
+    out = " ".join(result.output.split())
+    assert "api-platform.apis.view" in out and "USUÁRIOS 1" in out and "paulo" in out
+    service.role.assert_called_once_with("Admin")
+
+    service.user.return_value = {"username": "paulo", "name": "P", "email": "e", "status": "CREATED", "providerType": "LOCAL", "isFederated": False, "createdAt": "d", "enabled": True, "mfaEnabled": True, "tags": [], "teams": [{"name": "APIOps", "description": None}], "roles": [{"id": "s", "name": "Super Admin", "description": None, "managedBySensedia": True}], "isSuperAdmin": True}
+    result = _invoke(["get", "user", "--username", "paulo"], service)
+    assert result.exit_code == 0, result.output
+    out = " ".join(result.output.split())
+    assert "Super Admin" in out and "MFA" in out and "APIOps" in out and "sen list api --all --owner paulo" in out
+
+    service.team.return_value = {"name": "APIOps", "description": "d", "members": [{"username": "paulo", "name": "P", "status": "CREATED"}], "totals": {"members": 1}}
+    result = _invoke(["get", "team", "--name", "APIOps"], service)
+    assert result.exit_code == 0 and "1 membro(s)" in result.output and "paulo" in result.output
+
+    service.permissions.return_value = {"product": "API Platform", "domains": [{"domain": "apis", "codes": ["api-platform.apis.view"]}], "totals": {"codes": 1, "domains": 1}}
+    result = _invoke(["list", "permissions", "--product", "API Platform"], service)
+    assert result.exit_code == 0 and "api-platform.apis.view" in result.output
+    service.permissions.assert_called_once_with("API Platform")
+
+
+def test_interceptor_type_reference_commands():
+    service = MagicMock()
+    service.interceptor_type.return_value = {"type": "Rate limit", "group": "Traffic", "executionPoints": ["request"], "fields": [{"name": "quota", "meaning": "chamadas"}], "commonFields": ["ignoreBodyValidationMultiPartFormData"], "example": {"quota": "100"}, "note": None}
+    result = _invoke(["get", "interceptor-type", "--type", "Rate limit"], service)
+    assert result.exit_code == 0, result.output
+    out = " ".join(result.output.split())
+    assert "Rate limit" in out and "quota" in out and '"quota": "100"' in out
+    service.interceptor_type.assert_called_once_with("Rate limit")
+
+    service.interceptor_types.return_value = [service.interceptor_type.return_value, {"type": "GZip pack", "group": "Transformation", "executionPoints": ["request"], "fields": [], "commonFields": ["x"], "example": None, "note": None}]
+    result = _invoke(["get", "interceptor-type"], service)
+    assert result.exit_code == 0 and "GZip pack" in result.output and "sem campos próprios" in result.output
+    assert len(json.loads(_invoke(["get", "interceptor-type", "-o", "json"], service).output)) == 2
+
+
+def test_get_interceptors_point_and_other_points_and_reference():
+    service = MagicMock()
+    service.interceptors.return_value = {
+        "api": API, "revision": REVISION, "mode": "own", "point": "THIRD",
+        "scopes": [{**_scope(own={"request": [], "response": []}), "other": [{**_item(99, kind="Custom"), "executionPoint": "THIRD", "summary": '#1 "x"'}]}],
+    }
+    result = _invoke(["get", "interceptors", "--id", "400", "--point", "THIRD"], service)
+    assert result.exit_code == 0, result.output
+    out = " ".join(result.output.split())
+    assert "só THIRD" in out and "outros pontos" in out and "[99]" in out and "THIRD" in out
+    assert service.interceptors.call_args.kwargs["point"] == "THIRD"
+
+    service.interceptor.return_value = {
+        "api": API, "revision": REVISION,
+        "scope": {"scope": "all", "kind": "root", "label": "all", "id": 1, "resource": None},
+        "interceptor": {**_item(5, kind="Mock", content={"body": "x", "weird": 1}), "parentType": "REVISION", "parentId": None, "governed": True},
+        "reference": {"type": "Mock", "known": ["body"], "unknown": ["weird"], "missing": ["headers", "status"]},
+    }
+    result = _invoke(["get", "interceptors", "--id", "400", "--item", "5"], service)
+    assert result.exit_code == 0, result.output
+    out = " ".join(result.output.split())
+    assert "fora da referência: weird" in out and "esperados ausentes: headers, status" in out and 'sen get interceptor-type --type "Mock"' in out
+
+    assert _invoke(["get", "interceptors", "--id", "400", "--item", "5", "--point", "FIRST"], service).exit_code == 1
+
+
+def test_list_api_filters_and_wide_columns():
+    from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter import _translate_row
+    from apiops_orchestrator.application.services.api_listing_service import CatalogFilters
+
+    listing = MagicMock()
+    listing.list_apis.return_value = [
+        _translate_row({"apiId": 400, "apiName": "Orchestrator Auth API", "basePath": "/orq-auth/v1", "version": "1.0.1", "owner": "paulo", "contextType": "GROUP", "contextGroupName": "APIOps",
+                        "lastRevision": 8948, "revisions": [{"id": 8948, "revisionNumber": 4}], "wokflow": [{"apiRevision": 8948, "workflowId": 139, "workflowStageId": 420}]}),
+    ]
+    obj = {"api_listing_service_factory": lambda: listing}
+    result = runner.invoke(app, ["sen", "list", "api", "--all", "--owner", "paulo", "--team", "APIOps", "--wide"], obj=obj)
+    assert result.exit_code == 0, result.output
+    out = " ".join(result.output.split())
+    # Em 80 colunas a grade de 9 colunas quebra células; as colunas são conferidas no JSON abaixo.
+    assert "filtros: --owner paulo --team APIOps" in out
+    assert "janela: todas as APIs visíveis (--all)" in out
+    listing.list_apis.assert_called_once_with(query=None, offset=0, limit=None, filters=CatalogFilters(owner="paulo", team="APIOps"))
+
+    result = runner.invoke(app, ["sen", "list", "api", "--stage", "420", "-w", "-o", "json"], obj=obj)
+    document = json.loads(result.output)
+    assert document[0]["owner"] == "paulo" and document[0]["workflowStageId"] == 420
+    assert listing.list_apis.call_args.kwargs["filters"] == CatalogFilters(stage_id=420)
+
+    assert runner.invoke(app, ["sen", "list", "api", "--context", "nope"], obj=obj).exit_code == 1
+    assert runner.invoke(app, ["sen", "list", "api", "--id", "400", "--owner", "x"], obj=obj).exit_code == 1
+
+    # sem filtro, a assinatura antiga é preservada (compatibilidade com os testes existentes)
+    listing.list_apis.reset_mock()
+    runner.invoke(app, ["sen", "list", "api"], obj=obj)
+    listing.list_apis.assert_called_once_with(query=None, offset=0, limit=10)

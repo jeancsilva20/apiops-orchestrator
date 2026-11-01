@@ -235,6 +235,48 @@ class ManagerApiPort(ABC):
     def list_groups(self, keyword: Optional[str] = None) -> List[Dict[str, Any]]:
         """`GET /user-management/v1/groups`: os *Teams* da UI (name, description)."""
 
+    # --- access control (leitura; mapeamento APIM 14: Team = groups, Role = policies)
+
+    @abstractmethod
+    def get_user(self, username: str) -> Optional[Dict[str, Any]]:
+        """`GET /user-management/v1/users/{username}`; `None` quando não existe."""
+
+    @abstractmethod
+    def get_user_groups(self, username: str) -> List[Dict[str, Any]]:
+        """`GET /user-management/v1/users/{username}/groups`: os times do usuário."""
+
+    @abstractmethod
+    def get_user_policies(self, username: str) -> List[Dict[str, Any]]:
+        """`GET /user-management/v1/users/{username}/policies`: as roles do usuário."""
+
+    @abstractmethod
+    def get_group(self, name: str) -> Optional[Dict[str, Any]]:
+        """`GET /user-management/v1/groups/{name}`; `None` quando não existe."""
+
+    @abstractmethod
+    def get_group_users(self, name: str) -> List[Dict[str, Any]]:
+        """`GET /user-management/v1/groups/{name}/users`: membros (`pageContent`)."""
+
+    @abstractmethod
+    def list_policies(self, keyword: Optional[str] = None) -> List[Dict[str, Any]]:
+        """`GET /user-management/v1/policies`: as *Roles* da UI, com os produtos."""
+
+    @abstractmethod
+    def get_policy(self, policy_id: str) -> Optional[Dict[str, Any]]:
+        """`GET /user-management/v1/policies/{id}`; `None` quando não existe."""
+
+    @abstractmethod
+    def get_policy_permissions(self, policy_id: str) -> List[Dict[str, Any]]:
+        """`GET /user-management/v1/policies/{id}/permissions`: por produto, as permissões."""
+
+    @abstractmethod
+    def get_policy_users(self, policy_id: str) -> List[Dict[str, Any]]:
+        """`GET /user-management/v1/policies/{id}/users`: quem tem a role."""
+
+    @abstractmethod
+    def list_permissions(self, product_name: str) -> List[str]:
+        """`GET /user-management/v1/account-settings/permissions?productName=…`: catálogo de códigos."""
+
     @abstractmethod
     def list_inbounds(self) -> List[Dict[str, Any]]:
         """`GET /inbounds`: endereços de entrada (host, TLS, data plane)."""

@@ -563,3 +563,80 @@ def test_people_and_infra_listings():
     with pytest.raises(NavigationPlatformError) as info:
         service.apps()
     assert UNAUTHORIZED_MESSAGE in info.value.message
+
+
+# --------------------------------------------------------------------------- access control, tipos e ponto
+
+
+def _access_port():
+    port = _consumer_port()
+    port.list_policies.return_value = [
+        {"id": "r2", "name": "Read-Only", "description": "ro", "sensediaManaged": True, "products": []},
+        {"id": "r1", "name": "Admin", "description": "all", "sensediaManaged": True, "products": [{"id": "p", "name": "API Platform"}]},
+    ]
+    port.get_policy.return_value = {"id": "r1", "name": "Admin", "sensediaManaged": True, "products": []}
+    port.get_policy_permissions.return_value = [{"productName": "API Platform", "permissions": [{"code": "a.b.c", "name": "n"}]}]
+    port.get_policy_users.return_value = [{"username": "paulo", "status": "CREATED"}]
+    port.get_user.return_value = {"username": "paulo", "status": "CREATED", "name": "P", "email": "e"}
+    port.get_user_groups.return_value = [{"name": "APIOps", "description": ""}]
+    port.get_user_policies.return_value = [{"id": "s", "name": "Super Admin", "sensediaManaged": True}]
+    port.get_group.return_value = {"name": "APIOps", "description": "d"}
+    port.get_group_users.return_value = [{"username": "paulo"}]
+    port.list_permissions.return_value = ["api-platform.apis.view", "api-platform.apis.create"]
+    return port
+
+
+def test_roles_role_by_id_and_by_name():
+    port = _access_port()
+    service = ApiNavigationService(port, session=None)
+    assert [r["name"] for r in service.roles()] == ["Admin", "Read-Only"]
+    assert [r["name"] for r in service.roles("read")] == ["Read-Only"]
+
+    document = service.role("r1")
+    assert document["name"] == "Admin" and document["totals"] == {"permissions": 1, "products": 1, "users": 1}
+    port.get_policy.assert_called_with("r1")
+
+    port.get_policy.side_effect = [None, {"id": "r1", "name": "Admin", "sensediaManaged": True}]
+    assert service.role("admin")["id"] == "r1"  # resolvido pelo nome
+
+    port.get_policy.side_effect = None
+    port.get_policy.return_value = None
+    port.list_policies.return_value = []
+    with pytest.raises(NavigationError) as info:
+        service.role("nope")
+    assert "sen list roles" in info.value.message
+
+
+def test_user_team_and_permissions():
+    port = _access_port()
+    service = ApiNavigationService(port, session=None)
+    user = service.user("paulo")
+    assert user["isSuperAdmin"] is True and [t["name"] for t in user["teams"]] == ["APIOps"]
+    port.get_user.return_value = None
+    with pytest.raises(NavigationError) as info:
+        service.user("x")
+    assert "sen list users --query x" in info.value.message
+
+    team = service.team("APIOps")
+    assert team["totals"] == {"members": 1}
+    port.get_group.return_value = None
+    with pytest.raises(NavigationError):
+        service.team("nope")
+
+    permissions = service.permissions("API Platform")
+    assert permissions["totals"] == {"codes": 2, "domains": 1}
+    port.list_permissions.assert_called_once_with("API Platform")
+
+
+def test_interceptor_types_and_point_filter():
+    service = ApiNavigationService(_consumer_port(), session=None)
+    assert service.interceptor_type("mock")["type"] == "Mock"
+    assert len(service.interceptor_types()) > 40
+    with pytest.raises(NavigationError):
+        service.interceptor_type("nope")
+
+    document = service.interceptors(400, point="response")
+    assert document["point"] == "SECOND"
+    with pytest.raises(NavigationError) as info:
+        service.interceptors(400, point="fourth")
+    assert "ponto de execução desconhecido" in info.value.message

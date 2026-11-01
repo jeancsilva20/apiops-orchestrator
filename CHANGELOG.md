@@ -3,6 +3,7 @@
 Summary of recent changes in the project. Each item includes date, category, title and author.
 
 ## Recent History
+- 2026-11-01 — CLI/Docs — "Plano de navegação completo (PLANO-NAVEGACAO.md): sen list api com filtros por dono/time/contexto/workflow/stage e --wide; sen list owners; Access Control em profundidade (sen get user|team|role, sen list roles|permissions); interceptors em FIRST/SECOND/THIRD com --point e bloco outros pontos; referência de content por tipo (sen get interceptor-type) e conferência no --item; helps atualizados" — Author: Jean Silva — Type: Nova funcionalidade
 - 2026-11-01 — CLI — "Variáveis de ambiente sempre mascaradas nas listagens; sen reveal variable desmascara uma variável por vez, de propósito, com registro em log" — Author: Jean Silva — Type: Nova funcionalidade
 - 2026-11-01 — CLI/Docs — "Navegação de consumo e infra: sen list apps|plans|tokens|variables|users|teams|inbounds|gateway-pools e sen get app|plan|environment (credenciais nunca exibidas, variáveis sensíveis mascaradas); COMMANDS.md com a referência de todos os comandos" — Author: Jean Silva — Type: Nova funcionalidade
 - 2026-11-01 — CLI — "Catálogos do tenant e governança a partir do mapeamento APIM/AG: sen list environments|workflows|attributes|interceptors, sen get workflow (requisitos por stage), sen get governance (revisão contra o stage atual e o próximo) e sen get impact (rotas, planos e apps); get api mostra o nome do stage" — Author: Jean Silva — Type: Nova funcionalidade

@@ -325,3 +325,37 @@ def matches_query(text_fields: Sequence[Any], query: Optional[str]) -> bool:
         return True
     wanted = query.lower()
     return any(wanted in str(field or "").lower() for field in text_fields)
+
+
+# --------------------------------------------------------------------------- donos das APIs
+
+
+def owners_summary(entries: Sequence[Any]) -> List[Dict[str, Any]]:
+    """Agrupa o catálogo por dono: contexto, time e as APIs de cada um.
+
+    `entries` são `ApiCatalogEntry` (id, name, owner, contextType, contextGroupName).
+    Dono ausente vira `"-"`; a ordem é por quantidade de APIs, depois pelo nome.
+    """
+    by_owner: Dict[str, Dict[str, Any]] = {}
+    for entry in entries:
+        owner = str(getattr(entry, "owner", None) or "-")
+        bucket = by_owner.setdefault(owner, {"owner": owner, "apis": [], "contexts": set(), "teams": set()})
+        context = getattr(entry, "contextType", None)
+        bucket["contexts"].add(str(context.value if hasattr(context, "value") else context or "-"))
+        if getattr(entry, "contextGroupName", None):
+            bucket["teams"].add(str(entry.contextGroupName))
+        bucket["apis"].append({"id": entry.id, "name": entry.name, "version": getattr(entry, "version", None)})
+    rows = []
+    for bucket in by_owner.values():
+        bucket["apis"].sort(key=lambda a: a["id"] or 0)
+        rows.append(
+            {
+                "owner": bucket["owner"],
+                "apis": bucket["apis"],
+                "total": len(bucket["apis"]),
+                "contexts": sorted(bucket["contexts"]),
+                "teams": sorted(bucket["teams"]),
+            }
+        )
+    rows.sort(key=lambda r: (-r["total"], r["owner"].lower()))
+    return rows

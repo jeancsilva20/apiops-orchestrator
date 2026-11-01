@@ -29,6 +29,10 @@ Convenções:
 | A revisão passa no stage? O que falta para o próximo? | `sen get governance --id 400 --revision 4` |
 | Quem consome a API (planos, apps)? O que quebra se ela mudar? | `sen get impact --id 400 [--env 1]` |
 | Os arquivos canônicos da revisão (o que `sen validate` lê)? | `sen export api --id 400 --revision 4 [--dir ./repo]` |
+| Quem é dono de cada API? As APIs de um dono, time, contexto ou stage? | `sen list owners` · `sen list api --all --owner u` / `--team t` / `--context me` / `--workflow W --stage S` · `--wide` |
+| Só um ponto de execução? E o que está em THIRD? | `sen get interceptors --id 400 --point FIRST|SECOND|THIRD` (THIRD aparece em `outros pontos`) |
+| O que o `content` de um tipo de interceptor carrega? | `sen get interceptor-type --type "Rate limit"` (sem `--type`: todos) |
+| Quem é este usuário, de que times e roles? Quem está num time? O que uma role permite? | `sen get user --username u` · `sen get team --name t` · `sen list roles` · `sen get role --id <uuid ou nome>` · `sen list permissions --product "API Platform"` |
 | Que ambientes, workflows, atributos e tipos de interceptor existem? | `sen list environments` · `sen list workflows` · `sen list attributes` · `sen list interceptors` |
 | O que um stage exige? | `sen get workflow --id 327` |
 | Variáveis de ambiente? | `sen list variables [--env 1] [--key x]` · `sen get environment --id 1` |
@@ -74,6 +78,11 @@ Catálogo de APIs (`api-finder`), respeitando a visibilidade da sessão.
 | `--limit N` / `--offset N` | janela (padrão 10 / 0) |
 | `--all` | todas as visíveis (não combina com janela nem `--id`) |
 | `--revisions/-r` | com `--id`: tabela REV # · REV ID · STAGE · ENVS · COMPLETE (score de cada revisão) |
+| `--owner u` · `--team t` · `--context organization|group|me` · `--workflow W` · `--stage S` | recortam o catálogo **antes** da janela (a janela conta só o que passou); não combinam com `--id`; `--workflow`/`--stage` olham a revisão corrente |
+| `--wide/-w` | acrescenta OWNER, CONTEXT, TEAM e STAGE (id do stage e do workflow); em `-o json` acrescenta `owner`, `contextType`, `contextGroupName`, `workflowId`, `workflowStageId` |
+
+### `sen list owners`
+Lê o catálogo inteiro e agrupa por dono: quantidade de APIs, contextos usados, times e a lista de APIs (id e nome). Ordem: mais APIs primeiro.
 
 ### `sen get api --id N`
 Nível 1: nome, versão, basePath, tipo, descrição, visibilidade (tipo, dono, grupo, usuários), responsável, tags, planos; tabela de **ambientes** (inbound URL e qual revisão está no ar); tabela de **revisões** (número, id, ciclo, **stage**, recursos, operações, interceptors na raiz, onde está no ar; `*` marca a corrente). Fecha com os próximos passos.
@@ -90,9 +99,13 @@ Nível 3: o fluxo de interceptors por escopo.
 | `--operation "MÉTODO /path"` (ou só o path, ou o id) | recorta uma operação |
 | `--effective` | mostra o que o escopo **executa** (herdado − removido + próprio), marcando a origem de cada item |
 | `--content` | inclui a configuração decodificada de cada interceptor |
-| `--item ID` | nível 4: um interceptor inteiro (escopo, posição, status, `customInterceptorId`, conteúdo; script incluído quando é Custom). Não combina com as outras opções |
+| `--point FIRST|SECOND|THIRD` (ou `request`/`response`/`third`, ou `1`/`2`/`3`) | deixa só esse ponto de execução em cada escopo |
+| `--item ID` | nível 4: um interceptor inteiro (escopo, posição, status, `customInterceptorId`, conteúdo; script incluído quando é Custom) e a conferência contra a referência do tipo (campos conhecidos, fora da referência, esperados ausentes). Não combina com as outras opções |
 
-Cada item sai como `[id] posição Tipo resumo`. Marcações `REMOVED` aparecem como `remove ← [id] Tipo (ponto)`.
+Cada item sai como `[id] posição Tipo resumo`. Marcações `REMOVED` aparecem como `remove ← [id] Tipo (ponto)`; o status de cada item (`REFERENCE`, `CHANGED_VALUE`, `REMOVED`) está no JSON e no `--item`. Itens fora de FIRST/SECOND (por exemplo `THIRD`, visto só em Customs) saem no bloco `outros pontos` de cada escopo (`other` no JSON): não são governados pelo repositório, mas executam.
+
+### `sen get interceptor-type [--type NOME]`
+Referência do `content` por tipo de interceptor, montada da tabela do mapeamento (doc 06) e das chaves observadas nas revisões reais do tenant: grupo, pontos de execução, campos com significado, exemplo e observações. Sem `--type`, lista todos os tipos. O catálogo vivo (o que o tenant tem instalado) é `sen list interceptors`.
 
 ### `sen get custom --custom-id N [--script-only]`
 Nome e script de um Custom do catálogo. `--script-only` escreve só o script, cru, para redirecionar a um arquivo.
@@ -173,8 +186,23 @@ Access tokens emitidos: id, dono, app, status, expiração, APIs alcançadas. O 
 ### `sen list users [--query texto]`
 Usuários do Access Control: username, nome, e-mail, status, provedor.
 
+### `sen get user --username u`
+Um usuário: nome, e-mail, status, provedor, MFA, **times** e **roles** (e se é Super Admin). Aponta `sen list api --all --owner u` para as APIs dele.
+
 ### `sen list teams [--query texto]`
 Times (`groups`): os nomes usados na visibilidade GROUP das APIs e nos workflows de time.
+
+### `sen get team --name t`
+Um time: descrição e membros (username, nome, status).
+
+### `sen list roles [--query texto]`
+Roles (`policies`) do Access Control: nome, se é gerida pela Sensedia ou do tenant, produtos que habilita, id.
+
+### `sen get role --id <uuid ou nome exato>`
+Uma role: permissões agrupadas por produto (código e nome) e os usuários que a têm.
+
+### `sen list permissions [--product "API Platform"]`
+Catálogo de códigos de permissão de um produto (`API Platform`, `Access Control`, `Adaptive Governance`, `Analytics`, `Developer Portal`, `Integrations`, `Connect Catalog`, `AI Gateway`, `Observability`), agrupado pelo domínio do código.
 
 ### `sen list inbounds`
 Endereços de entrada do gateway: host, protocolo/TLS, versões de TLS, tipo de gateway.

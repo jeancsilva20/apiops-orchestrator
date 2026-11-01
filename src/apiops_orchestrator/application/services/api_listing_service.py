@@ -1,5 +1,6 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Set
 
 from apiops_orchestrator.application.enums.manager_failure_kind_enum import (
@@ -73,7 +74,11 @@ class ApiListingService:
         query: Optional[str] = None,
         offset: Optional[int] = None,
         limit: Optional[int] = None,
+        filters: Optional["CatalogFilters"] = None,
     ) -> List[ApiCatalogEntry]:
+        """`filters` recorta o catálogo (dono, time, contexto, workflow/stage da
+        revisão corrente) ANTES da janela: a janela conta linhas que passaram."""
+        self._filters = filters
         try:
             return self._list_apis_internal(
                 api_id=api_id, query=query, offset=offset, limit=limit
@@ -271,4 +276,45 @@ class ApiListingService:
     def _filter_visibility(
         self, rows: List[ApiCatalogEntry]
     ) -> List[ApiCatalogEntry]:
-        return [row for row in rows if self._guard.can_see(row.visibility())]
+        visible = [row for row in rows if self._guard.can_see(row.visibility())]
+        filters = getattr(self, "_filters", None)
+        if filters is None:
+            return visible
+        return [row for row in visible if filters.matches(row)]
+
+
+@dataclass(frozen=True)
+class CatalogFilters:
+    """Recorte do catálogo pelo que o `api-finder` já traz em cada linha."""
+
+    owner: Optional[str] = None
+    team: Optional[str] = None
+    context: Optional[str] = None
+    workflow_id: Optional[int] = None
+    stage_id: Optional[int] = None
+
+    @property
+    def active(self) -> bool:
+        return any(
+            v is not None for v in (self.owner, self.team, self.context, self.workflow_id, self.stage_id)
+        )
+
+    def matches(self, row: ApiCatalogEntry) -> bool:
+        if self.owner is not None and self.owner.lower() != str(row.owner or "").lower():
+            return False
+        if self.team is not None and self.team.lower() != str(row.contextGroupName or "").lower():
+            return False
+        if self.context is not None:
+            wanted = self.context.lower()
+            actual = row.contextType.value if row.contextType is not None else ""
+            if wanted != str(actual).lower():
+                return False
+        if self.workflow_id is not None or self.stage_id is not None:
+            last = next((r for r in row.revisions if r.revisionNumber == row.lastRevisionNumber), None)
+            if last is None:
+                return False
+            if self.workflow_id is not None and last.workflowId != self.workflow_id:
+                return False
+            if self.stage_id is not None and last.workflowStageId != self.stage_id:
+                return False
+        return True

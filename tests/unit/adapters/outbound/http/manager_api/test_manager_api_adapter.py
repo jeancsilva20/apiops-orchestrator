@@ -719,3 +719,55 @@ def test_environment_tokens_inbounds_and_pools_endpoints(mock_settings):
         assert mock_request.call_args.kwargs["url"] == "http://urltest.com/api-manager/api/v3/gateway-pools"
         mock_request.return_value = "nope"
         assert adapter.get_environment(1) == {}
+
+
+# --------------------------------------------------------------------------- access control
+
+
+def test_access_control_reads(mock_settings):
+    adapter = _adapter(mock_settings)
+    base = "http://urltest.com/user-management/v1/"
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.return_value = {"username": "paulo"}
+        assert adapter.get_user("paulo") == {"username": "paulo"}
+        assert mock_request.call_args.kwargs["url"] == base + "users/paulo"
+        mock_request.return_value = [{"name": "APIOps"}]
+        assert adapter.get_user_groups("paulo") == [{"name": "APIOps"}]
+        assert mock_request.call_args.kwargs["url"] == base + "users/paulo/groups"
+        adapter.get_user_policies("paulo")
+        assert mock_request.call_args.kwargs["url"] == base + "users/paulo/policies"
+        mock_request.return_value = {"canGroupBeDeleted": True, "pageContent": [{"username": "a"}]}
+        assert adapter.get_group_users("APIOps") == [{"username": "a"}]
+        assert mock_request.call_args.kwargs["url"] == base + "groups/APIOps/users"
+        mock_request.return_value = {"name": "APIOps"}
+        assert adapter.get_group("APIOps") == {"name": "APIOps"}
+        mock_request.return_value = [{"id": "r1"}]
+        assert adapter.list_policies("adm") == [{"id": "r1"}]
+        assert mock_request.call_args.kwargs["url"] == base + "policies"
+        assert mock_request.call_args.kwargs["params"]["_keyword"] == "adm"
+        mock_request.return_value = {"id": "r1"}
+        assert adapter.get_policy("r1") == {"id": "r1"}
+        mock_request.return_value = [{"productName": "X", "permissions": []}]
+        assert adapter.get_policy_permissions("r1") == [{"productName": "X", "permissions": []}]
+        assert mock_request.call_args.kwargs["url"] == base + "policies/r1/permissions"
+        adapter.get_policy_users("r1")
+        assert mock_request.call_args.kwargs["url"] == base + "policies/r1/users"
+        mock_request.return_value = ["a.b.c", {"code": "d.e.f"}]
+        assert adapter.list_permissions("API Platform") == ["a.b.c"]
+        assert mock_request.call_args.kwargs["params"] == {"productName": "API Platform"}
+        mock_request.return_value = [{"code": "d.e.f"}]
+        assert adapter.list_permissions("X") == ["d.e.f"]
+        mock_request.return_value = {}
+        assert adapter.list_permissions("X") == []
+
+
+def test_access_control_404_is_absence(mock_settings):
+    adapter = _adapter(mock_settings)
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.side_effect = HttpClient4xxError(status_code=404, title="Not Found", detail="x")
+        assert adapter.get_user("nope") is None
+        assert adapter.get_group("nope") is None
+        assert adapter.get_policy("nope") is None
+        mock_request.side_effect = HttpClient4xxError(status_code=401, title="Unauthorized", detail="x")
+        with pytest.raises(ManagerApiTransportRejectedError):
+            adapter.get_user("nope")
