@@ -471,8 +471,8 @@ def _consumer_port():
     ]
     port.get_plan.return_value = port.list_plans.return_value[1]
     port.list_access_tokens.return_value = [
-        {"_id": "t1", "code": "S", "owner": "o", "app": {"id": 45, "name": "CI"}, "status": "ACTIVE", "creationDate": "2026-11-01", "apis": [{"id": 400, "name": "x"}]},
-        {"_id": "t2", "code": "S", "owner": "o", "app": {"id": 42, "name": "SA"}, "status": "ACTIVE", "creationDate": "2026-11-02", "apis": [{"id": 1, "name": "y"}]},
+        {"_id": "t1", "code": "SECRET-CODE", "refreshToken": "SECRET-REFRESH", "owner": "o", "app": {"id": 45, "name": "CI"}, "status": "ACTIVE", "creationDate": "2026-11-01", "apis": [{"id": 400, "name": "x"}]},
+        {"_id": "t2", "code": "SECRET-CODE", "refreshToken": "SECRET-REFRESH", "owner": "o", "app": {"id": 42, "name": "SA"}, "status": "ACTIVE", "creationDate": "2026-11-02", "apis": [{"id": 1, "name": "y"}]},
     ]
     port.list_users.return_value = [{"username": "zed", "status": "CREATED"}, {"username": "ana", "status": "ACTIVE"}]
     port.list_groups.return_value = [{"name": "Lab", "description": ""}, {"name": "APIOps", "description": "d"}]
@@ -527,7 +527,7 @@ def test_apps_plans_tokens_filters_and_details():
 
     tokens = service.tokens()
     assert [t["id"] for t in tokens] == ["t2", "t1"]  # mais recentes primeiro
-    assert "S" not in str(tokens)
+    assert "SECRET" not in str(tokens)  # código e refresh nunca saem
     assert [t["id"] for t in service.tokens(app_id=45)] == ["t1"]
     assert [t["id"] for t in service.tokens(api_id=1)] == ["t2"]
 
