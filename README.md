@@ -52,7 +52,8 @@ Run `sen --help` or `sen <command> --help` for the authoritative option list. Al
 | `sen get workflow` | Stages of a workflow and what each one requires | `--id` |
 | `sen get governance` | A revision against its current stage and the next one: maturity, mandatory interceptors, attributes, environments | `--id`, `--revision`, `--revision-id` |
 | `sen get impact` | Impact graph: routes with destinations, plans and apps consuming the API | `--id`, `--env` |
-| `sen list variables` / `sen get environment` | Environment variables by map (secrets masked) and everything deployed in an environment | `--env`, `--key`, `--show-values` |
+| `sen list variables` / `sen get environment` | Environment variables by map (always masked) and everything deployed in an environment | `--env`, `--key` |
+| `sen reveal variable` | Unmasks one environment variable on purpose | `--env`, `--key`, `--map`, `--raw` |
 | `sen list apps` / `sen get app` | Consumer apps and their API → plan subscriptions (no credentials) | `--api`, `--query` |
 | `sen list plans` / `sen get plan` | Plans, their API and the interceptors a plan adds | `--api`, `--query` |
 | `sen list tokens` | Issued access tokens (owner, app, status, expiry; never the code) | `--app`, `--api` |

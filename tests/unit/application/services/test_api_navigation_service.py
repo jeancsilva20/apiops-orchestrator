@@ -490,14 +490,32 @@ def test_environment_and_variables_mask_secrets():
     values = {v["key"]: v["value"] for v in document["variables"]}
     assert values == {"backendUrl": "http://b", "basicAuth": "•••••"}
 
-    revealed = {v["key"]: v["value"] for v in service.variables(1, show_values=True)}
-    assert revealed["basicAuth"] == "Basic x"
     assert [v["key"] for v in service.variables(1, key="url")] == ["backendUrl"]
+    assert "Basic x" not in str(service.variables(1)) and "Basic x" not in str(document)
+
+    revealed = service.reveal_variable(1, "basicAuth")
+    assert revealed["value"] == "Basic x" and revealed["sensitive"] is True
+    assert service.reveal_variable(1, "BACKENDURL", "m")["value"] == "http://b"
+    with pytest.raises(NavigationError) as info:
+        service.reveal_variable(1, "nope")
+    assert "não existe no ambiente 1" in info.value.message and "sen list variables --env 1" in info.value.message
+    with pytest.raises(NavigationError) as info:
+        service.reveal_variable(1, "backendUrl", "outro")
+    assert "no mapa 'outro'" in info.value.message
+
+    port.get_environment.return_value["mapVars"].append(
+        {"id": 2, "name": "M2", "vars": [{"key": "backendUrl", "value": "http://c", "variableType": "DEFAULT"}]}
+    )
+    with pytest.raises(NavigationError) as info:
+        service.reveal_variable(1, "backendUrl")
+    assert "mais de um mapa" in info.value.message and "'M2'" in info.value.message
+    assert service.reveal_variable(1, "backendUrl", "M2")["value"] == "http://c"
+    port.get_environment.return_value["mapVars"].pop()
 
     # sem --env: percorre todos os ambientes do catálogo
     port.list_environments.return_value = [{"id": 1, "name": "Default"}, {"id": 9, "name": "HMG"}]
     rows = service.variables()
-    assert len(rows) == 4 and port.get_environment.call_count >= 3
+    assert len(rows) == 4 and port.get_environment.call_count >= 2
 
     port.get_environment.return_value = {}
     with pytest.raises(NavigationError) as info:

@@ -616,11 +616,14 @@ def test_list_variables_and_get_environment_show_masking():
         {"environmentId": 1, "environmentName": "Default", "map": "M", "mapId": 1, "key": "backendUrl", "value": "http://b", "variableType": "DEFAULT", "masked": False},
         {"environmentId": 1, "environmentName": "Default", "map": "M", "mapId": 1, "key": "basicAuth", "value": "•••••", "variableType": "DEFAULT", "masked": True},
     ]
-    result = _invoke(["list", "variables", "--env", "1", "--key", "a", "--show-values"], service)
+    result = _invoke(["list", "variables", "--env", "1", "--key", "a"], service)
     assert result.exit_code == 0, result.output
     out = " ".join(result.output.split())
-    assert "backendUrl" in out and "•••••" in out and "valor mascarado" in out
-    service.variables.assert_called_once_with(1, key="a", show_values=True)
+    assert "backendUrl" in out and "•••••" in out and "sen reveal variable" in out
+    service.variables.assert_called_once_with(1, key="a")
+
+    result = _invoke(["list", "variables", "--show-values"], service)
+    assert result.exit_code != 0  # a listagem não tem como revelar
 
     service.environment.return_value = {
         "id": 7, "name": "DEV", "description": None, "inboundUrl": "https://gw/cli/", "visibility": "ORGANIZATION",
@@ -634,7 +637,7 @@ def test_list_variables_and_get_environment_show_masking():
     assert result.exit_code == 0, result.output
     out = " ".join(result.output.split())
     assert "ambiente 7" in out and "M / k = v" in out and "NO AR" in out and "revisão #4" in out
-    service.environment.assert_called_once_with(7, show_values=False)
+    service.environment.assert_called_once_with(7)
 
 
 def test_list_users_teams_inbounds_pools():
@@ -652,3 +655,31 @@ def test_list_users_teams_inbounds_pools():
     out = " ".join(_invoke(["list", "gateway-pools"], service).output.split())
     assert "default" in out and "396" in out
     assert json.loads(_invoke(["list", "gateway-pools", "-o", "json"], service).output)[0]["routes"] == 396
+
+
+# --------------------------------------------------------------------------- sen reveal variable
+
+
+def test_reveal_variable_text_raw_and_errors():
+    service = MagicMock()
+    service.reveal_variable.return_value = {
+        "environmentId": 7, "environmentName": "DEV", "map": "Proxy", "mapId": 1,
+        "key": "basicAuthManager", "value": "Basic abc", "variableType": "DEFAULT", "sensitive": True,
+    }
+    result = _invoke(["reveal", "variable", "--env", "7", "--key", "basicAuthManager", "--map", "Proxy"], service)
+    assert result.exit_code == 0, result.output
+    out = " ".join(result.output.split())
+    assert "basicAuthManager" in out and "Basic abc" in out and "sensível" in out
+    service.reveal_variable.assert_called_once_with(7, "basicAuthManager", "Proxy")
+
+    result = _invoke(["reveal", "variable", "--env", "7", "--key", "basicAuthManager", "--raw"], service)
+    assert result.exit_code == 0 and result.output == "Basic abc\n"
+
+    result = _invoke(["reveal", "variable", "--env", "7", "--key", "basicAuthManager", "-o", "json"], service)
+    assert json.loads(result.output)["value"] == "Basic abc"
+
+    service.reveal_variable.side_effect = NavigationRevisionNotFound(1, "x", [])
+    assert _invoke(["reveal", "variable", "--env", "7", "--key", "k"], service).exit_code == 1
+
+    assert _invoke(["reveal", "variable", "--env", "7"], service).exit_code != 0  # --key obrigatório
+    assert _invoke(["reveal"], service).exit_code != 0

@@ -10,7 +10,7 @@ Convenções:
 - Todos os comandos de leitura aceitam `--output/-o text|json|yaml` (`text` é o padrão; `sen get swagger` usa `yaml`).
 - `--revision N` é o **número** da revisão como na UI (REV #). `--revision-id` é o id do Manager (REV ID). Sem os dois, vale a revisão corrente (`lastRevision`).
 - Ids de interceptor (`[19220]`) são os ids do Manager dentro da revisão; `customInterceptorId` é o id de catálogo usado por `sen get custom`.
-- Credenciais nunca aparecem: `clientId`, `secret`, código e refresh de token são descartados, e variáveis de ambiente que parecem credencial saem mascaradas (`•••••`).
+- Credenciais nunca aparecem nas listagens: `clientId`, `secret`, código e refresh de token são descartados, e variáveis de ambiente `SECURED` ou que parecem credencial saem mascaradas (`•••••`). O único caminho que escreve um valor sensível na tela é `sen reveal variable`, uma variável por vez e de propósito.
 - Erros de negócio saem com mensagem orientada e `exit 1` (ex.: `A API 400 não tem a revisão de número 9. Números disponíveis: 1, 2, 3, 4.`). Sessão expirada pede `sen login`.
 - Nada aqui escreve no Manager. Os comandos que escrevem são `validate`, `publish` e `deploy` (ver README).
 
@@ -31,7 +31,8 @@ Convenções:
 | Os arquivos canônicos da revisão (o que `sen validate` lê)? | `sen export api --id 400 --revision 4 [--dir ./repo]` |
 | Que ambientes, workflows, atributos e tipos de interceptor existem? | `sen list environments` · `sen list workflows` · `sen list attributes` · `sen list interceptors` |
 | O que um stage exige? | `sen get workflow --id 327` |
-| Variáveis de ambiente? | `sen list variables [--env 1] [--key x] [--show-values]` · `sen get environment --id 1` |
+| Variáveis de ambiente? | `sen list variables [--env 1] [--key x]` · `sen get environment --id 1` |
+| O valor de uma variável mascarada? | `sen reveal variable --env 1 --key chave [--map M] [--raw]` |
 | Apps, planos e tokens? | `sen list apps [--api 400]` · `sen get app --id 42` · `sen list plans [--api 400]` · `sen get plan --id 66` · `sen list tokens [--app 45] [--api 400]` |
 | Pessoas e gateway? | `sen list users [--query x]` · `sen list teams` · `sen list inbounds` · `sen list gateway-pools` |
 
@@ -125,11 +126,14 @@ Materializa a árvore canônica (`api-basic-info.yaml`, `all.yaml`, `resources/<
 ### `sen list environments`
 Ambientes: id, nome, inbound URL, se aceita deploy, descrição.
 
-### `sen get environment --id E [--show-values]`
+### `sen get environment --id E`
 Um ambiente: gateway (pool, host, protocolo/TLS), mapas de variáveis com cada chave e valor (mascarado quando sensível), e **todas as APIs/revisões no ar** nele.
 
-### `sen list variables [--env E] [--key texto] [--show-values]`
-Variáveis de ambiente achatadas por mapa (ambiente, mapa, chave, tipo, valor). Sem `--env`, percorre todos os ambientes. Valor `SECURED` nunca é revelado; valor `DEFAULT` cuja chave ou valor parece credencial (`secret`, `password`, `token`, `auth`, `client_id`, `Basic …`, `Bearer …`) sai mascarado e só aparece com `--show-values`.
+### `sen list variables [--env E] [--key texto]`
+Variáveis de ambiente achatadas por mapa (ambiente, mapa, chave, tipo, valor). Sem `--env`, percorre todos os ambientes. A listagem é **sempre mascarada**: valor `SECURED`, e valor `DEFAULT` cuja chave ou valor parece credencial (`secret`, `password`, `token`, `auth`, `client_id`, `Basic …`, `Bearer …`), saem como `•••••`.
+
+### `sen reveal variable --env E --key CHAVE [--map MAPA] [--raw]`
+Desmascara **uma** variável, pelo nome exato, e mostra o valor como o Manager o devolve (ambiente, mapa, tipo e se é sensível). Se a chave existir em mais de um mapa, o comando pede `--map`. `--raw` escreve só o valor, para redirecionar a um arquivo ou exportar numa variável de shell. Cada revelação vai para o log da CLI (ambiente, mapa e chave; nunca o valor).
 
 ### `sen list workflows`
 Workflows do Adaptive Governance (categoria, grupo) e os stages em ordem, com um resumo das regras: maturidade mínima, quantidade de interceptors e atributos exigidos, ambientes de deploy.

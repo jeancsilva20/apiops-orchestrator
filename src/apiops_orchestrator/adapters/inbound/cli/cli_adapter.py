@@ -1906,10 +1906,12 @@ from apiops_orchestrator.adapters.inbound.cli.navigation_cli import (  # noqa: E
     list_users,
     list_variables,
     list_workflows,
+    reveal_app,
 )
 
 sen_app.add_typer(get_app)
 sen_app.add_typer(export_app)
+sen_app.add_typer(reveal_app)
 list_app.command("environments")(list_environments)
 list_app.command("workflows")(list_workflows)
 list_app.command("attributes")(list_attributes)

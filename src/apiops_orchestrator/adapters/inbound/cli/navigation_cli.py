@@ -51,6 +51,12 @@ export_app = typer.Typer(
     no_args_is_help=True,
 )
 
+reveal_app = typer.Typer(
+    name="reveal",
+    help="Desmascara, de propósito e um por vez, um valor que as listagens escondem.",
+    no_args_is_help=True,
+)
+
 
 # --------------------------------------------------------------------------- apoio
 
@@ -1197,17 +1203,14 @@ def list_variables(
     ctx: typer.Context,
     environment_id: Optional[int] = typer.Option(None, "--env", help="Id do ambiente (sen list environments). Ausente: todos."),
     key: Optional[str] = typer.Option(None, "--key", help="Filtra pelo nome da variável (substring)."),
-    show_values: bool = typer.Option(
-        False, "--show-values", help="Mostra o valor das variáveis que parecem credencial (SECURED continua oculta)."
-    ),
     output: OutputFormat = _output_option(),
 ):
-    """Variáveis de ambiente (mapas e chaves). Valores sensíveis saem mascarados."""
+    """Variáveis de ambiente (mapas e chaves). Valores sensíveis saem sempre mascarados."""
     rows = _run(
         ctx,
         "list variables",
         output,
-        lambda: _service(ctx).variables(environment_id, key=key, show_values=show_values),
+        lambda: _service(ctx).variables(environment_id, key=key),
     )
 
     def _text() -> None:
@@ -1228,7 +1231,7 @@ def list_variables(
             header=("AMBIENTE", "MAPA", "CHAVE", "TIPO", "VALOR"),
         )
         if any(v.get("masked") for v in rows):
-            rprint(_dim("••••• = valor mascarado (credencial ou SECURED); --show-values revela as DEFAULT"))
+            rprint(_dim("••••• = valor mascarado (credencial ou SECURED); para ver um valor: sen reveal variable --env <E> --key <CHAVE>"))
 
     display_output(rows, output_format=output, text_callback=_text)
 
@@ -1237,13 +1240,10 @@ def list_variables(
 def get_environment_command(
     ctx: typer.Context,
     environment_id: int = typer.Option(..., "--id", help="Id do ambiente (sen list environments)."),
-    show_values: bool = typer.Option(False, "--show-values", help="Revela valores DEFAULT que parecem credencial."),
     output: OutputFormat = _output_option(),
 ):
-    """Um ambiente: gateway, mapas de variáveis e todas as APIs/revisões no ar nele."""
-    document = _run(
-        ctx, "get environment", output, lambda: _service(ctx).environment(environment_id, show_values=show_values)
-    )
+    """Um ambiente: gateway, mapas de variáveis (mascaradas) e todas as APIs/revisões no ar nele."""
+    document = _run(ctx, "get environment", output, lambda: _service(ctx).environment(environment_id))
 
     def _text() -> None:
         gw = document.get("gateway") or {}
@@ -1347,3 +1347,46 @@ def list_gateway_pools(
         )
 
     display_output(rows, output_format=output, text_callback=_text)
+
+
+# ===========================================================================
+# sen reveal — o único caminho que escreve um valor sensível na tela.
+# ===========================================================================
+
+
+@reveal_app.command("variable")
+def reveal_variable_command(
+    ctx: typer.Context,
+    environment_id: int = typer.Option(..., "--env", help="Id do ambiente (sen list environments)."),
+    key: str = typer.Option(..., "--key", help="Nome EXATO da variável (sen list variables)."),
+    map_name: Optional[str] = typer.Option(None, "--map", help="Mapa da variável, quando a chave se repete."),
+    raw: bool = typer.Option(False, "--raw", help="Escreve só o valor, cru (para redirecionar ou exportar)."),
+    output: OutputFormat = _output_option(),
+):
+    """Mostra em claro o valor de UMA variável de ambiente, como o Manager o devolve."""
+    document = _run(
+        ctx,
+        "reveal variable",
+        output if not raw else OutputFormat.JSON,
+        lambda: _service(ctx).reveal_variable(environment_id, key, map_name),
+    )
+    if raw:
+        import sys
+
+        value = document.get("value")
+        value = "" if value is None else str(value)
+        sys.stdout.write(value if value.endswith("\n") else value + "\n")
+        return
+
+    def _text() -> None:
+        rprint(
+            f"[bold]{_literal(document.get('key'))}[/bold]  "
+            + _dim(
+                f"{_literal(document.get('environmentName'))} ({document.get('environmentId')}) · mapa "
+                f"{_literal(document.get('map'))} · {_literal(document.get('variableType'))}"
+                + (" · sensível" if document.get("sensitive") else "")
+            )
+        )
+        rprint(_literal(document.get("value") if document.get("value") is not None else "(vazio)"))
+
+    display_output(document, output_format=output, text_callback=_text)

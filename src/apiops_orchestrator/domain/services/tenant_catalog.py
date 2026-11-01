@@ -11,8 +11,8 @@ Segredos **nunca** saem daqui em claro:
 * variável de ambiente `SECURED` sai sempre mascarada;
 * variável `DEFAULT` cujo nome ou valor parece credencial (`Basic …`,
   `Bearer …`, chave com `secret`/`password`/`token`/`auth`…) sai mascarada
-  por padrão — o chamador pode pedir os valores (`show_values`), e mesmo
-  assim a `SECURED` não aparece.
+  nas listagens; só `reveal_variable` devolve o valor em claro, de UMA
+  variável, para o comando explícito `sen reveal variable`.
 """
 
 import re
@@ -135,6 +135,40 @@ def describe_environment(
         "variables": environment_variables(environment, show_values=show_values),
         "deployed": deployed,
         "totals": {"deployed": len(deployed)},
+    }
+
+
+def find_variables(
+    environment: Dict[str, Any], key: str, map_name: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """Ocorrências EXATAS de `key` (sem distinguir maiúsculas), opcionalmente num mapa."""
+    wanted = key.strip().lower()
+    wanted_map = (map_name or "").strip().lower()
+    found: List[Dict[str, Any]] = []
+    for map_ in environment.get("mapVars") or []:
+        if not isinstance(map_, dict):
+            continue
+        if wanted_map and str(map_.get("name") or "").strip().lower() != wanted_map:
+            continue
+        for variable in map_.get("vars") or []:
+            if isinstance(variable, dict) and str(variable.get("key") or "").strip().lower() == wanted:
+                found.append({"map": map_, "variable": variable})
+    return found
+
+
+def reveal_variable(
+    environment: Dict[str, Any], map_: Dict[str, Any], variable: Dict[str, Any]
+) -> Dict[str, Any]:
+    """A variável em claro, como o Manager a devolve. Uso: `sen reveal variable`."""
+    return {
+        "environmentId": environment.get("id"),
+        "environmentName": environment.get("name"),
+        "map": map_.get("name"),
+        "mapId": map_.get("id"),
+        "key": variable.get("key"),
+        "value": variable.get("value"),
+        "variableType": (variable.get("variableType") or "DEFAULT").upper(),
+        "sensitive": _is_secured(variable) or looks_sensitive(variable.get("key"), variable.get("value")),
     }
 
 

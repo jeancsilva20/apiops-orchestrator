@@ -188,3 +188,26 @@ def test_people_and_infra_descriptions():
     assert tenant.describe_gateway_pool({"id": 1, "name": "default", "labelType": "CLOUD", "routes": 396}) == {"id": 1, "name": "default", "description": None, "type": "CLOUD", "routes": 396}
     assert tenant.matches_query(("Super Admin", None), "admin") and not tenant.matches_query(("x",), "y")
     assert tenant.matches_query(("x",), None)
+
+
+def test_find_and_reveal_variable():
+    env = _environment()
+    assert tenant.find_variables(env, "nope") == []
+    (hit,) = tenant.find_variables(env, "BASICAUTHMANAGER")
+    assert hit["map"]["name"] == "OAUTH API" and hit["variable"]["key"] == "basicAuthManager"
+    assert tenant.find_variables(env, "zeta", map_name="OAUTH API") == []
+    assert len(tenant.find_variables(env, "zeta", map_name="b")) == 1
+
+    revealed = tenant.reveal_variable(env, hit["map"], hit["variable"])
+    assert revealed == {
+        "environmentId": 1,
+        "environmentName": "Default",
+        "map": "OAUTH API",
+        "mapId": 1,
+        "key": "basicAuthManager",
+        "value": "Basic abc",
+        "variableType": "DEFAULT",
+        "sensitive": True,
+    }
+    (plain,) = tenant.find_variables(env, "zeta")
+    assert tenant.reveal_variable(env, plain["map"], plain["variable"])["sensitive"] is False

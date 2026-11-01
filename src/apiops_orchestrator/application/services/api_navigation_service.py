@@ -505,38 +505,62 @@ class ApiNavigationService:
         except _PORT_FAILURES as exc:
             raise self._translate(exc, api_id=api_id) from exc
 
-    def environment(self, environment_id: int, *, show_values: bool = False) -> Dict[str, Any]:
-        """Ambiente com gateway, mapas de variáveis e tudo que está no ar nele."""
+    def _environment_raw(self, environment_id: int) -> Dict[str, Any]:
         raw = self._read(lambda: self.manager_api.get_environment(environment_id))
         if not isinstance(raw, dict) or raw.get("id") is None:
             raise NavigationError(
                 f"Ambiente {environment_id} não encontrado. Liste os existentes com: sen list environments"
             )
-        return tenant.describe_environment(raw, show_values=show_values)
+        return raw
+
+    def environment(self, environment_id: int) -> Dict[str, Any]:
+        """Ambiente com gateway, mapas de variáveis (mascaradas) e tudo que está no ar nele."""
+        return tenant.describe_environment(self._environment_raw(environment_id))
 
     def variables(
-        self,
-        environment_id: Optional[int] = None,
-        *,
-        key: Optional[str] = None,
-        show_values: bool = False,
+        self, environment_id: Optional[int] = None, *, key: Optional[str] = None
     ) -> list:
-        """Variáveis de um ambiente, ou de todos; segredos mascarados por padrão."""
+        """Variáveis de um ambiente, ou de todos. Valores sensíveis sempre mascarados."""
         if environment_id is not None:
-            raw = self._read(lambda: self.manager_api.get_environment(environment_id))
-            if not isinstance(raw, dict) or raw.get("id") is None:
-                raise NavigationError(
-                    f"Ambiente {environment_id} não encontrado. Liste os existentes com: sen list environments"
-                )
-            return tenant.environment_variables(raw, show_values=show_values, key=key)
+            return tenant.environment_variables(self._environment_raw(environment_id), key=key)
         rows: list = []
         for env in self._read(self.manager_api.list_environments):
             if env.get("id") is None:
                 continue
             raw = self._safe(lambda env_id=env["id"]: self.manager_api.get_environment(env_id), None)
             if isinstance(raw, dict):
-                rows.extend(tenant.environment_variables(raw, show_values=show_values, key=key))
+                rows.extend(tenant.environment_variables(raw, key=key))
         return rows
+
+    def reveal_variable(
+        self, environment_id: int, key: str, map_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """UMA variável em claro. É o único caminho que devolve valor sensível.
+
+        Chave inexistente ou repetida em mais de um mapa é erro: o chamador
+        nomeia o mapa com `--map`. O valor nunca vai para o log; só o alvo.
+        """
+        raw = self._environment_raw(environment_id)
+        found = tenant.find_variables(raw, key, map_name)
+        where = f" no mapa {map_name!r}" if map_name else ""
+        if not found:
+            raise NavigationError(
+                f"Variável {key!r} não existe no ambiente {environment_id}{where}. "
+                f"Veja as chaves com: sen list variables --env {environment_id}"
+            )
+        if len(found) > 1:
+            maps = ", ".join(repr(str(f["map"].get("name"))) for f in found)
+            raise NavigationError(
+                f"Variável {key!r} existe em mais de um mapa do ambiente {environment_id} "
+                f"({maps}). Escolha um com --map."
+            )
+        logger.info(
+            "navigation.variable.revealed environment_id=%s map=%s key=%s",
+            environment_id,
+            found[0]["map"].get("name"),
+            key,
+        )
+        return tenant.reveal_variable(raw, found[0]["map"], found[0]["variable"])
 
     def apps(self, *, api_id: Optional[int] = None, query: Optional[str] = None) -> list:
         rows = self._read(self.manager_api.list_apps)
