@@ -23,6 +23,6 @@ SEN_CREDENTIALS=""
 AUTH_HOST="https://api-dev.ecad.org.br"
 AUTH_LOGIN_PATH="/orq-auth/v1/oauth2/token"
 
-# O Manager alvo dos demais comandos é o HOST, definido à parte (.env ou
-# ambiente) e INDEPENDENTE do AUTH_HOST. Ausente, assume
-# https://platform-production.sensedia.com. Confira com `sen list api --limit 5`.
+# O Manager alvo dos demais comandos não vem daqui: é o HOST, que por padrão
+# aponta para https://platform-production.sensedia.com — o esperado, e que no
+# uso normal não se mexe. Para ver qual Manager respondeu, `sen list api`.

@@ -90,15 +90,17 @@ The two files are gap-filled into the environment (never overriding what is alre
 | `AUTH_HOST` | yes | Host of the Orchestrator Auth API |
 | `AUTH_LOGIN_PATH` | yes | Token path; concatenated to `AUTH_HOST` |
 | `AUTH_VALIDATE_PATH` | no | Session validation path. Default: `{AUTH_LOGIN_PATH}/validation` |
-| `HOST` | no (has default) | **Sensedia Manager** targeted by `list`, `completeness`, `validate`, `publish`, `deploy` |
+| `HOST` | no — keep the default | **Sensedia Manager** targeted by `list`, `completeness`, `validate`, `publish`, `deploy` |
 | `EXECUTION_MODE` | no | `local` (default) or `pipeline` |
 | `TEMPLATE_API_ID` | pipeline only | Golden Path API id; inject from the vault |
 | `TARGET_REVISION_NUMBER` | pipeline only | Revision **number** as shown in the UI (1=Draft, 2=DEV, 3=HML, 4=PRD) |
 | `TARGET_ENVIRONMENT_ID` | pipeline only | Manager id of the environment receiving `sen deploy` |
 
-> **`HOST` defaults to `https://platform-production.sensedia.com`.** `AUTH_HOST` and `HOST` are independent: authenticating against one environment does **not** point the Manager commands at it. If you work against a non-default Manager, set `HOST` explicitly — otherwise `validate`, `publish` and `deploy` act on the default one. Check the target before any write operation:
+> **`HOST` and `AUTH_HOST` are separate on purpose.** The Manager is always `https://platform-production.sensedia.com` — that is the default in the code and the expected target, so normally you leave `HOST` unset. `AUTH_HOST` is configured per environment because the Orchestrator Auth API is published separately from the Manager; authenticating against one does not change which Manager the commands reach, and it is not supposed to. Set `HOST` only to point at a different Manager.
+>
+> To see which Manager answered — useful when confirming a new environment or credential:
 > ```bash
-> sen list api --limit 5      # the APIs listed are the ones your commands will act on
+> sen list api --limit 5
 > ```
 
 See `.env.example` and `src/apiops_orchestrator/.sen.example` for annotated templates.
