@@ -72,6 +72,33 @@ class Settings(BaseSettings):
     # Id, no Manager, do ambiente que recebe o `sen deploy`.
     TARGET_ENVIRONMENT_ID: int | None = None
 
+    @field_validator(
+        "AUTH_HOST",
+        "AUTH_LOGIN_PATH",
+        "AUTH_VALIDATE_PATH",
+        "SEN_CREDENTIALS",
+        "HOST",
+        mode="before",
+    )
+    @classmethod
+    def _strip_wrapping_quotes(cls, value: Any) -> Any:
+        """Remove aspas que sobram quando a variável vem do ambiente do processo.
+
+        Num arquivo `.sen`/`.env` o dotenv desembrulha `VAR="valor"` e o valor
+        chega limpo. Exportada direto no ambiente (cofre da esteira, `export`
+        no shell), a mesma linha entrega as aspas dentro do valor: a URL vira
+        `"https://host"/"/oauth2/token"` e o header vira `Basic "credencial"`,
+        o que aparece como falha de conexão ou credencial recusada em vez de
+        erro de configuração. O strip aqui vale para as duas origens.
+        """
+        if not isinstance(value, str):
+            return value
+        stripped = value.strip()
+        for quote in ('"', "'"):
+            if len(stripped) >= 2 and stripped[0] == quote and stripped[-1] == quote:
+                return stripped[1:-1].strip()
+        return stripped
+
     @field_validator("EXECUTION_MODE", mode="before")
     @classmethod
     def _normalize_mode(cls, value: Any) -> str:

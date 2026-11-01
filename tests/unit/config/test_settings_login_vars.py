@@ -287,3 +287,68 @@ def test_target_environment_id_nao_numerico_falha_na_carga(monkeypatch):
 
     with pytest.raises(pydantic.ValidationError):
         Settings()
+
+
+# --- Aspas vindas do ambiente do processo --------------------------------
+# `VAR="valor"` num arquivo `.sen`/`.env` chega desembrulhado pelo dotenv, mas
+# exportado no ambiente (cofre da esteira, `export` no shell) entrega as aspas
+# dentro do valor. Sem o strip, a URL vira `"https://host"/"/oauth2/token"` e o
+# header vira `Basic "credencial"`: o login falha como se fosse rede ou
+# credencial, nunca como erro de configuração.
+
+
+def test_aspas_duplas_do_ambiente_sao_removidas(monkeypatch):
+    _seed_required(monkeypatch)
+    monkeypatch.setenv("AUTH_HOST", '"https://auth.example.com"')
+    monkeypatch.setenv("AUTH_LOGIN_PATH", '"/cli-2/orq-auth/v1/oauth2/token"')
+    monkeypatch.setenv("SEN_CREDENTIALS", '"QUJDREVG"')
+    monkeypatch.setenv("AUTH_VALIDATE_PATH", '"/cli-2/orq-auth/v1/validation"')
+
+    settings = Settings()
+
+    assert settings.AUTH_HOST == "https://auth.example.com"
+    assert settings.AUTH_LOGIN_PATH == "/cli-2/orq-auth/v1/oauth2/token"
+    assert settings.SEN_CREDENTIALS == "QUJDREVG"
+    assert settings.AUTH_VALIDATE_PATH == "/cli-2/orq-auth/v1/validation"
+
+
+def test_aspas_simples_do_ambiente_sao_removidas(monkeypatch):
+    _seed_required(monkeypatch)
+    monkeypatch.setenv("AUTH_HOST", "'https://auth.example.com'")
+    monkeypatch.setenv("SEN_CREDENTIALS", "'QUJDREVG'")
+
+    settings = Settings()
+
+    assert settings.AUTH_HOST == "https://auth.example.com"
+    assert settings.SEN_CREDENTIALS == "QUJDREVG"
+
+
+def test_valor_sem_aspas_permanece_intacto(monkeypatch):
+    _seed_required(monkeypatch)
+    monkeypatch.setenv("SEN_CREDENTIALS", "QUJDREVG")
+
+    assert Settings().SEN_CREDENTIALS == "QUJDREVG"
+
+
+def test_aspa_em_um_lado_so_nao_e_removida(monkeypatch):
+    """Só desembrulha par simétrico: uma aspa solta é dado, não embrulho."""
+    _seed_required(monkeypatch)
+    monkeypatch.setenv("AUTH_HOST", '"https://auth.example.com')
+
+    assert Settings().AUTH_HOST == '"https://auth.example.com'
+
+
+def test_url_de_login_fica_valida_com_variaveis_entre_aspas(monkeypatch):
+    """Regressão: a URL montada não pode carregar aspas no meio."""
+    from apiops_orchestrator.adapters.outbound.http.orchestrator_auth_api.orchestrator_auth_adapter import (
+        build_login_url,
+    )
+
+    _seed_required(monkeypatch)
+    monkeypatch.setenv("AUTH_HOST", '"https://auth.example.com"')
+    monkeypatch.setenv("AUTH_LOGIN_PATH", '"/cli-2/orq-auth/v1/oauth2/token"')
+
+    url = build_login_url(Settings())
+
+    assert url == "https://auth.example.com/cli-2/orq-auth/v1/oauth2/token"
+    assert '"' not in url
