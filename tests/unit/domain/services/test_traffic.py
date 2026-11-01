@@ -117,7 +117,7 @@ def test_analytics_summary():
         _call(id="b", resultStatus=200, durationMillis=300, receivedOnDate="2026-11-01T19:10:00Z"),
         _call(id="c", resultStatus=401, typeError="client", durationMillis=10, receivedOnDate="2026-11-01T20:00:00Z", appName=""),
         _call(id="d", resultStatus=503, typeError="server", durationMillis=2000, receivedOnDate="2026-11-01T20:30:00Z", operationName="", method="GET", uri="/x"),
-        _call(id="e", resultStatus=None, durationMillis=None, receivedOnDate=None),
+        _call(id="e", resultStatus=None, durationMillis=None, receivedOnDate=None, callDate=None),
     ]
     summary = traffic.analytics_summary(calls, total=50, top=2)
     assert summary["sample"] == 5 and summary["total"] == 50
