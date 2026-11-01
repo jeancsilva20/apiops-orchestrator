@@ -39,6 +39,12 @@ Run `sen --help` or `sen <command> --help` for the authoritative option list. Al
 | `sen validate` | Validates the repository and writes to Draft | `--repo` (default: current directory) |
 | `sen publish` | Publishes to the environment revision | Pipeline only (`EXECUTION_MODE=pipeline`) |
 | `sen deploy` | Deploys the revision to the environment | Pipeline only (`EXECUTION_MODE=pipeline`) |
+| `sen get api` | Identity, visibility, environments and revisions of one API | `--id` |
+| `sen get resources` | Root → resources → operations of a revision, with destination and interceptor counts | `--id`, `--revision`, `--revision-id` |
+| `sen get interceptors` | Interceptor flow per scope; `--item` zooms into one interceptor | `--resource`, `--operation`, `--effective`, `--content`, `--item` |
+| `sen get custom` | Name and script of a Custom interceptor from the catalog | `--custom-id`, `--script-only` |
+| `sen get swagger` | OpenAPI contract of a revision, as stored in the Manager | `--id`, `--revision`, `--revision-id` |
+| `sen export api` | Materializes the canonical repository tree of a revision | `--dir`, `--force` |
 
 ### `sen login`
 
@@ -67,6 +73,31 @@ The session is written to `.sen_session` in the **package directory** (`src/apio
 > metadata do pacote não esteja disponível. Em ambos os ambientes, a
 > alternativa `python src/apiops_orchestrator/main.py sen <comando>`
 > (ou `poetry run python ...`) continua funcionando e aceita os mesmos comandos.
+
+### Exploring an environment without the source (`sen get`, `sen export`)
+
+The `get` and `export` groups read an API straight from the Manager, so a person — or a coding agent such as Claude Code that only has the CLI — can inspect APIs **without a local copy of the repository**. Every command is read-only, accepts `-o json`/`-o yaml`, and each level of detail points to the next:
+
+```bash
+sen list api                                            # 0. which APIs exist (ids)
+sen get api --id 400                                    # 1. identity, visibility, environments, revisions
+sen get resources --id 400 --revision 4                 # 2. root → resources → operations, counts per scope
+sen get interceptors --id 400 --revision 4              # 3. interceptors each scope declares (own)
+sen get interceptors --id 400 --resource Token --effective   #    what a scope actually runs (inherited − removed + own)
+sen get interceptors --id 400 --operation "POST /oauth2/token" --content   #    with each interceptor's configuration
+sen get interceptors --id 400 --item 19220              # 4. one interceptor, full content (script included)
+sen get custom --custom-id 31 --script-only > my.js     #    script of a Custom from the catalog
+sen get swagger --id 400 --revision 4                   #    OpenAPI contract of the revision
+sen export api --id 400 --revision 4 --dir ./repo       # 5. canonical tree (what `sen validate` reads)
+```
+
+Notes:
+
+- `--revision` is the revision **number** shown in the UI (REV #). Use `--revision-id` for the Manager id (REV ID, the value `sen completeness --revision` expects). Without either, the current revision (`lastRevision`) is used.
+- `--resource` accepts the resource name, its slug (the folder name in the canonical tree) or its id; `--operation` accepts `"<METHOD> <path>"`, just the path, or the operation id.
+- Interceptor ids (`[19220]`) are the Manager ids inside the revision; `customInterceptorId` is the catalog id used by `sen get custom`.
+- `sen export api` without `--dir` prints every file to stdout, with a `# ==> <path>` header per file; with `--dir` it writes the tree and refuses to overwrite unless `--force` is given.
+- Only `FIRST`/`SECOND` execution points are governed by the repository; interceptors outside them are counted as *preserved* and never appear in the exported YAML.
 
 ## Configuration
 

@@ -1880,3 +1880,17 @@ def diag_draft(
         raise typer.Exit(code=e.exit_code)
     except Exception as e:
         _exit_on_unexpected(e, command="diag draft")
+
+
+# ---------------------------------------------------------------------------
+# sen get / sen export — navegação do ambiente sem repositório local.
+# Registrados aqui, no fim, porque o módulo reusa helpers deste arquivo
+# (feedback, tradução de erros, grade) e o import precisa vir depois deles.
+# ---------------------------------------------------------------------------
+from apiops_orchestrator.adapters.inbound.cli.navigation_cli import (  # noqa: E402
+    export_app,
+    get_app,
+)
+
+sen_app.add_typer(get_app)
+sen_app.add_typer(export_app)

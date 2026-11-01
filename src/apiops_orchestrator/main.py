@@ -28,6 +28,9 @@ from apiops_orchestrator.application.services.api_access_guard import ApiAccessG
 from apiops_orchestrator.application.services.api_listing_service import (
     ApiListingService,
 )
+from apiops_orchestrator.application.services.api_navigation_service import (
+    ApiNavigationService,
+)
 from apiops_orchestrator.application.services.deploy_service import (
     DeployService,
     require_pipeline as exigir_esteira_no_deploy,
@@ -146,6 +149,23 @@ def build_listing_service_factory():
         )
         session = _build_session_store(settings).load()
         return ApiListingService(manager_adapter, session=session)
+
+    return factory
+
+
+def build_navigation_service_factory():
+    """Factory dos `sen get ...`/`sen export api`: leitura do Manager com a sessão."""
+
+    def factory() -> ApiNavigationService:
+        settings = _load_settings()
+        manager_adapter = ManagerApiAdapter(
+            token=_build_admin_token(settings),
+            base_path="/api-manager/api/v3/",
+            max_retries=3,
+            settings=settings,
+        )
+        session = _build_session_store(settings).load()
+        return ApiNavigationService(manager_adapter, session=session)
 
     return factory
 
@@ -292,6 +312,7 @@ def main():
         ctx_obj = {
             "login_service_factory": build_login_service_factory(),
             "api_listing_service_factory": build_listing_service_factory(),
+            "api_navigation_service_factory": build_navigation_service_factory(),
             "completeness_service_factory": build_completeness_service_factory(),
             "validate_service_factory": build_validate_service_factory(),
             "publish_service_factory": build_publish_service_factory(),
