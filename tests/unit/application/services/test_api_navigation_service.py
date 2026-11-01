@@ -444,3 +444,104 @@ def test_impact_translates_the_tree_and_picks_a_default_environment():
     port.get_impact_tree.return_value = {}
     with pytest.raises(NavigationPlatformError):
         service.impact(400)
+
+
+# --------------------------------------------------------------------------- consumo e infra
+
+
+def _consumer_port():
+    port = _governed_port()
+    port.get_environment.return_value = {
+        "id": 1, "name": "Default", "inboundUrl": "https://gw/",
+        "mapVars": [{"id": 1, "name": "M", "vars": [
+            {"key": "backendUrl", "value": "http://b", "variableType": "DEFAULT"},
+            {"key": "basicAuth", "value": "Basic x", "variableType": "DEFAULT"},
+        ]}],
+        "revisionsDeployed": [{"apiId": 400, "apiName": "Orchestrator Auth API", "revisionId": 8948, "revisionNumber": 4}],
+    }
+    port.list_apps.return_value = [
+        {"id": 42, "name": "Super Admin", "status": "APPROVED", "developer": "a@x", "clientId": "*****", "secret": "*****",
+         "apis": [{"id": 400, "name": "Orchestrator Auth API", "plans": [{"id": 66, "name": "P"}]}], "accessTokens": []},
+        {"id": 7, "name": "Other", "status": "APPROVED", "developer": "b@x", "apis": [], "accessTokens": []},
+    ]
+    port.get_app.return_value = port.list_apps.return_value[0]
+    port.list_plans.return_value = [
+        {"id": 66, "name": "P", "defaultPlan": True, "api": {"id": 400, "name": "Orchestrator Auth API"}, "interceptors": []},
+        {"id": 10, "name": "CRM default", "defaultPlan": True, "api": {"id": 29, "name": "CRM Service"}, "interceptors": [{"id": 1}]},
+    ]
+    port.get_plan.return_value = port.list_plans.return_value[1]
+    port.list_access_tokens.return_value = [
+        {"_id": "t1", "code": "S", "owner": "o", "app": {"id": 45, "name": "CI"}, "status": "ACTIVE", "creationDate": "2026-11-01", "apis": [{"id": 400, "name": "x"}]},
+        {"_id": "t2", "code": "S", "owner": "o", "app": {"id": 42, "name": "SA"}, "status": "ACTIVE", "creationDate": "2026-11-02", "apis": [{"id": 1, "name": "y"}]},
+    ]
+    port.list_users.return_value = [{"username": "zed", "status": "CREATED"}, {"username": "ana", "status": "ACTIVE"}]
+    port.list_groups.return_value = [{"name": "Lab", "description": ""}, {"name": "APIOps", "description": "d"}]
+    port.list_inbounds.return_value = [{"id": 1, "name": "Default", "host": "h"}]
+    port.list_gateway_pools.return_value = [{"id": 1, "name": "default", "routes": 3}]
+    return port
+
+
+def test_environment_and_variables_mask_secrets():
+    port = _consumer_port()
+    service = ApiNavigationService(port, session=None)
+
+    document = service.environment(1)
+    assert document["deployed"][0]["apiId"] == 400
+    values = {v["key"]: v["value"] for v in document["variables"]}
+    assert values == {"backendUrl": "http://b", "basicAuth": "•••••"}
+
+    revealed = {v["key"]: v["value"] for v in service.variables(1, show_values=True)}
+    assert revealed["basicAuth"] == "Basic x"
+    assert [v["key"] for v in service.variables(1, key="url")] == ["backendUrl"]
+
+    # sem --env: percorre todos os ambientes do catálogo
+    port.list_environments.return_value = [{"id": 1, "name": "Default"}, {"id": 9, "name": "HMG"}]
+    rows = service.variables()
+    assert len(rows) == 4 and port.get_environment.call_count >= 3
+
+    port.get_environment.return_value = {}
+    with pytest.raises(NavigationError) as info:
+        service.environment(77)
+    assert "Ambiente 77" in info.value.message
+
+
+def test_apps_plans_tokens_filters_and_details():
+    port = _consumer_port()
+    service = ApiNavigationService(port, session=None)
+
+    assert [a["id"] for a in service.apps()] == [7, 42]  # ordenados por nome
+    assert [a["id"] for a in service.apps(api_id=400)] == [42]
+    assert [a["id"] for a in service.apps(query="super")] == [42]
+    assert service.app(42)["apis"][0]["plans"] == [{"id": 66, "name": "P", "defaultPlan": None}]
+    port.get_app.return_value = None
+    with pytest.raises(NavigationError):
+        service.app(999)
+
+    assert [p["id"] for p in service.plans()] == [10, 66]  # por nome da API
+    assert [p["id"] for p in service.plans(api_id=400)] == [66]
+    assert [p["id"] for p in service.plans(query="crm")] == [10]
+    assert service.plan(10)["flow"] == {"request": [], "response": []}
+    port.get_plan.return_value = None
+    with pytest.raises(NavigationError):
+        service.plan(999)
+
+    tokens = service.tokens()
+    assert [t["id"] for t in tokens] == ["t2", "t1"]  # mais recentes primeiro
+    assert "S" not in str(tokens)
+    assert [t["id"] for t in service.tokens(app_id=45)] == ["t1"]
+    assert [t["id"] for t in service.tokens(api_id=1)] == ["t2"]
+
+
+def test_people_and_infra_listings():
+    port = _consumer_port()
+    service = ApiNavigationService(port, session=None)
+    assert [u["username"] for u in service.users("a")] == ["ana", "zed"]
+    port.list_users.assert_called_once_with("a")
+    assert [g["name"] for g in service.teams()] == ["APIOps", "Lab"]
+    assert service.inbounds()[0]["host"] == "h"
+    assert service.gateway_pools()[0]["routes"] == 3
+
+    port.list_apps.side_effect = ManagerApiTransportRejectedError(401, "Unauthorized")
+    with pytest.raises(NavigationPlatformError) as info:
+        service.apps()
+    assert UNAUTHORIZED_MESSAGE in info.value.message

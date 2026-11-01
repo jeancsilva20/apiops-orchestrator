@@ -3,6 +3,7 @@
 Summary of recent changes in the project. Each item includes date, category, title and author.
 
 ## Recent History
+- 2026-11-01 — CLI/Docs — "Navegação de consumo e infra: sen list apps|plans|tokens|variables|users|teams|inbounds|gateway-pools e sen get app|plan|environment (credenciais nunca exibidas, variáveis sensíveis mascaradas); COMMANDS.md com a referência de todos os comandos" — Author: Jean Silva — Type: Nova funcionalidade
 - 2026-11-01 — CLI — "Catálogos do tenant e governança a partir do mapeamento APIM/AG: sen list environments|workflows|attributes|interceptors, sen get workflow (requisitos por stage), sen get governance (revisão contra o stage atual e o próximo) e sen get impact (rotas, planos e apps); get api mostra o nome do stage" — Author: Jean Silva — Type: Nova funcionalidade
 - 2026-11-01 — CLI — "Navegação do ambiente sem repositório local: sen get api|resources|interceptors|custom|swagger e sen export api, com níveis de detalhe crescentes e saída json/yaml (uso por humanos e agentes de código)" — Author: Jean Silva — Type: Nova funcionalidade
 - 2026-11-01 — CLI/Auth — "Settings remove aspas de variaveis de auth vindas do ambiente do processo; README, .env.example e .sen.example alinhados ao codigo (comandos, precedencia de fontes, local do .sen_session, HOST vs AUTH_HOST)" — Author: Jean Silva — Type: Correção

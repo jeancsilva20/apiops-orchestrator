@@ -31,6 +31,7 @@ from apiops_orchestrator.application.services.manager_failure_translator import 
     manager_failure_message,
 )
 from apiops_orchestrator.domain.services import governance_check as gov
+from apiops_orchestrator.domain.services import tenant_catalog as tenant
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiError,
@@ -495,6 +496,113 @@ class ApiNavigationService:
         """Árvore canônica da revisão (o mesmo layout que `sen validate` lê)."""
         api, revision = self.revision(api_id, number, revision_id)
         return api, revision, materialize(api, revision)
+
+    # ------------------------------------------------------------------ consumo e infra
+
+    def _read(self, reader, api_id: Optional[int] = None):
+        try:
+            return reader()
+        except _PORT_FAILURES as exc:
+            raise self._translate(exc, api_id=api_id) from exc
+
+    def environment(self, environment_id: int, *, show_values: bool = False) -> Dict[str, Any]:
+        """Ambiente com gateway, mapas de variáveis e tudo que está no ar nele."""
+        raw = self._read(lambda: self.manager_api.get_environment(environment_id))
+        if not isinstance(raw, dict) or raw.get("id") is None:
+            raise NavigationError(
+                f"Ambiente {environment_id} não encontrado. Liste os existentes com: sen list environments"
+            )
+        return tenant.describe_environment(raw, show_values=show_values)
+
+    def variables(
+        self,
+        environment_id: Optional[int] = None,
+        *,
+        key: Optional[str] = None,
+        show_values: bool = False,
+    ) -> list:
+        """Variáveis de um ambiente, ou de todos; segredos mascarados por padrão."""
+        if environment_id is not None:
+            raw = self._read(lambda: self.manager_api.get_environment(environment_id))
+            if not isinstance(raw, dict) or raw.get("id") is None:
+                raise NavigationError(
+                    f"Ambiente {environment_id} não encontrado. Liste os existentes com: sen list environments"
+                )
+            return tenant.environment_variables(raw, show_values=show_values, key=key)
+        rows: list = []
+        for env in self._read(self.manager_api.list_environments):
+            if env.get("id") is None:
+                continue
+            raw = self._safe(lambda env_id=env["id"]: self.manager_api.get_environment(env_id), None)
+            if isinstance(raw, dict):
+                rows.extend(tenant.environment_variables(raw, show_values=show_values, key=key))
+        return rows
+
+    def apps(self, *, api_id: Optional[int] = None, query: Optional[str] = None) -> list:
+        rows = self._read(self.manager_api.list_apps)
+        documents = [
+            tenant.describe_app(app)
+            for app in rows
+            if (api_id is None or tenant.app_subscribes(app, api_id))
+            and tenant.matches_query((app.get("name"), app.get("developer")), query)
+        ]
+        documents.sort(key=lambda a: str(a["name"] or "").lower())
+        return documents
+
+    def app(self, app_id: int) -> Dict[str, Any]:
+        raw = self._read(lambda: self.manager_api.get_app(app_id))
+        if not raw:
+            raise NavigationError(
+                f"App {app_id} não encontrado. Liste os existentes com: sen list apps"
+            )
+        return tenant.describe_app(raw, detail=True)
+
+    def plans(self, *, api_id: Optional[int] = None, query: Optional[str] = None) -> list:
+        rows = self._read(self.manager_api.list_plans)
+        documents = [
+            tenant.describe_plan(plan)
+            for plan in rows
+            if (api_id is None or (plan.get("api") or {}).get("id") == api_id)
+            and tenant.matches_query((plan.get("name"), (plan.get("api") or {}).get("name")), query)
+        ]
+        documents.sort(key=lambda p: (str((p["api"] or {}).get("name") or "").lower(), str(p["name"] or "").lower()))
+        return documents
+
+    def plan(self, plan_id: int) -> Dict[str, Any]:
+        raw = self._read(lambda: self.manager_api.get_plan(plan_id))
+        if not raw:
+            raise NavigationError(
+                f"Plano {plan_id} não encontrado. Liste os existentes com: sen list plans"
+            )
+        return tenant.describe_plan(raw, detail=True)
+
+    def tokens(self, *, app_id: Optional[int] = None, api_id: Optional[int] = None) -> list:
+        rows = self._read(self.manager_api.list_access_tokens)
+        documents = [
+            tenant.describe_token(t)
+            for t in rows
+            if tenant.token_touches(t, app_id=app_id, api_id=api_id)
+        ]
+        documents.sort(key=lambda t: str(t.get("creationDate") or ""), reverse=True)
+        return documents
+
+    def users(self, query: Optional[str] = None) -> list:
+        rows = self._read(lambda: self.manager_api.list_users(query))
+        documents = [tenant.describe_user(u) for u in rows]
+        documents.sort(key=lambda u: str(u["username"] or "").lower())
+        return documents
+
+    def teams(self, query: Optional[str] = None) -> list:
+        rows = self._read(lambda: self.manager_api.list_groups(query))
+        documents = [tenant.describe_group(g) for g in rows]
+        documents.sort(key=lambda g: str(g["name"] or "").lower())
+        return documents
+
+    def inbounds(self) -> list:
+        return [tenant.describe_inbound(i) for i in self._read(self.manager_api.list_inbounds)]
+
+    def gateway_pools(self) -> list:
+        return [tenant.describe_gateway_pool(p) for p in self._read(self.manager_api.list_gateway_pools)]
 
     # ------------------------------------------------------------------ falhas
 

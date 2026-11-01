@@ -81,7 +81,7 @@ sen_app = typer.Typer(
 
 list_app = typer.Typer(
     name="list",
-    help="Lista APIs e os catálogos do tenant (ambientes, workflows, atributos, interceptors).",
+    help="Lista APIs e os catálogos do tenant (ambientes, variáveis, workflows, atributos, interceptors, apps, planos, tokens, usuários, times, gateway).",
 )
 
 
@@ -90,8 +90,9 @@ def list_callback(ctx: typer.Context):
     if ctx.invoked_subcommand is None:
         rprint(
             "[bold yellow]Nenhum subcomando informado.[/bold yellow] "
-            "Disponíveis: sen list api · environments · workflows · attributes · "
-            "interceptors (consulte: sen list api --help)"
+            "Disponíveis: sen list api · environments · variables · workflows · "
+            "attributes · interceptors · apps · plans · tokens · users · teams · "
+            "inbounds · gateway-pools (consulte: sen list --help)"
         )
         raise typer.Exit(code=2)
 
@@ -1893,9 +1894,17 @@ def diag_draft(
 from apiops_orchestrator.adapters.inbound.cli.navigation_cli import (  # noqa: E402
     export_app,
     get_app,
+    list_apps,
     list_attributes,
     list_environments,
+    list_gateway_pools,
+    list_inbounds,
     list_interceptors,
+    list_plans,
+    list_teams,
+    list_tokens,
+    list_users,
+    list_variables,
     list_workflows,
 )
 
@@ -1905,3 +1914,11 @@ list_app.command("environments")(list_environments)
 list_app.command("workflows")(list_workflows)
 list_app.command("attributes")(list_attributes)
 list_app.command("interceptors")(list_interceptors)
+list_app.command("apps")(list_apps)
+list_app.command("plans")(list_plans)
+list_app.command("tokens")(list_tokens)
+list_app.command("variables")(list_variables)
+list_app.command("users")(list_users)
+list_app.command("teams")(list_teams)
+list_app.command("inbounds")(list_inbounds)
+list_app.command("gateway-pools")(list_gateway_pools)

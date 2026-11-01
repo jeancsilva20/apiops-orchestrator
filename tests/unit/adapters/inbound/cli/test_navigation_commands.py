@@ -547,3 +547,108 @@ def test_get_impact_renders_routes_and_consumers():
 
     result = _invoke(["get", "impact", "--id", "400"], service)
     assert service.impact.call_args.args == (400, None)
+
+
+# --------------------------------------------------------------------------- consumo e infra (sen list apps|plans|tokens|variables|…)
+
+
+def test_list_apps_filters_and_renders_subscriptions():
+    service = MagicMock()
+    service.apps.return_value = [
+        {"id": 42, "name": "Super Admin", "status": "APPROVED", "developer": "a@x", "description": None, "creationDate": "d",
+         "apis": [{"id": 400, "name": "Orchestrator Auth API", "version": "1.0.1", "plans": [{"id": 66, "name": "P", "defaultPlan": True}]}], "accessTokens": 2}
+    ]
+    result = _invoke(["list", "apps", "--api", "400", "--query", "super"], service)
+    assert result.exit_code == 0, result.output
+    out = " ".join(result.output.split())
+    assert "Super Admin" in out and "Orchestrator Auth API [P]" in out and "sen get app --id" in out
+    service.apps.assert_called_once_with(api_id=400, query="super")
+
+    service.apps.return_value = []
+    assert "Nenhum app" in _invoke(["list", "apps"], service).output
+
+
+def test_get_app_and_get_plan_render():
+    service = MagicMock()
+    service.app.return_value = {
+        "id": 42, "name": "Super Admin", "status": "APPROVED", "developer": "a@x", "description": "desc", "creationDate": "d",
+        "apis": [{"id": 400, "name": "Orchestrator Auth API", "version": "1.0.1", "plans": [{"id": 66, "name": "P", "defaultPlan": True}]}],
+        "accessTokens": 1, "extraInfo": {}, "inboundAddresses": [],
+    }
+    result = _invoke(["get", "app", "--id", "42"], service)
+    assert result.exit_code == 0, result.output
+    out = " ".join(result.output.split())
+    assert "app 42" in out and "ASSINATURAS" in out and "P (default)" in out and "sen list tokens --app 42" in out
+
+    service.plan.return_value = {
+        "id": 66, "name": "P", "description": None, "defaultPlan": True, "api": {"id": 400, "name": "Orchestrator Auth API", "version": "1.0.1"}, "interceptors": 1,
+        "flow": {"request": [_item(9, kind="Rate limit", content={"quota": "100"})], "response": []},
+    }
+    result = _invoke(["get", "plan", "--id", "66"], service)
+    assert result.exit_code == 0, result.output
+    out = " ".join(result.output.split())
+    assert "plano 66 · default" in out and "Rate limit" in out and '"quota": "100"' in out
+    service.plan.assert_called_once_with(66)
+
+    service.plan.return_value["flow"] = {"request": [], "response": []}
+    assert "não acrescenta interceptors" in _invoke(["get", "plan", "--id", "66"], service).output
+
+
+def test_list_plans_and_tokens_tables():
+    service = MagicMock()
+    service.plans.return_value = [{"id": 66, "name": "P", "description": None, "defaultPlan": True, "api": {"id": 400, "name": "Orchestrator Auth API", "version": "1.0.1"}, "interceptors": 0}]
+    result = _invoke(["list", "plans", "--api", "400"], service)
+    assert result.exit_code == 0, result.output
+    assert "PLAN ID" in result.output and "sim" in result.output
+    service.plans.assert_called_once_with(api_id=400, query=None)
+
+    service.tokens.return_value = [{"id": "t1", "owner": "o@x", "app": {"id": 45, "name": "CI"}, "status": "ACTIVE", "refreshStatus": "ACTIVE", "expiresIn": 1, "creationDate": "c", "expiredDate": "2026-11-02", "apis": [{"id": 400, "name": "Orchestrator Auth API", "version": "1"}], "planIds": [], "generatedBy": None}]
+    result = _invoke(["list", "tokens", "--app", "45", "--api", "400"], service)
+    assert result.exit_code == 0, result.output
+    out = " ".join(result.output.split())
+    assert "TOKEN ID" in out and "CI (45)" in out and "2026-11-02" in out
+    service.tokens.assert_called_once_with(app_id=45, api_id=400)
+
+
+def test_list_variables_and_get_environment_show_masking():
+    service = MagicMock()
+    service.variables.return_value = [
+        {"environmentId": 1, "environmentName": "Default", "map": "M", "mapId": 1, "key": "backendUrl", "value": "http://b", "variableType": "DEFAULT", "masked": False},
+        {"environmentId": 1, "environmentName": "Default", "map": "M", "mapId": 1, "key": "basicAuth", "value": "•••••", "variableType": "DEFAULT", "masked": True},
+    ]
+    result = _invoke(["list", "variables", "--env", "1", "--key", "a", "--show-values"], service)
+    assert result.exit_code == 0, result.output
+    out = " ".join(result.output.split())
+    assert "backendUrl" in out and "•••••" in out and "valor mascarado" in out
+    service.variables.assert_called_once_with(1, key="a", show_values=True)
+
+    service.environment.return_value = {
+        "id": 7, "name": "DEV", "description": None, "inboundUrl": "https://gw/cli/", "visibility": "ORGANIZATION",
+        "gateway": {"pool": "default", "type": "CLOUD", "host": "gw", "protocol": "HTTPS", "tls": "TLS"},
+        "variableMaps": [{"id": 1, "name": "M", "description": None, "variables": 1}],
+        "variables": [{"environmentId": 7, "environmentName": "DEV", "map": "M", "mapId": 1, "key": "k", "value": "v", "variableType": "DEFAULT", "masked": False}],
+        "deployed": [{"apiId": 400, "apiName": "Orchestrator Auth API", "apiVersion": "1.0.1", "revisionId": 8948, "revisionNumber": 4}],
+        "totals": {"deployed": 1},
+    }
+    result = _invoke(["get", "environment", "--id", "7"], service)
+    assert result.exit_code == 0, result.output
+    out = " ".join(result.output.split())
+    assert "ambiente 7" in out and "M / k = v" in out and "NO AR" in out and "revisão #4" in out
+    service.environment.assert_called_once_with(7, show_values=False)
+
+
+def test_list_users_teams_inbounds_pools():
+    service = MagicMock()
+    service.users.return_value = [{"username": "paulo.silva", "name": "Paulo", "email": "p@x", "status": "CREATED", "providerType": "LOCAL", "isFederated": False, "createdAt": None}]
+    service.teams.return_value = [{"name": "APIOps", "description": "d"}]
+    service.inbounds.return_value = [{"id": 1, "name": "Default", "host": "h", "protocol": "HTTPS", "tls": "TLS", "minTlsVersion": "TLS_1_2", "maxTlsVersion": "TLS_1_3", "gatewayType": "SAAS", "dataPlane": "x", "hasApps": True, "hasEnvironments": True}]
+    service.gateway_pools.return_value = [{"id": 1, "name": "default", "description": None, "type": "CLOUD", "routes": 396}]
+
+    assert "paulo.silva" in _invoke(["list", "users", "--query", "paulo"], service).output
+    service.users.assert_called_once_with("paulo")
+    assert "APIOps" in _invoke(["list", "teams"], service).output
+    out = " ".join(_invoke(["list", "inbounds"], service).output.split())
+    assert "HTTPS/TLS" in out and "TLS_1_2…TLS_1_3" in out
+    out = " ".join(_invoke(["list", "gateway-pools"], service).output.split())
+    assert "default" in out and "396" in out
+    assert json.loads(_invoke(["list", "gateway-pools", "-o", "json"], service).output)[0]["routes"] == 396

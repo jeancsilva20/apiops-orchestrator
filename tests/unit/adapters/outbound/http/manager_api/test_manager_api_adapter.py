@@ -646,3 +646,76 @@ def test_catalog_4xx_raises_transport_rejected_signal(mock_settings):
         mock_request.side_effect = HttpClient4xxError(status_code=403, title="Forbidden", detail="no")
         with pytest.raises(ManagerApiTransportRejectedError):
             _adapter(mock_settings).list_environments()
+
+
+# --------------------------------------------------------------------------- consumo e infra
+
+
+def test_list_plans_pages_until_a_short_page(mock_settings):
+    adapter = _adapter(mock_settings)
+    first = [{"id": i} for i in range(adapter._PAGE_SIZE)]
+    second = [{"id": 500}]
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.side_effect = [first, second]
+        rows = adapter.list_plans()
+    assert len(rows) == adapter._PAGE_SIZE + 1
+    assert mock_request.call_count == 2
+    assert mock_request.call_args_list[0].kwargs["params"] == {"page": "1", "pageSize": "100", "filter": "BASIC"}
+    assert mock_request.call_args_list[1].kwargs["params"]["page"] == "2"
+
+
+def test_list_apps_stops_when_the_platform_ignores_paging(mock_settings):
+    adapter = _adapter(mock_settings)
+    everything = [{"id": i} for i in range(adapter._PAGE_SIZE)]
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.side_effect = [everything, everything, everything]
+        rows = adapter.list_apps()
+    assert len(rows) == adapter._PAGE_SIZE
+    assert mock_request.call_count == 2  # a 2ª página repetiu os ids: pára
+    assert mock_request.call_args_list[0].kwargs["url"] == "http://urltest.com/api-manager/api/v3/apps"
+    assert mock_request.call_args_list[0].kwargs["params"] == {"actualPage": "1", "pageSize": "100"}
+
+
+def test_get_app_and_get_plan_treat_404_as_absence(mock_settings):
+    adapter = _adapter(mock_settings)
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.side_effect = HttpClient4xxError(status_code=404, title="Not Found", detail="x")
+        assert adapter.get_app(1) is None
+        assert adapter.get_plan(1) is None
+        mock_request.side_effect = HttpClient4xxError(status_code=403, title="Forbidden", detail="x")
+        with pytest.raises(ManagerApiTransportRejectedError):
+            adapter.get_app(1)
+        mock_request.side_effect = None
+        mock_request.return_value = {"id": 66}
+        assert adapter.get_plan(66) == {"id": 66}
+        assert mock_request.call_args.kwargs["url"] == "http://urltest.com/api-manager/api/v3/plans/66"
+
+
+def test_user_management_reads_use_their_own_base_path_and_keyword(mock_settings):
+    adapter = _adapter(mock_settings)
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.return_value = [{"username": "paulo.silva"}]
+        assert adapter.list_users("paulo") == [{"username": "paulo.silva"}]
+        assert mock_request.call_args.kwargs["url"] == "http://urltest.com/user-management/v1/users"
+        assert mock_request.call_args.kwargs["params"] == {"_limit": "200", "_offset": "0", "_keyword": "paulo"}
+        adapter.list_groups()
+        assert mock_request.call_args.kwargs["url"] == "http://urltest.com/user-management/v1/groups"
+        assert "_keyword" not in mock_request.call_args.kwargs["params"]
+
+
+def test_environment_tokens_inbounds_and_pools_endpoints(mock_settings):
+    adapter = _adapter(mock_settings)
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.return_value = {"id": 1, "mapVars": []}
+        assert adapter.get_environment(1)["id"] == 1
+        assert mock_request.call_args.kwargs["url"] == "http://urltest.com/api-manager/api/v3/environments/1"
+        mock_request.return_value = [{"_id": "a"}]
+        assert adapter.list_access_tokens() == [{"_id": "a"}]
+        assert mock_request.call_args.kwargs["url"] == "http://urltest.com/api-manager/api/v3/access-tokens"
+        mock_request.return_value = [{"id": 1}]
+        assert adapter.list_inbounds() == [{"id": 1}]
+        assert mock_request.call_args.kwargs["url"] == "http://urltest.com/api-manager/api/v3/inbounds"
+        assert adapter.list_gateway_pools() == [{"id": 1}]
+        assert mock_request.call_args.kwargs["url"] == "http://urltest.com/api-manager/api/v3/gateway-pools"
+        mock_request.return_value = "nope"
+        assert adapter.get_environment(1) == {}

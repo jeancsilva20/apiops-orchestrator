@@ -1019,3 +1019,331 @@ def get_impact(
                 rprint("     " + _dim("sem apps"))
 
     display_output(document, output_format=output, text_callback=_text)
+
+
+# ===========================================================================
+# Consumo e infraestrutura: apps, planos, tokens, variáveis, pessoas, gateway
+# (sen list apps|plans|tokens|variables|users|teams|inbounds|gateway-pools,
+#  sen get app|plan|environment). Credenciais nunca aparecem: a plataforma
+# mascara clientId/secret/código e o domínio descarta esses campos.
+# ===========================================================================
+
+
+def _api_option(help_text: str = "Recorta pela API (id no Manager).") -> Any:
+    return typer.Option(None, "--api", help=help_text)
+
+
+def list_apps(
+    ctx: typer.Context,
+    api_id: Optional[int] = _api_option("Só apps inscritos num plano desta API (id)."),
+    query: Optional[str] = typer.Option(None, "--query", help="Filtra por nome ou desenvolvedor."),
+    output: OutputFormat = _output_option(),
+):
+    """Apps (consumidores) e as APIs/planos que cada um assina. Sem credenciais."""
+    rows = _run(ctx, "list apps", output, lambda: _service(ctx).apps(api_id=api_id, query=query))
+
+    def _text() -> None:
+        if not rows:
+            rprint("[yellow]Nenhum app com esse filtro.[/yellow]")
+            return
+        _grade(
+            [
+                (
+                    str(a.get("id")),
+                    str(a.get("name") or ""),
+                    str(a.get("status") or "-"),
+                    str(a.get("developer") or "-"),
+                    "; ".join(
+                        f"{s.get('name')} [{', '.join(p.get('name') or '' for p in s.get('plans') or []) or 'sem plano'}]"
+                        for s in a.get("apis") or []
+                    )
+                    or "-",
+                    str(a.get("accessTokens")),
+                )
+                for a in rows
+            ],
+            header=("APP ID", "APP", "STATUS", "DEV", "APIS [PLANOS]", "TOKENS"),
+            justify=("right", None, None, None, None, "right"),
+        )
+        rprint(_dim("detalhe: sen get app --id <APP ID> · tokens: sen list tokens --app <APP ID>"))
+
+    display_output(rows, output_format=output, text_callback=_text)
+
+
+@get_app.command("app")
+def get_app_command(
+    ctx: typer.Context,
+    app_id: int = typer.Option(..., "--id", help="Id do app (sen list apps)."),
+    output: OutputFormat = _output_option(),
+):
+    """Um app: status, desenvolvedor e as assinaturas API → planos. Sem credenciais."""
+    document = _run(ctx, "get app", output, lambda: _service(ctx).app(app_id))
+
+    def _text() -> None:
+        rprint(
+            f"[bold]{_literal(document.get('name'))}[/bold]  "
+            + _dim(f"app {document.get('id')} · {_literal(document.get('status'))} · dev {_literal(document.get('developer') or '-')}")
+        )
+        if document.get("description"):
+            rprint(_dim(_literal(document["description"])))
+        rprint(_dim(f"{document.get('accessTokens')} access token(s) · criado em {_literal(document.get('creationDate') or '-')}"))
+        rprint("\n[bold cyan]ASSINATURAS[/bold cyan]")
+        apis = document.get("apis") or []
+        if not apis:
+            rprint("  " + _dim("nenhuma API assinada"))
+        for api in apis:
+            plans = ", ".join(
+                f"{p.get('name')}{' (default)' if p.get('defaultPlan') else ''}" for p in api.get("plans") or []
+            ) or "sem plano"
+            rprint(f"  [bold]{_literal(api.get('name'))}[/bold] v{_literal(api.get('version') or '-')}  " + _dim(f"API {api.get('id')} · planos: {_literal(plans)}"))
+        rprint(_dim(f"\ntokens deste app: sen list tokens --app {document.get('id')}"))
+
+    display_output(document, output_format=output, text_callback=_text)
+
+
+def list_plans(
+    ctx: typer.Context,
+    api_id: Optional[int] = _api_option("Só os planos desta API (id)."),
+    query: Optional[str] = typer.Option(None, "--query", help="Filtra por nome do plano ou da API."),
+    output: OutputFormat = _output_option(),
+):
+    """Planos de consumo: a que API pertencem, se são default e quantos interceptors têm."""
+    rows = _run(ctx, "list plans", output, lambda: _service(ctx).plans(api_id=api_id, query=query))
+
+    def _text() -> None:
+        if not rows:
+            rprint("[yellow]Nenhum plano com esse filtro.[/yellow]")
+            return
+        _grade(
+            [
+                (
+                    str(p.get("id")),
+                    str(p.get("name") or ""),
+                    "sim" if p.get("defaultPlan") else "não",
+                    f"{(p.get('api') or {}).get('name')} ({(p.get('api') or {}).get('id')})" if p.get("api") else "-",
+                    str(p.get("interceptors")),
+                )
+                for p in rows
+            ],
+            header=("PLAN ID", "PLANO", "DEFAULT", "API", "INTERCEPTORS"),
+            justify=("right", None, None, None, "right"),
+        )
+        rprint(_dim("fluxo do plano: sen get plan --id <PLAN ID> · quem assina: sen list apps --api <API>"))
+
+    display_output(rows, output_format=output, text_callback=_text)
+
+
+@get_app.command("plan")
+def get_plan_command(
+    ctx: typer.Context,
+    plan_id: int = typer.Option(..., "--id", help="Id do plano (sen list plans)."),
+    output: OutputFormat = _output_option(),
+):
+    """Um plano e os interceptors que ele acrescenta ao fluxo (request/response)."""
+    document = _run(ctx, "get plan", output, lambda: _service(ctx).plan(plan_id))
+
+    def _text() -> None:
+        api = document.get("api") or {}
+        rprint(
+            f"[bold]{_literal(document.get('name'))}[/bold]  "
+            + _dim(f"plano {document.get('id')}{' · default' if document.get('defaultPlan') else ''} · API {_literal(api.get('name'))} ({api.get('id')})")
+        )
+        if document.get("description"):
+            rprint(_dim(_literal(document["description"])))
+        flow = document.get("flow") or {}
+        if not any(flow.get(p) for p in ("request", "response")):
+            rprint("\n" + _dim("o plano não acrescenta interceptors ao fluxo"))
+        for point, title in (("request", "request "), ("response", "response")):
+            items = flow.get(point) or []
+            if items:
+                rprint(f"\n[bold]{title}[/bold]")
+                _print_items(items, "   ", content=True)
+
+    display_output(document, output_format=output, text_callback=_text)
+
+
+def list_tokens(
+    ctx: typer.Context,
+    app_id: Optional[int] = typer.Option(None, "--app", help="Só os tokens deste app (id)."),
+    api_id: Optional[int] = _api_option("Só os tokens que alcançam esta API (id)."),
+    output: OutputFormat = _output_option(),
+):
+    """Access tokens emitidos: dono, app, status e validade. O código nunca é exibido."""
+    rows = _run(ctx, "list tokens", output, lambda: _service(ctx).tokens(app_id=app_id, api_id=api_id))
+
+    def _text() -> None:
+        if not rows:
+            rprint("[yellow]Nenhum access token com esse filtro.[/yellow]")
+            return
+        _grade(
+            [
+                (
+                    str(t.get("id")),
+                    str(t.get("owner") or "-"),
+                    f"{(t.get('app') or {}).get('name')} ({(t.get('app') or {}).get('id')})",
+                    str(t.get("status") or "-"),
+                    str(t.get("expiredDate") or "-"),
+                    ", ".join(str(a.get("name")) for a in t.get("apis") or []) or "-",
+                )
+                for t in rows
+            ],
+            header=("TOKEN ID", "DONO", "APP", "STATUS", "EXPIRA EM", "APIS"),
+        )
+
+    display_output(rows, output_format=output, text_callback=_text)
+
+
+def list_variables(
+    ctx: typer.Context,
+    environment_id: Optional[int] = typer.Option(None, "--env", help="Id do ambiente (sen list environments). Ausente: todos."),
+    key: Optional[str] = typer.Option(None, "--key", help="Filtra pelo nome da variável (substring)."),
+    show_values: bool = typer.Option(
+        False, "--show-values", help="Mostra o valor das variáveis que parecem credencial (SECURED continua oculta)."
+    ),
+    output: OutputFormat = _output_option(),
+):
+    """Variáveis de ambiente (mapas e chaves). Valores sensíveis saem mascarados."""
+    rows = _run(
+        ctx,
+        "list variables",
+        output,
+        lambda: _service(ctx).variables(environment_id, key=key, show_values=show_values),
+    )
+
+    def _text() -> None:
+        if not rows:
+            rprint("[yellow]Nenhuma variável com esse filtro.[/yellow]")
+            return
+        _grade(
+            [
+                (
+                    f"{v.get('environmentName')} ({v.get('environmentId')})",
+                    str(v.get("map") or "-"),
+                    str(v.get("key") or ""),
+                    str(v.get("variableType") or "-"),
+                    str(v.get("value") if v.get("value") is not None else "-"),
+                )
+                for v in rows
+            ],
+            header=("AMBIENTE", "MAPA", "CHAVE", "TIPO", "VALOR"),
+        )
+        if any(v.get("masked") for v in rows):
+            rprint(_dim("••••• = valor mascarado (credencial ou SECURED); --show-values revela as DEFAULT"))
+
+    display_output(rows, output_format=output, text_callback=_text)
+
+
+@get_app.command("environment")
+def get_environment_command(
+    ctx: typer.Context,
+    environment_id: int = typer.Option(..., "--id", help="Id do ambiente (sen list environments)."),
+    show_values: bool = typer.Option(False, "--show-values", help="Revela valores DEFAULT que parecem credencial."),
+    output: OutputFormat = _output_option(),
+):
+    """Um ambiente: gateway, mapas de variáveis e todas as APIs/revisões no ar nele."""
+    document = _run(
+        ctx, "get environment", output, lambda: _service(ctx).environment(environment_id, show_values=show_values)
+    )
+
+    def _text() -> None:
+        gw = document.get("gateway") or {}
+        rprint(
+            f"[bold]{_literal(document.get('name'))}[/bold]  "
+            + _dim(f"ambiente {document.get('id')} · {_literal(document.get('inboundUrl') or '-')} · visibilidade {_literal(document.get('visibility') or '-')}")
+        )
+        if document.get("description"):
+            rprint(_dim(_literal(document["description"])))
+        rprint(_dim(f"gateway: pool {_literal(gw.get('pool') or '-')} ({_literal(gw.get('type') or '-')}) · host {_literal(gw.get('host') or '-')} · {_literal(gw.get('protocol') or '-')}/{_literal(gw.get('tls') or '-')}"))
+        maps = document.get("variableMaps") or []
+        rprint("\n[bold cyan]VARIÁVEIS[/bold cyan]  " + _dim(f"{len(maps)} mapa(s) · {len(document.get('variables') or [])} variável(is)"))
+        for v in document.get("variables") or []:
+            rprint(f"  {_literal(v.get('map'))} / [bold]{_literal(v.get('key'))}[/bold] = {_literal(v.get('value'))}  " + _dim(_literal(v.get("variableType"))))
+        deployed = document.get("deployed") or []
+        rprint("\n[bold cyan]NO AR[/bold cyan]  " + _dim(f"{len(deployed)} API(s)"))
+        for d in deployed:
+            rprint(f"  {_literal(d.get('apiName'))} v{_literal(d.get('apiVersion') or '-')}  " + _dim(f"API {d.get('apiId')} · revisão #{d.get('revisionNumber')} (id {d.get('revisionId')})"))
+
+    display_output(document, output_format=output, text_callback=_text)
+
+
+def list_users(
+    ctx: typer.Context,
+    query: Optional[str] = typer.Option(None, "--query", help="Busca por nome, username ou e-mail (no Manager)."),
+    output: OutputFormat = _output_option(),
+):
+    """Usuários do tenant (Access Control): username, status e provedor."""
+    rows = _run(ctx, "list users", output, lambda: _service(ctx).users(query))
+
+    def _text() -> None:
+        if not rows:
+            rprint("[yellow]Nenhum usuário com esse filtro.[/yellow]")
+            return
+        _grade(
+            [
+                (str(u.get("username") or ""), str(u.get("name") or "-"), str(u.get("email") or "-"), str(u.get("status") or "-"), str(u.get("providerType") or "-"))
+                for u in rows
+            ],
+            header=("USERNAME", "NOME", "E-MAIL", "STATUS", "PROVEDOR"),
+        )
+
+    display_output(rows, output_format=output, text_callback=_text)
+
+
+def list_teams(
+    ctx: typer.Context,
+    query: Optional[str] = typer.Option(None, "--query", help="Busca pelo nome do time (no Manager)."),
+    output: OutputFormat = _output_option(),
+):
+    """Times (groups) do tenant: os nomes usados em visibilidade GROUP e nos workflows."""
+    rows = _run(ctx, "list teams", output, lambda: _service(ctx).teams(query))
+
+    def _text() -> None:
+        if not rows:
+            rprint("[yellow]Nenhum time com esse filtro.[/yellow]")
+            return
+        _grade([(str(g.get("name") or ""), str(g.get("description") or "-")) for g in rows], header=("TIME", "DESCRIÇÃO"))
+
+    display_output(rows, output_format=output, text_callback=_text)
+
+
+def list_inbounds(
+    ctx: typer.Context,
+    output: OutputFormat = _output_option(),
+):
+    """Endereços de entrada do gateway (host, protocolo, TLS, data plane)."""
+    rows = _run(ctx, "list inbounds", output, lambda: _service(ctx).inbounds())
+
+    def _text() -> None:
+        if not rows:
+            rprint("[yellow]Nenhum inbound.[/yellow]")
+            return
+        _grade(
+            [
+                (str(i.get("id")), str(i.get("name") or ""), str(i.get("host") or "-"), f"{i.get('protocol') or '-'}/{i.get('tls') or '-'}", f"{i.get('minTlsVersion') or '-'}…{i.get('maxTlsVersion') or '-'}", str(i.get("gatewayType") or "-"))
+                for i in rows
+            ],
+            header=("ID", "NOME", "HOST", "PROTO/TLS", "TLS VERSÕES", "GATEWAY"),
+            justify=("right", None, None, None, None, None),
+        )
+
+    display_output(rows, output_format=output, text_callback=_text)
+
+
+def list_gateway_pools(
+    ctx: typer.Context,
+    output: OutputFormat = _output_option(),
+):
+    """Pools de gateway e quantas rotas cada um serve."""
+    rows = _run(ctx, "list gateway-pools", output, lambda: _service(ctx).gateway_pools())
+
+    def _text() -> None:
+        if not rows:
+            rprint("[yellow]Nenhum pool.[/yellow]")
+            return
+        _grade(
+            [(str(p.get("id")), str(p.get("name") or ""), str(p.get("type") or "-"), str(p.get("routes") if p.get("routes") is not None else "-"), str(p.get("description") or "-")) for p in rows],
+            header=("ID", "POOL", "TIPO", "ROTAS", "DESCRIÇÃO"),
+            justify=("right", None, None, "right", None),
+        )
+
+    display_output(rows, output_format=output, text_callback=_text)

@@ -200,3 +200,45 @@ class ManagerApiPort(ABC):
     @abstractmethod
     def get_impact_tree(self, api_id: int, environment_id: int) -> Dict[str, Any]:
         """`GET /api-governance/.../apis/{id}/tree-analysis/{env}`: API → rotas → planos → apps."""
+
+    # --- consumo e infraestrutura (leitura; mapeamento APIM 07/08/14) -------
+
+    @abstractmethod
+    def get_environment(self, environment_id: int) -> Dict[str, Any]:
+        """`GET /environments/{id}`: inbound, `mapVars` (variáveis) e `revisionsDeployed`."""
+
+    @abstractmethod
+    def list_apps(self) -> List[Dict[str, Any]]:
+        """`GET /apps`: apps com `apis[].plans[]` (assinaturas) e `accessTokens`."""
+
+    @abstractmethod
+    def get_app(self, app_id: int) -> Optional[Dict[str, Any]]:
+        """`GET /apps/{id}`; `None` quando não existe."""
+
+    @abstractmethod
+    def list_plans(self) -> List[Dict[str, Any]]:
+        """`GET /plans?filter=BASIC` paginado até o fim."""
+
+    @abstractmethod
+    def get_plan(self, plan_id: int) -> Optional[Dict[str, Any]]:
+        """`GET /plans/{id}` com os interceptors do plano; `None` quando não existe."""
+
+    @abstractmethod
+    def list_access_tokens(self) -> List[Dict[str, Any]]:
+        """`GET /access-tokens`: tokens com app, owner, status e APIs."""
+
+    @abstractmethod
+    def list_users(self, keyword: Optional[str] = None) -> List[Dict[str, Any]]:
+        """`GET /user-management/v1/users` (username, status, e-mail)."""
+
+    @abstractmethod
+    def list_groups(self, keyword: Optional[str] = None) -> List[Dict[str, Any]]:
+        """`GET /user-management/v1/groups`: os *Teams* da UI (name, description)."""
+
+    @abstractmethod
+    def list_inbounds(self) -> List[Dict[str, Any]]:
+        """`GET /inbounds`: endereços de entrada (host, TLS, data plane)."""
+
+    @abstractmethod
+    def list_gateway_pools(self) -> List[Dict[str, Any]]:
+        """`GET /gateway-pools`: pools de gateway e rotas em uso."""

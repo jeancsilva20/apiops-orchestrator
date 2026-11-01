@@ -52,6 +52,12 @@ Run `sen --help` or `sen <command> --help` for the authoritative option list. Al
 | `sen get workflow` | Stages of a workflow and what each one requires | `--id` |
 | `sen get governance` | A revision against its current stage and the next one: maturity, mandatory interceptors, attributes, environments | `--id`, `--revision`, `--revision-id` |
 | `sen get impact` | Impact graph: routes with destinations, plans and apps consuming the API | `--id`, `--env` |
+| `sen list variables` / `sen get environment` | Environment variables by map (secrets masked) and everything deployed in an environment | `--env`, `--key`, `--show-values` |
+| `sen list apps` / `sen get app` | Consumer apps and their API → plan subscriptions (no credentials) | `--api`, `--query` |
+| `sen list plans` / `sen get plan` | Plans, their API and the interceptors a plan adds | `--api`, `--query` |
+| `sen list tokens` | Issued access tokens (owner, app, status, expiry; never the code) | `--app`, `--api` |
+| `sen list users` / `sen list teams` | Access Control users and teams | `--query` |
+| `sen list inbounds` / `sen list gateway-pools` | Gateway inbound addresses and pools | |
 
 ### `sen login`
 
@@ -82,6 +88,8 @@ The session is written to `.sen_session` in the **package directory** (`src/apio
 > (ou `poetry run python ...`) continua funcionando e aceita os mesmos comandos.
 
 ### Exploring an environment without the source (`sen get`, `sen export`)
+
+> The complete, per-command reference (every option, what each level shows, what is masked and what is not reachable) is in [COMMANDS.md](COMMANDS.md).
 
 The `get` and `export` groups read an API straight from the Manager, so a person — or a coding agent such as Claude Code that only has the CLI — can inspect APIs **without a local copy of the repository**. Every command is read-only, accepts `-o json`/`-o yaml`, and each level of detail points to the next:
 
