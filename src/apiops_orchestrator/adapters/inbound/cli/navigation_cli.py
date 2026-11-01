@@ -246,6 +246,7 @@ def get_api(
                         f"{r.get('number')}{' *' if r.get('current') else ''}",
                         str(r.get("id")),
                         str(r.get("lifeCycle") or "-"),
+                        str(r.get("stageName") or r.get("workflowStageId") or "-"),
                         str(r.get("resources")),
                         str(r.get("operations")),
                         str(r.get("rootInterceptors")),
@@ -253,8 +254,8 @@ def get_api(
                     )
                     for r in revisions
                 ],
-                header=("REV #", "REV ID", "CICLO", "RECURSOS", "OPERAÇÕES", "RAIZ", "NO AR"),
-                column_justify=("right", "right", None, "right", "right", "right", None),
+                header=("REV #", "REV ID", "CICLO", "STAGE", "RECURSOS", "OPERAÇÕES", "RAIZ", "NO AR"),
+                column_justify=("right", "right", None, None, "right", "right", "right", None),
                 column_decorators=((lambda v: Text(str(v), style="bold white")),),
             )
             rprint(_dim("* revisão corrente"))
@@ -265,7 +266,8 @@ def get_api(
             _dim(
                 f"\npróximos passos: sen get resources --id {document.get('id')}{rev} · "
                 f"sen get interceptors --id {document.get('id')}{rev} · "
-                f"sen list api --id {document.get('id')} --revisions"
+                f"sen get governance --id {document.get('id')}{rev} · "
+                f"sen get impact --id {document.get('id')}"
             )
         )
 
@@ -656,5 +658,364 @@ def export_api(
                 rprint("")
         for warning in result.warnings:
             rprint(f"[yellow]AVISO[/yellow] {_literal(warning)}")
+
+    display_output(document, output_format=output, text_callback=_text)
+
+
+# ===========================================================================
+# Catálogos do tenant (sen list ...) e governança (sen get workflow|governance|impact)
+# Fundados no mapeamento APIM/AG: rotas de leitura capturadas do wire real.
+# ===========================================================================
+
+
+def _grade(rows, header, justify=None) -> None:
+    _base()._render_grade(rows, header=header, column_justify=justify)
+
+
+def list_environments(
+    ctx: typer.Context,
+    output: OutputFormat = _output_option(),
+):
+    """Ambientes do tenant: id (usado pelo deploy na esteira), nome, inbound URL."""
+    rows = _run(ctx, "list environments", output, lambda: _service(ctx).environments())
+
+    def _text() -> None:
+        if not rows:
+            rprint("[yellow]Nenhum ambiente.[/yellow]")
+            return
+        _grade(
+            [
+                (
+                    str(e.get("id")),
+                    str(e.get("name") or ""),
+                    str(e.get("inboundUrl") or "-"),
+                    "sim" if e.get("isDeployable") else "não",
+                    str(e.get("description") or "-"),
+                )
+                for e in rows
+            ],
+            header=("ENV ID", "AMBIENTE", "INBOUND URL", "DEPLOY?", "DESCRIÇÃO"),
+            justify=("right", None, None, None, None),
+        )
+
+    display_output(rows, output_format=output, text_callback=_text)
+
+
+def list_workflows(
+    ctx: typer.Context,
+    output: OutputFormat = _output_option(),
+):
+    """Workflows do Adaptive Governance e os seus stages, em ordem."""
+    rows = _run(ctx, "list workflows", output, lambda: _service(ctx).workflows())
+
+    def _text() -> None:
+        if not rows:
+            rprint("[yellow]Nenhum workflow.[/yellow]")
+            return
+        for w in rows:
+            group = f" · grupo {_literal(w.get('group'))}" if w.get("group") else ""
+            rprint(
+                f"[bold]{_literal(w.get('name'))}[/bold]  "
+                + _dim(f"workflow {w.get('id')} · {_literal(w.get('category'))}{group}")
+            )
+            for s in w.get("stages") or []:
+                needs = []
+                if s.get("maturityRequired"):
+                    needs.append(f"maturidade ≥ {s['maturityRequired']:g}%")
+                if s.get("interceptors"):
+                    needs.append(f"{s['interceptors']} interceptor(es)")
+                if s.get("attributes"):
+                    needs.append(f"{s['attributes']} atributo(s)")
+                envs = s.get("deployableEnvironments") or []
+                deploy = (
+                    "deploy em " + ", ".join(str(e) for e in envs) if envs else "sem deploy"
+                )
+                rprint(
+                    f"  {s.get('position')}. [bold]{_literal(s.get('name'))}[/bold]  "
+                    + _dim(f"stage {s.get('id')} · {deploy}"
+                           + (" · exige " + ", ".join(needs) if needs else " · sem requisitos"))
+                )
+        rprint(_dim("\ndetalhe dos requisitos: sen get workflow --id <workflow>"))
+
+    display_output(rows, output_format=output, text_callback=_text)
+
+
+def list_attributes(
+    ctx: typer.Context,
+    output: OutputFormat = _output_option(),
+):
+    """Atributos de governança (os `apiTags` do api-basic-info) e as tags válidas."""
+    rows = _run(ctx, "list attributes", output, lambda: _service(ctx).attributes())
+
+    def _text() -> None:
+        if not rows:
+            rprint("[yellow]Nenhum atributo.[/yellow]")
+            return
+        _grade(
+            [
+                (
+                    str(a.get("id")),
+                    str(a.get("name") or ""),
+                    ", ".join(a.get("tags") or []) or "-",
+                    "sim" if a.get("inUse") else "não",
+                )
+                for a in rows
+            ],
+            header=("ID", "ATRIBUTO", "TAGS VÁLIDAS", "EM USO"),
+            justify=("right", None, None, None),
+        )
+        rprint(
+            _dim(
+                "atributo com tags cadastradas só conta para a governança se o apiTags "
+                "declarar ao menos uma delas"
+            )
+        )
+
+    display_output(rows, output_format=output, text_callback=_text)
+
+
+def list_interceptors(
+    ctx: typer.Context,
+    custom: bool = typer.Option(False, "--custom", help="Só os customs (JavaScript/Java)."),
+    tag: Optional[str] = typer.Option(None, "--tag", help="Filtra pela tag do catálogo."),
+    output: OutputFormat = _output_option(),
+):
+    """Catálogo de tipos de interceptor: o `type` aceito nos YAML e o id dos customs."""
+    rows = _run(
+        ctx,
+        "list interceptors",
+        output,
+        lambda: _service(ctx).interceptor_catalog(custom_only=custom, tag=tag),
+    )
+
+    def _text() -> None:
+        if not rows:
+            rprint("[yellow]Nenhum interceptor no catálogo com esse filtro.[/yellow]")
+            return
+        _grade(
+            [
+                (
+                    str(i.get("name") or ""),
+                    "custom" if i.get("kind") == "custom" else "nativo",
+                    str(i.get("id")) if i.get("id") is not None else "-",
+                    "+".join(i.get("executionPoints") or []) or "-",
+                    str(i.get("flowType") or "-"),
+                    ", ".join(i.get("tags") or []) or "-",
+                )
+                for i in rows
+            ],
+            header=("TYPE", "ORIGEM", "CUSTOM ID", "PONTOS", "FLOW", "TAGS"),
+            justify=(None, None, "right", None, None, None),
+        )
+        rprint(_dim("script de um custom: sen get custom --custom-id <CUSTOM ID>"))
+
+    display_output(rows, output_format=output, text_callback=_text)
+
+
+# --------------------------------------------------------------------------- get workflow
+
+
+def _print_requisites(stage: Dict[str, Any], indent: str = "  ") -> None:
+    printed = False
+    if stage.get("maturityRequired"):
+        rprint(f"{indent}maturidade ≥ {stage['maturityRequired']:g}%")
+        printed = True
+    for r in stage.get("interceptors") or []:
+        rprint(f"{indent}{_literal(r.get('description'))}")
+        printed = True
+    for a in stage.get("attributes") or []:
+        verb = "deve declarar" if a.get("mustHave") else "não pode declarar"
+        label = a.get("name") or f"atributo {a.get('attributeId')}"
+        rprint(f"{indent}{verb} o atributo {_literal(label)}")
+        printed = True
+    for e in stage.get("environments") or []:
+        if e.get("mandatoryDeployment"):
+            rprint(
+                f"{indent}deploy {_literal(e['mandatoryDeployment'])} em "
+                f"{_literal(e.get('name') or e.get('id'))}"
+            )
+            printed = True
+    allowed = stage.get("deployableEnvironments") or []
+    if allowed:
+        rprint(
+            f"{indent}"
+            + _dim("deploy permitido em: " + ", ".join(
+                _literal(f"{e.get('name')} ({e.get('id')})" if e.get("name") else e.get("id"))
+                for e in allowed
+            ))
+        )
+    elif not printed:
+        rprint(f"{indent}" + _dim("sem requisitos · sem ambiente de deploy"))
+    else:
+        rprint(f"{indent}" + _dim("nenhum ambiente de deploy permitido"))
+
+
+@get_app.command("workflow")
+def get_workflow(
+    ctx: typer.Context,
+    workflow_id: int = typer.Option(..., "--id", help="Id do workflow (veja sen list workflows)."),
+    output: OutputFormat = _output_option(),
+):
+    """Stages de um workflow e o que cada um exige (maturidade, interceptors, atributos, ambientes)."""
+    document = _run(ctx, "get workflow", output, lambda: _service(ctx).workflow(workflow_id))
+
+    def _text() -> None:
+        group = f" · grupo {_literal(document.get('group'))}" if document.get("group") else ""
+        rprint(
+            f"[bold]{_literal(document.get('name'))}[/bold]  "
+            + _dim(f"workflow {document.get('id')} · {_literal(document.get('category'))}{group}")
+        )
+        if document.get("description"):
+            rprint(_dim(_literal(document["description"])))
+        for s in document.get("stages") or []:
+            rprint(f"\n{s.get('position')}. [bold]{_literal(s.get('name'))}[/bold]  " + _dim(f"stage {s.get('id')}"))
+            _print_requisites(s, indent="   ")
+
+    display_output(document, output_format=output, text_callback=_text)
+
+
+# --------------------------------------------------------------------------- get governance
+
+
+_STATUS_STYLE = {"ok": "[green]OK  [/green]", "fail": "[red]FALHA[/red]", "unknown": "[yellow]?   [/yellow]"}
+
+
+def _print_verdicts(block: Dict[str, Any], title: str) -> None:
+    stage = block["stage"]
+    summary = block["summary"]
+    overall = {"ok": "[green]atende[/green]", "fail": "[red]não atende[/red]", "unknown": "[yellow]não verificável[/yellow]"}[
+        summary["overall"]
+    ]
+    rprint(
+        f"\n[bold cyan]{title}[/bold cyan] [bold]{_literal(stage.get('name'))}[/bold]  "
+        + _dim(f"stage {stage.get('id')} · posição {stage.get('position')}")
+        + f"  → {overall}"
+    )
+    if not block["verdicts"]:
+        rprint("  " + _dim("sem requisitos"))
+    for v in block["verdicts"]:
+        line = f"  {_STATUS_STYLE[v['status']]} {_literal(v['requirement'])}"
+        if v.get("detail"):
+            line += "  " + _dim(_literal(v["detail"]))
+        rprint(line)
+        for scope in v.get("failingScopes") or []:
+            rprint(f"           [red]↳[/red] {_literal(scope)}")
+    allowed = stage.get("deployableEnvironments") or []
+    if allowed:
+        rprint(
+            "  "
+            + _dim("deploy permitido em: " + ", ".join(
+                _literal(f"{e.get('name')} ({e.get('id')})" if e.get("name") else e.get("id"))
+                for e in allowed
+            ))
+        )
+
+
+@get_app.command("governance")
+def get_governance(
+    ctx: typer.Context,
+    api_id: int = typer.Option(..., "--id", help="ID da API no Manager."),
+    revision: Optional[int] = _revision_option(),
+    revision_id: Optional[int] = _revision_id_option(),
+    output: OutputFormat = _output_option(),
+):
+    """A revisão contra o Adaptive Governance: stage atual, requisitos atendidos e o que falta para o próximo."""
+    _check_revision_options(revision, revision_id)
+    document = _run(
+        ctx,
+        "get governance",
+        output,
+        lambda: _service(ctx).governance(api_id, revision, revision_id),
+    )
+
+    def _text() -> None:
+        rprint(_header_line(document["api"], document["revision"]))
+        workflow = document.get("workflow")
+        stage = document.get("stage")
+        if workflow:
+            rprint(
+                _dim(
+                    f"workflow {_literal(workflow.get('name'))} ({workflow.get('id')}, "
+                    f"{_literal(workflow.get('category'))})"
+                    + (f" · stage atual {_literal(stage.get('name'))} ({stage.get('id')})" if stage else "")
+                )
+            )
+        maturity = document.get("maturity") or {}
+        if maturity.get("score") is not None:
+            rprint(
+                _dim(
+                    f"maturidade (completeness): {maturity['score']:g}% · "
+                    f"{maturity.get('suggestions')} sugestão(ões) → sen completeness --id "
+                    f"{document['api'].get('id')} --revision {document['revision'].get('id')}"
+                )
+            )
+        deployed = document.get("deployedIn") or []
+        if deployed:
+            rprint(_dim("no ar em: " + ", ".join(
+                _literal(f"{e.get('name')} ({e.get('id')})" if e.get("name") else e.get("id")) for e in deployed
+            )))
+        if document.get("current"):
+            _print_verdicts(document["current"], "stage atual")
+        if document.get("next"):
+            _print_verdicts(document["next"], "próximo stage")
+        elif document.get("current"):
+            rprint(_dim("\núltimo stage do workflow: não há próximo"))
+        for warning in document.get("warnings") or []:
+            rprint(f"[yellow]AVISO[/yellow] {_literal(warning)}")
+
+    display_output(document, output_format=output, text_callback=_text)
+
+
+# --------------------------------------------------------------------------- get impact
+
+
+@get_app.command("impact")
+def get_impact(
+    ctx: typer.Context,
+    api_id: int = typer.Option(..., "--id", help="ID da API no Manager."),
+    environment_id: Optional[int] = typer.Option(
+        None, "--env", help="Id do ambiente (sen list environments). Ausente: o primeiro onde a API está no ar."
+    ),
+    output: OutputFormat = _output_option(),
+):
+    """Grafo de impacto da API: rotas com destino, planos e apps que a consomem."""
+    document = _run(ctx, "get impact", output, lambda: _service(ctx).impact(api_id, environment_id))
+
+    def _text() -> None:
+        api = document["api"]
+        env = document.get("environment") or {}
+        totals = document.get("totals") or {}
+        rprint(
+            f"[bold]{_literal(api.get('name'))}[/bold]  "
+            + _dim(
+                f"API {api.get('id')} · ambiente {_literal(env.get('name') or env.get('id'))} "
+                f"({env.get('id')}) · revisão #{document.get('revisionNumber')}"
+            )
+        )
+        rprint(
+            _dim(
+                f"{totals.get('routes', 0)} rota(s) · {totals.get('operations', 0)} operação(ões) · "
+                f"{totals.get('plans', 0)} plano(s) · {totals.get('apps', 0)} app(s)\n"
+            )
+        )
+        rprint("[bold cyan]ROTAS[/bold cyan]")
+        for route in document.get("routes") or []:
+            rprint(f"  {_literal(route.get('path'))}")
+            for m in route.get("methods") or []:
+                dest = f"  → {_literal(m.get('destination'))}" if m.get("destination") else ""
+                rprint(f"     {_literal(m.get('method')):<7}" + _dim(f"operação {m.get('operationId')}{dest}"))
+        rprint("\n[bold cyan]CONSUMO[/bold cyan]")
+        plans = document.get("plans") or []
+        if not plans:
+            rprint("  " + _dim("nenhum plano vinculado neste ambiente"))
+        for plan in plans:
+            rprint(f"  plano [bold]{_literal(plan.get('name'))}[/bold]")
+            for app in plan.get("apps") or []:
+                rprint(
+                    f"     app {_literal(app.get('name'))}  "
+                    + _dim(f"{_literal(app.get('status') or '-')} · appId {app.get('appId')}")
+                )
+            if not plan.get("apps"):
+                rprint("     " + _dim("sem apps"))
 
     display_output(document, output_format=output, text_callback=_text)

@@ -79,7 +79,10 @@ sen_app = typer.Typer(
     no_args_is_help=True,
 )
 
-list_app = typer.Typer(name="list", help="Lista recursos.")
+list_app = typer.Typer(
+    name="list",
+    help="Lista APIs e os catálogos do tenant (ambientes, workflows, atributos, interceptors).",
+)
 
 
 @list_app.callback(invoke_without_command=True)
@@ -87,8 +90,8 @@ def list_callback(ctx: typer.Context):
     if ctx.invoked_subcommand is None:
         rprint(
             "[bold yellow]Nenhum subcomando informado.[/bold yellow] "
-            "O disponível hoje é: sen list api "
-            "(consulte: sen list api --help)"
+            "Disponíveis: sen list api · environments · workflows · attributes · "
+            "interceptors (consulte: sen list api --help)"
         )
         raise typer.Exit(code=2)
 
@@ -1890,7 +1893,15 @@ def diag_draft(
 from apiops_orchestrator.adapters.inbound.cli.navigation_cli import (  # noqa: E402
     export_app,
     get_app,
+    list_attributes,
+    list_environments,
+    list_interceptors,
+    list_workflows,
 )
 
 sen_app.add_typer(get_app)
 sen_app.add_typer(export_app)
+list_app.command("environments")(list_environments)
+list_app.command("workflows")(list_workflows)
+list_app.command("attributes")(list_attributes)
+list_app.command("interceptors")(list_interceptors)

@@ -494,10 +494,43 @@ class ManagerApiAdapter(ManagerApiPort):
 
     def list_attributes(self) -> List[Dict[str, Any]]:
         payload = self._request("GET", "attributes", base_path=GOVERNANCE_BASE_PATH)
-        if isinstance(payload, list):
-            return payload
-        if isinstance(payload, dict):
-            for key in ("content", "data", "attributes"):
-                if isinstance(payload.get(key), list):
-                    return payload[key]
-        return []
+        return _unwrap_list(payload, ("content", "data", "attributes"))
+
+    # --- catálogos do tenant -------------------------------------------------
+
+    def list_environments(self) -> List[Dict[str, Any]]:
+        payload = self._request("GET", "environments", params={"simple": "true"})
+        return _unwrap_list(payload, ("content", "data", "environments"))
+
+    def list_workflows(self) -> List[Dict[str, Any]]:
+        # A UI pagina em 8; o teto abaixo cobre o tenant inteiro numa leitura.
+        payload = self._request(
+            "GET",
+            "workflows",
+            base_path=GOVERNANCE_BASE_PATH,
+            params={"_limit": "100", "_offset": "0"},
+        )
+        return _unwrap_list(payload, ("content", "data", "workflows"))
+
+    def list_interceptor_catalog(self) -> List[Dict[str, Any]]:
+        payload = self._request("GET", "interceptors")
+        return _unwrap_list(payload, ("content", "data", "interceptors"))
+
+    def get_impact_tree(self, api_id: int, environment_id: int) -> Dict[str, Any]:
+        payload = self._request(
+            "GET",
+            f"apis/{api_id}/tree-analysis/{environment_id}",
+            base_path=GOVERNANCE_BASE_PATH,
+        )
+        return payload if isinstance(payload, dict) else {}
+
+
+def _unwrap_list(payload: Any, keys: tuple) -> List[Dict[str, Any]]:
+    """Lista crua, ou a lista embrulhada numa das chaves conhecidas; senão vazia."""
+    if isinstance(payload, list):
+        return [row for row in payload if isinstance(row, dict)]
+    if isinstance(payload, dict):
+        for key in keys:
+            if isinstance(payload.get(key), list):
+                return [row for row in payload[key] if isinstance(row, dict)]
+    return []

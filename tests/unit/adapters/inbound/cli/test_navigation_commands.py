@@ -391,3 +391,159 @@ def test_export_writes_tree_into_dir_and_refuses_overwrite(tmp_path):
         "api-basic-info.yaml",
         "resources/token/resource.yaml",
     ]
+
+
+# --------------------------------------------------------------------------- catálogos (sen list ...)
+
+
+def test_list_without_subcommand_names_the_catalogs():
+    result = runner.invoke(app, ["sen", "list"])
+    assert result.exit_code == 2
+    out = result.output.replace("\n", " ")
+    assert "sen list api" in out and "environments" in out and "workflows" in out
+
+
+def test_list_environments_table_and_json():
+    service = MagicMock()
+    service.environments.return_value = [
+        {"id": 1, "name": "Default", "description": None, "inboundUrl": "https://gw/", "isDeployable": True, "tlsType": "TLS"},
+        {"id": 9, "name": "HMG", "description": "Homolog", "inboundUrl": "https://gw/cli-2/", "isDeployable": False, "tlsType": None},
+    ]
+    result = _invoke(["list", "environments"], service)
+    assert result.exit_code == 0, result.output
+    out = result.output.replace("\n", " ")
+    assert "ENV ID" in out and "Default" in out and "HMG" in out and "Homolog" in out
+
+    result = _invoke(["list", "environments", "-o", "json"], service)
+    assert json.loads(result.output)[1]["id"] == 9
+
+
+def test_list_workflows_text():
+    service = MagicMock()
+    service.workflows.return_value = [
+        {
+            "id": 327, "name": "Sura", "description": None, "category": "TEAM", "group": "Lab-tech",
+            "stages": [
+                {"id": 783, "name": "Sandbox", "position": 1, "maturityRequired": 60.0, "interceptors": 4, "attributes": 0, "deployableEnvironments": [1]},
+                {"id": 784, "name": "Prod", "position": 2, "maturityRequired": 0.0, "interceptors": 0, "attributes": 0, "deployableEnvironments": []},
+            ],
+        }
+    ]
+    result = _invoke(["list", "workflows"], service)
+    assert result.exit_code == 0, result.output
+    out = " ".join(result.output.split())
+    assert "Sura" in out and "grupo Lab-tech" in out
+    assert "maturidade ≥ 60%" in out and "4 interceptor(es)" in out and "deploy em 1" in out
+    assert "sem requisitos" in out and "sen get workflow --id" in out
+
+
+def test_list_attributes_and_interceptors_pass_filters():
+    service = MagicMock()
+    service.attributes.return_value = [{"id": 149, "name": "My new", "tags": ["Tag1", "Tag2"], "inUse": True}]
+    service.interceptor_catalog.return_value = [
+        {"name": "Oauth - RFC", "kind": "custom", "category": "JAVASCRIPT", "id": 1, "executionPoints": ["request", "response"], "flowType": "ANY", "tags": ["Oauth"]}
+    ]
+
+    result = _invoke(["list", "attributes"], service)
+    assert result.exit_code == 0, result.output
+    assert "My new" in result.output and "Tag1, Tag2" in result.output
+
+    result = _invoke(["list", "interceptors", "--custom", "--tag", "Oauth"], service)
+    assert result.exit_code == 0, result.output
+    out = result.output.replace("\n", " ")
+    assert "Oauth - RFC" in out and "request+response" in out and "sen get custom --custom-id" in out
+    service.interceptor_catalog.assert_called_once_with(custom_only=True, tag="Oauth")
+
+    service.interceptor_catalog.return_value = []
+    result = _invoke(["list", "interceptors", "--tag", "nada"], service)
+    assert result.exit_code == 0 and "Nenhum interceptor" in result.output
+
+
+# --------------------------------------------------------------------------- governança (sen get workflow|governance|impact)
+
+
+def _stage_doc(**overrides):
+    stage = {
+        "id": 783, "name": "Sandbox", "position": 1, "maturityRequired": 60.0,
+        "interceptors": [{"type": "OAuth", "mustHave": True, "executionPoint": "FIRST", "positionType": "ANY", "flowType": "API", "resourceId": None, "operationId": None, "description": "deve ter OAuth no request na raiz da API"}],
+        "attributes": [{"attributeId": 149, "name": "My new", "tagId": None, "mustHave": True}],
+        "deployableEnvironments": [{"id": 1, "name": "Default"}],
+        "environments": [{"id": 1, "name": "Default", "mandatoryDeployment": "MUST_HAVE", "deployableApiManager": True}],
+    }
+    stage.update(overrides)
+    return stage
+
+
+def test_get_workflow_prints_requirements():
+    service = MagicMock()
+    service.workflow.return_value = {
+        "id": 327, "name": "Sura", "description": "Demo", "category": "TEAM", "group": "Lab-tech",
+        "stages": [_stage_doc(), _stage_doc(id=784, name="Prod", position=2, maturityRequired=0.0, interceptors=[], attributes=[], deployableEnvironments=[], environments=[])],
+    }
+    result = _invoke(["get", "workflow", "--id", "327"], service)
+    assert result.exit_code == 0, result.output
+    out = result.output.replace("\n", " ")
+    assert "maturidade ≥ 60%" in out
+    assert "deve ter OAuth no request na raiz da API" in out
+    assert "deve declarar o atributo My new" in out
+    assert "deploy MUST_HAVE em Default" in out
+    assert "deploy permitido em: Default (1)" in out
+    assert "sem requisitos · sem ambiente de deploy" in out
+    service.workflow.assert_called_once_with(327)
+
+
+def test_get_governance_renders_verdicts():
+    service = MagicMock()
+    service.governance.return_value = {
+        "api": API,
+        "revision": REVISION,
+        "workflow": {"id": 327, "name": "Sura", "category": "TEAM", "group": "Lab-tech", "description": None},
+        "stage": {"id": 783, "name": "Sandbox", "position": 1},
+        "maturity": {"score": 77.5, "suggestions": 13},
+        "deployedIn": [{"id": 1, "name": "Default"}],
+        "current": {
+            "stage": _stage_doc(),
+            "verdicts": [
+                {"kind": "maturity", "status": "ok", "requirement": "maturidade (completeness) ≥ 60%", "detail": "revisão está em 77.5%", "failingScopes": []},
+                {"kind": "interceptor", "status": "fail", "requirement": "deve ter OAuth no request na raiz da API", "detail": "não atendido em 1 de 1 escopo(s)", "failingScopes": ["all"]},
+            ],
+            "summary": {"overall": "fail", "ok": 1, "fail": 1, "unknown": 0, "total": 2},
+        },
+        "next": None,
+        "warnings": ["um aviso"],
+    }
+    result = _invoke(["get", "governance", "--id", "400", "--revision", "4"], service)
+    assert result.exit_code == 0, result.output
+    out = result.output.replace("\n", " ")
+    assert "stage atual Sandbox (783)" in out
+    assert "maturidade (completeness): 77.5%" in out
+    assert "não atende" in out and "FALHA" in out and "OK" in out
+    assert "↳ all" in out
+    assert "último stage do workflow" in out
+    assert "AVISO" in out and "um aviso" in out
+    service.governance.assert_called_once_with(400, 4, None)
+
+    result = _invoke(["get", "governance", "--id", "400", "-o", "json"], service)
+    assert json.loads(result.output)["current"]["summary"]["overall"] == "fail"
+
+
+def test_get_impact_renders_routes_and_consumers():
+    service = MagicMock()
+    service.impact.return_value = {
+        "api": API,
+        "environment": {"id": 1, "name": "Default"},
+        "revisionNumber": "4",
+        "basePath": "/orq-auth/v1",
+        "routes": [{"path": "/users/{username}", "methods": [{"method": "GET", "operationId": 9121, "destination": "https://backend/users"}]}],
+        "plans": [{"name": "Plan A", "apps": [{"name": "App 1", "status": "APPROVED", "appId": "42"}]}, {"name": "Plan B", "apps": []}],
+        "totals": {"routes": 1, "operations": 1, "plans": 2, "apps": 1},
+    }
+    result = _invoke(["get", "impact", "--id", "400", "--env", "1"], service)
+    assert result.exit_code == 0, result.output
+    out = result.output.replace("\n", " ")
+    assert "ambiente Default (1)" in out and "/users/{username}" in out and "https://backend/users" in out
+    assert "plano Plan A" in out and "app App 1" in out and "appId 42" in out and "sem apps" in out
+    service.impact.assert_called_once_with(400, 1)
+
+    result = _invoke(["get", "impact", "--id", "400"], service)
+    assert service.impact.call_args.args == (400, None)

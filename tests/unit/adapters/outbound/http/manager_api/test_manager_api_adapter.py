@@ -591,3 +591,58 @@ def test_update_revision_swagger_rejection_carries_the_platform_reasons(mock_set
             adapter.update_revision_swagger(9554, {})
 
     assert excinfo.value.messages == ["Invalid swagger"]
+
+
+# --------------------------------------------------------------------------- catálogos (mapeamento APIM/AG)
+
+
+def _adapter(mock_settings):
+    return ManagerApiAdapter(
+        token="t", base_path="/api-manager/api/v3/", max_retries=3, settings=mock_settings
+    )
+
+
+def test_list_environments_asks_the_simple_catalog(mock_settings):
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.return_value = [{"id": 1, "name": "Default"}, "lixo"]
+        rows = _adapter(mock_settings).list_environments()
+    assert rows == [{"id": 1, "name": "Default"}]
+    assert mock_request.call_args.kwargs["url"] == "http://urltest.com/api-manager/api/v3/environments"
+    assert mock_request.call_args.kwargs["params"] == {"simple": "true"}
+
+
+def test_list_workflows_uses_governance_base_path_with_wide_window(mock_settings):
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.return_value = {"content": [{"workflowId": 139}]}
+        rows = _adapter(mock_settings).list_workflows()
+    assert rows == [{"workflowId": 139}]
+    assert mock_request.call_args.kwargs["url"] == "http://urltest.com/api-governance/api/v3/workflows"
+    assert mock_request.call_args.kwargs["params"] == {"_limit": "100", "_offset": "0"}
+
+
+def test_list_interceptor_catalog_reads_manager_interceptors(mock_settings):
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.return_value = [{"name": "Log", "category": "DEFAULT"}]
+        rows = _adapter(mock_settings).list_interceptor_catalog()
+    assert rows == [{"name": "Log", "category": "DEFAULT"}]
+    assert mock_request.call_args.kwargs["url"] == "http://urltest.com/api-manager/api/v3/interceptors"
+
+
+def test_get_impact_tree_hits_tree_analysis_and_normalizes(mock_settings):
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.return_value = {"rootNode": {"name": "x"}}
+        tree = _adapter(mock_settings).get_impact_tree(400, 9)
+        assert tree == {"rootNode": {"name": "x"}}
+        assert (
+            mock_request.call_args.kwargs["url"]
+            == "http://urltest.com/api-governance/api/v3/apis/400/tree-analysis/9"
+        )
+        mock_request.return_value = "not a dict"
+        assert _adapter(mock_settings).get_impact_tree(400, 9) == {}
+
+
+def test_catalog_4xx_raises_transport_rejected_signal(mock_settings):
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.side_effect = HttpClient4xxError(status_code=403, title="Forbidden", detail="no")
+        with pytest.raises(ManagerApiTransportRejectedError):
+            _adapter(mock_settings).list_environments()

@@ -12,6 +12,7 @@ from apiops_orchestrator.application.exceptions.manager_failure_messages import 
 from apiops_orchestrator.application.exceptions.navigation_exceptions import (
     NavigationApiNotFound,
     NavigationCustomNotFound,
+    NavigationError,
     NavigationInterceptorNotFound,
     NavigationPlatformError,
     NavigationRevisionNotFound,
@@ -228,3 +229,218 @@ def test_custom_404_outside_an_api_is_not_an_api_not_found():
     service = ApiNavigationService(port, session=None)
     with pytest.raises(NavigationPlatformError):
         service.custom_interceptor(1)
+
+
+# --------------------------------------------------------------------------- catálogos e governança (mapeamento APIM/AG)
+
+
+def _workflow_327():
+    return {
+        "workflowId": 327,
+        "workflowName": "Sura",
+        "workflowCategory": "TEAM",
+        "groupId": "Lab-tech",
+        "stages": [
+            {
+                "workflowStageId": 784,
+                "workflowStageName": "Dev-Uat",
+                "position": 2,
+                "completenessRequisite": 80.0,
+                "interceptorsRequisites": [],
+                "attributesRequisites": [{"attributeId": 149, "tagId": None, "mustHave": True}],
+                "deployableEnvironments": [9],
+                "environments": [],
+            },
+            {
+                "workflowStageId": 783,
+                "workflowStageName": "Sandbox",
+                "position": 1,
+                "completenessRequisite": 0.0,
+                "interceptorsRequisites": [
+                    {"interceptorType": "Log", "mustHave": True, "executionPoint": "FIRST", "positionType": "ANY", "flowType": "API"},
+                    {"interceptorType": "OAuth", "mustHave": True, "executionPoint": "FIRST", "positionType": "ANY", "flowType": "API"},
+                ],
+                "attributesRequisites": [],
+                "deployableEnvironments": [1],
+                "environments": [],
+            },
+        ],
+    }
+
+
+def _governed_port():
+    api = _api()
+    api["revisions"][1].update({"workflowId": 327, "workflowStageId": 783})
+    api["lastRevision"] = api["revisions"][1]
+    api["apiTags"] = [{"attributeName": "My new", "tags": ["Tag1"]}]
+    api["environments"] = [
+        {"id": 1, "name": "Default", "revisionDeployed": {"revisionId": 8948, "revisionNumber": 4}},
+        {"id": 9, "name": "HMG"},
+    ]
+    port = _port(api)
+    port.get_workflow.return_value = _workflow_327()
+    port.list_workflows.return_value = [_workflow_327()]
+    port.list_environments.return_value = [{"id": 1, "name": "Default", "inboundUrl": "https://gw/", "isDeployable": True}, {"id": 9, "name": "HMG"}]
+    port.list_attributes.return_value = [{"id": 149, "name": "My new", "tags": ["Tag1", "Tag2"], "inUse": True}, {"id": 96, "name": "CLI", "tags": []}]
+    port.get_revision_completeness.return_value = SimpleNamespace(score=77.5, suggestions=["a", "b"])
+    return port
+
+
+def test_catalog_listings_are_normalized():
+    port = _governed_port()
+    port.list_interceptor_catalog.return_value = [
+        {"name": "Log", "category": "DEFAULT", "executionPoint": "1;2", "flowType": "ANY", "tags": ["Logging"], "id": None},
+        {"name": "Oauth - RFC", "category": "JAVASCRIPT", "executionPoint": "1", "flowType": "ANY", "tags": ["Oauth"], "id": 1},
+        {"name": "Access token metric", "category": "DEFAULT", "executionPoint": "2", "flowType": "API", "tags": [], "id": None},
+    ]
+    service = ApiNavigationService(port, session=None)
+
+    assert service.environments()[0] == {"id": 1, "name": "Default", "description": None, "inboundUrl": "https://gw/", "isDeployable": True, "tlsType": None}
+    assert service.attributes()[1] == {"id": 96, "name": "CLI", "tags": [], "inUse": None}
+
+    workflows = service.workflows()
+    assert workflows[0]["name"] == "Sura" and workflows[0]["group"] == "Lab-tech"
+    assert [s["id"] for s in workflows[0]["stages"]] == [783, 784]  # ordenados por posição
+    assert workflows[0]["stages"][0]["interceptors"] == 2
+
+    catalog = service.interceptor_catalog()
+    assert [c["name"] for c in catalog] == ["Access token metric", "Log", "Oauth - RFC"]  # nativos primeiro, por nome
+    assert catalog[1]["executionPoints"] == ["request", "response"] and catalog[1]["kind"] == "native"
+    assert catalog[2] == {"name": "Oauth - RFC", "kind": "custom", "category": "JAVASCRIPT", "id": 1, "executionPoints": ["request"], "flowType": "ANY", "tags": ["Oauth"]}
+    assert [c["name"] for c in service.interceptor_catalog(custom_only=True)] == ["Oauth - RFC"]
+    assert [c["name"] for c in service.interceptor_catalog(tag="logging")] == ["Log"]
+
+
+def test_workflow_detail_resolves_names_and_missing_workflow():
+    port = _governed_port()
+    service = ApiNavigationService(port, session=None)
+
+    document = service.workflow(327)
+    assert document["id"] == 327
+    sandbox, dev_uat = document["stages"]
+    assert sandbox["name"] == "Sandbox" and sandbox["deployableEnvironments"] == [{"id": 1, "name": "Default"}]
+    assert dev_uat["attributes"][0]["name"] == "My new"
+
+    port.get_workflow.side_effect = ManagerApiTransportRejectedError(404, "Not Found")
+    with pytest.raises(NavigationError) as info:
+        service.workflow(999)
+    assert "Workflow 999" in info.value.message and "sen list workflows" in info.value.message
+
+
+def test_api_detail_enriches_revisions_with_stage_names():
+    service = ApiNavigationService(_governed_port(), session=None)
+    revisions = {r["number"]: r for r in service.api_detail(400)["revisions"]}
+    assert revisions[4]["workflowName"] == "Sura" and revisions[4]["stageName"] == "Sandbox"
+    assert revisions[1]["stageName"] is None
+
+
+def test_api_detail_survives_catalog_failure():
+    port = _governed_port()
+    port.list_workflows.side_effect = ManagerApiTransportUnavailableError("down")
+    document = ApiNavigationService(port, session=None).api_detail(400)
+    assert document["revisions"][1]["stageName"] is None
+
+
+def test_governance_evaluates_current_and_next_stage():
+    service = ApiNavigationService(_governed_port(), session=None)
+
+    document = service.governance(400)
+
+    assert document["workflow"]["name"] == "Sura"
+    assert document["stage"] == {"id": 783, "name": "Sandbox", "position": 1}
+    assert document["maturity"] == {"score": 77.5, "suggestions": 2}
+    assert document["deployedIn"] == [{"id": 1, "name": "Default"}]
+
+    current = document["current"]
+    assert current["summary"]["overall"] == "fail"
+    by_requirement = {v["requirement"]: v["status"] for v in current["verdicts"]}
+    assert by_requirement["deve ter Log no request na raiz da API"] == "ok"
+    assert by_requirement["deve ter OAuth no request na raiz da API"] == "fail"
+
+    following = document["next"]
+    assert following["stage"]["name"] == "Dev-Uat"
+    statuses = {v["requirement"]: v["status"] for v in following["verdicts"]}
+    assert statuses["maturidade (completeness) ≥ 80%"] == "fail"
+    assert statuses["deve declarar o atributo My new"] == "ok"
+    assert statuses["deploy só nos ambientes permitidos pelo stage"] == "fail"
+    assert document["warnings"] == []
+
+
+def test_governance_without_stage_or_with_unknown_stage_warns():
+    port = _governed_port()
+    api = port.get_api_by_id.return_value
+    api["revisions"][1]["workflowStageId"] = None
+    service = ApiNavigationService(port, session=None)
+    document = service.governance(400)
+    assert document["current"] is None and document["warnings"]
+
+    api["revisions"][1]["workflowStageId"] = 999
+    document = service.governance(400)
+    assert document["workflow"]["id"] == 327 and document["stage"] is None
+    assert "999" in document["warnings"][0]
+
+
+def test_governance_flags_invalid_tags_and_missing_completeness():
+    port = _governed_port()
+    port.get_api_by_id.return_value["apiTags"] = [{"attributeName": "My new", "tags": ["Nope"]}]
+    port.get_revision_completeness.side_effect = ManagerApiTransportUnavailableError("down")
+    document = ApiNavigationService(port, session=None).governance(400)
+    assert document["maturity"] == {"score": None, "suggestions": None}
+    assert any("'Nope'" in w for w in document["warnings"])
+    assert any("completeness" in w for w in document["warnings"])
+    statuses = {v["requirement"]: v["status"] for v in document["next"]["verdicts"]}
+    assert statuses["maturidade (completeness) ≥ 80%"] == "unknown"
+    assert statuses["deve declarar o atributo My new"] == "fail"  # tag inválida não conta
+
+
+def test_impact_translates_the_tree_and_picks_a_default_environment():
+    port = _governed_port()
+    port.get_impact_tree.return_value = {
+        "rootNode": {
+            "name": "Orchestrator Auth API",
+            "type": "REST",
+            "properties": [{"key": "Revision", "value": "4"}, {"key": "Base Path", "value": "/orq-auth/v1"}],
+            "children": [
+                {
+                    "name": "/users/{username}",
+                    "type": "RESOURCE",
+                    "children": [
+                        {
+                            "name": "GET",
+                            "type": "METHOD",
+                            "operationId": 9121,
+                            "children": [
+                                {"name": "API Destination", "type": "DESTINATION", "properties": [{"key": "Endpoint", "value": "https://backend/users"}]}
+                            ],
+                        }
+                    ],
+                },
+                {"name": "/oauth2/token", "type": "RESOURCE", "children": [{"name": "POST", "type": "METHOD", "operationId": 8953}]},
+                {
+                    "name": "Plan A",
+                    "type": "PLAN",
+                    "children": [{"name": "App 1", "type": "APP", "properties": [{"key": "Status", "value": "APPROVED"}, {"key": "appId", "value": "42"}]}],
+                },
+            ],
+        }
+    }
+    service = ApiNavigationService(port, session=None)
+
+    document = service.impact(400)
+
+    port.get_impact_tree.assert_called_once_with(400, 1)  # primeiro ambiente com revisão no ar
+    assert document["environment"] == {"id": 1, "name": "Default"}
+    assert document["revisionNumber"] == "4" and document["basePath"] == "/orq-auth/v1"
+    assert document["routes"] == [
+        {"path": "/oauth2/token", "methods": [{"method": "POST", "operationId": 8953, "destination": None}]},
+        {"path": "/users/{username}", "methods": [{"method": "GET", "operationId": 9121, "destination": "https://backend/users"}]},
+    ]
+    assert document["plans"] == [{"name": "Plan A", "apps": [{"name": "App 1", "status": "APPROVED", "appId": "42"}]}]
+    assert document["totals"] == {"routes": 2, "operations": 2, "plans": 1, "apps": 1}
+
+    service.impact(400, 9)
+    assert port.get_impact_tree.call_args.args == (400, 9)
+
+    port.get_impact_tree.return_value = {}
+    with pytest.raises(NavigationPlatformError):
+        service.impact(400)

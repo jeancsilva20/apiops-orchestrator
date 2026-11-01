@@ -179,3 +179,24 @@ class ManagerApiPort(ABC):
     ) -> Dict[str, str] | None:
         """Get the content of a custom interceptor"""
         pass
+
+    # --- catálogos do tenant (leitura; mapeamento APIM/AG) -----------------
+
+    @abstractmethod
+    def list_environments(self) -> List[Dict[str, Any]]:
+        """`GET /environments?simple=true`: id, name, inboundUrl, isDeployable."""
+
+    @abstractmethod
+    def list_workflows(self) -> List[Dict[str, Any]]:
+        """`GET /api-governance/.../workflows`: workflows com os stages e requisitos inline."""
+
+    @abstractmethod
+    def list_interceptor_catalog(self) -> List[Dict[str, Any]]:
+        """`GET /interceptors`: tipos nativos (`DEFAULT`) e customs (`JAVASCRIPT`/`JAVA`).
+
+        O `name` de cada item é o `type` que os interceptors das revisões carregam.
+        """
+
+    @abstractmethod
+    def get_impact_tree(self, api_id: int, environment_id: int) -> Dict[str, Any]:
+        """`GET /api-governance/.../apis/{id}/tree-analysis/{env}`: API → rotas → planos → apps."""

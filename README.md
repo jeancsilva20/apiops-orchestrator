@@ -45,6 +45,13 @@ Run `sen --help` or `sen <command> --help` for the authoritative option list. Al
 | `sen get custom` | Name and script of a Custom interceptor from the catalog | `--custom-id`, `--script-only` |
 | `sen get swagger` | OpenAPI contract of a revision, as stored in the Manager | `--id`, `--revision`, `--revision-id` |
 | `sen export api` | Materializes the canonical repository tree of a revision | `--dir`, `--force` |
+| `sen list environments` | Environments of the tenant (ids, names, inbound URLs) | |
+| `sen list workflows` | Adaptive Governance workflows and their stages | |
+| `sen list attributes` | Governance attributes (the `apiTags` names) and their valid tags | |
+| `sen list interceptors` | Catalog of interceptor types (the `type` accepted in YAML) and custom ids | `--custom`, `--tag` |
+| `sen get workflow` | Stages of a workflow and what each one requires | `--id` |
+| `sen get governance` | A revision against its current stage and the next one: maturity, mandatory interceptors, attributes, environments | `--id`, `--revision`, `--revision-id` |
+| `sen get impact` | Impact graph: routes with destinations, plans and apps consuming the API | `--id`, `--env` |
 
 ### `sen login`
 
@@ -91,8 +98,21 @@ sen get swagger --id 400 --revision 4                   #    OpenAPI contract of
 sen export api --id 400 --revision 4 --dir ./repo       # 5. canonical tree (what `sen validate` reads)
 ```
 
+The catalogs and the governance view come from the routes mapped in the APIM/Adaptive Governance documentation (`/environments`, `/api-governance/.../workflows`, `/attributes`, `/interceptors`, `/apis/{id}/tree-analysis/{env}`):
+
+```bash
+sen list environments                                   # env ids for TARGET_ENVIRONMENT_ID and for stage rules
+sen list workflows                                      # workflows → stages, with a one-line summary of each stage's rules
+sen get workflow --id 327                               # what each stage requires (maturity, interceptors, attributes, deploy envs)
+sen list attributes                                     # apiTags names and the tags the catalog accepts
+sen list interceptors [--custom] [--tag Oauth]          # valid `type` names; custom ids for `sen get custom`
+sen get governance --id 400 --revision 4                # does the revision meet its stage? what is missing for the next one?
+sen get impact --id 400 [--env 1]                       # routes → destinations, plans → apps (who breaks if this API changes)
+```
+
 Notes:
 
+- `sen get governance` evaluates the stage requirements against the revision as the Manager holds it: maturity against `/completeness`, mandatory interceptors against the effective flow of each scope (root, every resource or every operation, honouring `positionType` FIRST/LAST), attributes against `apiTags` with the same rule the publish pre-check uses, and deployments against the stage's allowed environments. Attribute bindings made in the UI side panel travel on a signed route the CLI cannot read, so only `apiTags` count.
 - `--revision` is the revision **number** shown in the UI (REV #). Use `--revision-id` for the Manager id (REV ID, the value `sen completeness --revision` expects). Without either, the current revision (`lastRevision`) is used.
 - `--resource` accepts the resource name, its slug (the folder name in the canonical tree) or its id; `--operation` accepts `"<METHOD> <path>"`, just the path, or the operation id.
 - Interceptor ids (`[19220]`) are the Manager ids inside the revision; `customInterceptorId` is the catalog id used by `sen get custom`.
