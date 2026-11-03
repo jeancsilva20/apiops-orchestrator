@@ -320,6 +320,8 @@ def _sessao(perfil="developer"):
             userEmail="isaac.machado@sensedia.com",
             userGroups=["APIOps"],
         )
+    else:
+        data["adminAccessToken"] = "admin"
     return LoginSession.model_validate(data)
 
 

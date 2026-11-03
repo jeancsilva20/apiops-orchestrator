@@ -69,11 +69,9 @@ class SessionStore(SessionStorePort):
     def load(self, now: Optional[datetime] = None) -> Optional[LoginSession]:
         """Load the persisted session; the model is the validation authority.
 
-        Corrupt, legacy (flat) or unknown-profile files fail model validation
-        and are treated as "session absent" (forces re-login). A super-admin
-        session without the admin token (format written before the rev. of
-        ADR 0002) also loads fine; consumers needing the token SHALL orient
-        re-login when it is absent.
+        Corrupt, legacy (flat), unknown-profile or token-less super-admin
+        files fail model validation and are treated as "session absent"
+        (forces re-login).
         """
         if not self.session_path.is_file():
             return None

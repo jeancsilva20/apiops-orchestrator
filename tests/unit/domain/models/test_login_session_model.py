@@ -74,10 +74,13 @@ def test_developer_carrying_admin_token_tolerates_the_field():
     assert session.is_super_admin is False
 
 
-def test_super_admin_valid_without_admin_token_reload_assumption():
-    session = LoginSession(**super_admin_payload(with_admin_token=False))
-    assert session.is_super_admin is True
-    assert session.adminAccessToken is None
+@pytest.mark.parametrize("admin_token", [None, "", "   "])
+def test_super_admin_without_admin_token_fails_model_validation(admin_token):
+    payload = super_admin_payload(with_admin_token=False)
+    if admin_token is not None:
+        payload["adminAccessToken"] = admin_token
+    with pytest.raises(ValidationError, match="adminAccessToken"):
+        LoginSession(**payload)
 
 
 def test_superuser_with_admin_token_roundtrip_keeps_it_in_memory():

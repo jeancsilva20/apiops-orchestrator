@@ -67,10 +67,8 @@ class LoginSession(BaseModel):
             if not self.userGroups:
                 raise ValueError("Perfil 'developer' exige 'userGroups' não vazio.")
         elif self.profile == PROFILE_SUPER_ADMIN:
-            # Absence is tolerated for sessions written before the rev. of
-            # ADR 0002; new super-admin sessions carry the token and
-            # persistence keeps it alongside the rest of the session.
-            pass
+            if not (self.adminAccessToken or "").strip():
+                raise ValueError("Perfil 'super-admin' exige 'adminAccessToken'.")
 
     @property
     def is_super_admin(self) -> bool:

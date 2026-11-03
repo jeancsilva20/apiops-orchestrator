@@ -21,7 +21,7 @@ from apiops_orchestrator.config import settings as settings_module
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
 from apiops_orchestrator.infrastructure.secure_storage.session_store import (
-    SessionStorageError,
+    SessionStoreError,
 )
 from apiops_orchestrator.infrastructure.exceptions.http_client_exceptions import (
     HttpClient4xxError,
@@ -321,7 +321,7 @@ def test_login_protocol_details_logged_but_never_returned(deps, caplog):
 
 def test_login_persistence_failure_maps_to_category_5(deps):
     service, _, store = deps
-    store.save.side_effect = SessionStorageError(
+    store.save.side_effect = SessionStoreError(
         "Não foi possível gravar a sessão local."
     )
 

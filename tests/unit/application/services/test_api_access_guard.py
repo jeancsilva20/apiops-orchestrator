@@ -23,6 +23,8 @@ def _session(profile: str = "developer") -> LoginSession:
             userEmail="isaac.machado@sensedia.com",
             userGroups=["APIOps"],
         )
+    else:
+        payload["adminAccessToken"] = "admin"
     return LoginSession.model_validate(payload)
 
 

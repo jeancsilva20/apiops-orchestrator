@@ -3,6 +3,9 @@ import logging
 from apiops_orchestrator.application.exceptions.login_exceptions import (
     AuthenticationRejectedError,
 )
+from apiops_orchestrator.application.services.session_access_guard import (
+    require_access,
+)
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.ports.orchestrator_auth_port import (
     AuthEndpointNotConfiguredError,
@@ -19,6 +22,7 @@ logger = logging.getLogger(__name__)
 class AdminTokenProvider:
     """Resolve o token administrativo via sessão e rota validate.
 
+    0. Sessão de dev fora do time APIOps → `AccessDeniedError`, sem rede;
     1. Sessão super-admin válida com `adminAccessToken` → usa pronto;
     2. Sessão válida (perfil dev) → POST validate com o `accessToken`;
     3. Qualquer outro retorno (não-200, autorizado!=true, admin token
@@ -39,6 +43,7 @@ class AdminTokenProvider:
         self.session_store = session_store
 
     def obtain(self) -> str:
+        require_access(self.session_store.load())
         from_session = self._admin_token_from_session()
         if from_session:
             logger.info("auth.admin_token.source resolved_from=session")

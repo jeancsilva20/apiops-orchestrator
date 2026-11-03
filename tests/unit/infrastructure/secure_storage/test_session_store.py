@@ -8,7 +8,7 @@ from apiops_orchestrator.domain.models.login_session_model import LoginSession
 from apiops_orchestrator.infrastructure.secure_storage.session_store import (
     SESSION_FILE_NAME,
     SessionStore,
-    SessionStorageError,
+    SessionStoreError,
 )
 
 ACCESS_TOKEN = "QUJDREVG"
@@ -92,18 +92,13 @@ def test_saved_super_admin_reloads_with_privileged_token(tmp_path):
     assert loaded.accessToken == ADMIN_TOKEN
 
 
-def test_load_legacy_super_admin_without_admin_token_still_valid(tmp_path):
+def test_load_super_admin_without_admin_token_is_treated_as_absent(tmp_path):
     store = SessionStore(directory=tmp_path)
-    legacy_super_admin = super_admin_session().model_dump_json()
-    persisted = json.loads(legacy_super_admin)
+    persisted = json.loads(super_admin_session().model_dump_json())
     persisted.pop("adminAccessToken")
     (tmp_path / SESSION_FILE_NAME).write_text(json.dumps(persisted), encoding="utf-8")
 
-    loaded = store.load(now=datetime.now(timezone.utc))
-
-    assert loaded is not None
-    assert loaded.is_super_admin is True
-    assert loaded.adminAccessToken is None
+    assert store.load(now=datetime.now(timezone.utc)) is None
 
 
 def test_load_returns_valid_developer_session(tmp_path):
@@ -195,7 +190,7 @@ def test_io_failure_maps_to_sanitized_categorized_error(tmp_path, monkeypatch):
         raise PermissionError(13, "Permission denied")
 
     monkeypatch.setattr(os, "replace", boom)
-    with pytest.raises(SessionStorageError) as excinfo:
+    with pytest.raises(SessionStoreError) as excinfo:
         store.save(developer_session())
     assert ACCESS_TOKEN not in str(excinfo.value)
     assert "não foi possível gravar" in str(excinfo.value).lower()

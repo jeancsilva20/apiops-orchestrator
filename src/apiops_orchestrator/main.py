@@ -18,6 +18,7 @@ from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter 
 from apiops_orchestrator.adapters.outbound.http.orchestrator_auth_api.orchestrator_auth_adapter import (
     OrchestratorAuthAdapter,
 )
+from apiops_orchestrator.application.exceptions.deploy_exceptions import NO_DEPLOYMENT
 from apiops_orchestrator.application.exceptions.manager_failure_messages import (
     INTERNAL_ERROR_MESSAGE,
 )
@@ -37,6 +38,9 @@ from apiops_orchestrator.application.services.publish_service import (
     require_pipeline as exigir_esteira_no_publish,
 )
 from apiops_orchestrator.application.services.ruler_service import RulerService
+from apiops_orchestrator.application.services.session_access_guard import (
+    require_access,
+)
 from apiops_orchestrator.application.services.validate_service import (
     ValidateService,
 )
@@ -45,6 +49,7 @@ from apiops_orchestrator.application.services.completeness_service import (
 )
 from apiops_orchestrator.application.services.login_service import LoginService
 from apiops_orchestrator.config.settings import Settings
+from apiops_orchestrator.domain.services.session_access import Access
 from apiops_orchestrator.infrastructure.secure_storage.session_store import SessionStore
 
 
@@ -174,13 +179,16 @@ def build_validate_service_factory():
 
     def factory() -> ValidateService:
         settings = _load_settings()
+        session = _build_session_store(settings).load()
+        require_access(
+            session, Access.WRITE, command="validate", outcome="Nada foi publicado."
+        )
         manager_adapter = ManagerApiAdapter(
             token=_build_admin_token(settings),
             base_path="/api-manager/api/v3/",
             max_retries=3,
             settings=settings,
         )
-        session = _build_session_store(settings).load()
         return ValidateService(
             manager_api=manager_adapter,
             importer=LocalFileImporterAdapter(),
@@ -197,6 +205,12 @@ def build_publish_service_factory():
     def factory() -> PublishService:
         settings = _load_settings()
         exigir_esteira_no_publish(settings)
+        require_access(
+            _build_session_store(settings).load(),
+            Access.PIPELINE,
+            command="publish",
+            outcome="Nada foi publicado.",
+        )
         manager_adapter = ManagerApiAdapter(
             token=_build_admin_token(settings),
             base_path="/api-manager/api/v3/",
@@ -218,6 +232,12 @@ def build_deploy_service_factory():
     def factory() -> DeployService:
         settings = _load_settings()
         exigir_esteira_no_deploy(settings)
+        require_access(
+            _build_session_store(settings).load(),
+            Access.PIPELINE,
+            command="deploy",
+            outcome=NO_DEPLOYMENT,
+        )
         manager_adapter = ManagerApiAdapter(
             token=_build_admin_token(settings),
             base_path="/api-manager/api/v3/",

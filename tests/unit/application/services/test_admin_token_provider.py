@@ -5,6 +5,9 @@ import pytest
 from apiops_orchestrator.adapters.outbound.http.orchestrator_auth_api.orchestrator_auth_adapter import (
     OrchestratorAuthPort,
 )
+from apiops_orchestrator.application.exceptions.access_exceptions import (
+    AccessDeniedError,
+)
 from apiops_orchestrator.application.exceptions.login_exceptions import (
     AuthenticationRejectedError,
 )
@@ -65,6 +68,41 @@ class TestSessionAdminFastLane:
         # contexto GROUP desenvolvedor: fast-lane é ignorada, validate é a via
         assert provider.obtain() == VALIDATE_ADMIN_TOKEN
         adapter.validate_access_token.assert_called_once()
+
+
+class TestApiOpsTeam:
+    """Every Manager call resolves the token here, so the team is checked here."""
+
+    def _provider(self, session):
+        store = MagicMock(spec=SessionStore)
+        store.load.return_value = session
+        adapter = MagicMock(spec=OrchestratorAuthPort)
+        adapter.validate_access_token.return_value = {
+            "autorizado": True,
+            "extra_info": {"admin_access_token": VALIDATE_ADMIN_TOKEN},
+        }
+        return AdminTokenProvider(adapter, MagicMock(), store), adapter
+
+    def test_developer_outside_the_team_is_refused_before_validate(self):
+        session = _session(profile="developer").model_copy(update={"userGroups": ["Lab-tech"]})
+        provider, adapter = self._provider(session)
+
+        with pytest.raises(AccessDeniedError, match="time APIOps"):
+            provider.obtain()
+
+        adapter.validate_access_token.assert_not_called()
+
+    def test_developer_in_the_team_goes_on_to_validate(self):
+        session = _session(profile="developer").model_copy(update={"userGroups": [" apiops "]})
+        provider, adapter = self._provider(session)
+
+        assert provider.obtain() == VALIDATE_ADMIN_TOKEN
+
+    def test_super_admin_has_no_team_and_still_passes(self):
+        provider, adapter = self._provider(_session(profile="super-admin", with_admin=True))
+
+        assert provider.obtain() == SESSION_ADMIN_TOKEN
+        adapter.validate_access_token.assert_not_called()
 
 
 class TestValidateFlow:

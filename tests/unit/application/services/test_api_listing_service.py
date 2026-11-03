@@ -53,6 +53,8 @@ def _make_session(profile: str = "developer", groups=None) -> LoginSession:
     }
     if profile == "developer":
         payload["userGroups"] = groups if groups is not None else ["APIOps"]
+    else:
+        payload["adminAccessToken"] = "admin"
     return LoginSession.model_validate(payload)
 
 
