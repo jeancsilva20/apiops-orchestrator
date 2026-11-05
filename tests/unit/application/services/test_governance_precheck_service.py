@@ -3,6 +3,10 @@
 import pytest
 
 from apiops_orchestrator.application.services.governance_precheck_service import (
+    ATTRIBUTE_WITHOUT_CATALOG_TAGS,
+    INVALID_TAG,
+    MISSING_TAG,
+    UNKNOWN_ATTRIBUTE,
     GovernancePrecheckService,
 )
 
@@ -176,16 +180,24 @@ def test_atributo_com_tag_valida_conta_como_presente():
         REVISAO, [_declarado("My new", "Tag1"), _declarado("teste giroto", "teste giroto")]
     )
     assert not r.blocked
-    assert r.invalid_tags == []
+    assert r.api_tag_problems == []
 
 
-def test_atributo_sem_tag_conta_como_ausente():
+def test_atributo_sem_tag_conta_como_ausente_e_e_problema():
     """Cenário A: `My new` com `tags: []` — a plataforma respondeu 412."""
     r = _servico_com_tags().evaluate(
         REVISAO, [_declarado("My new"), _declarado("teste giroto", "teste giroto")]
     )
     assert r.blocked
     assert [f.attribute_id for f in r.missing_names] == [149]
+    assert [(p.kind, p.attribute_name, p.valid) for p in r.api_tag_problems] == [
+        (MISSING_TAG, "My new", ["Tag1", "Tag2"])
+    ]
+
+
+def test_atributo_sem_a_chave_tags_e_problema():
+    r = _servico_com_tags().evaluate(REVISAO, [{"attributeName": "My new"}])
+    assert [p.kind for p in r.api_tag_problems] == [MISSING_TAG]
 
 
 def test_tag_fora_da_lista_do_atributo_e_invalida():
@@ -194,49 +206,89 @@ def test_tag_fora_da_lista_do_atributo_e_invalida():
         REVISAO,
         [_declarado("My new", "TagInexistente"), _declarado("teste giroto", "teste giroto")],
     )
-    assert len(r.invalid_tags) == 1
-    invalida = r.invalid_tags[0]
+    assert len(r.api_tag_problems) == 1
+    invalida = r.api_tag_problems[0]
+    assert invalida.kind == INVALID_TAG
     assert (invalida.attribute_name, invalida.tag) == ("My new", "TagInexistente")
     assert invalida.valid == ["Tag1", "Tag2"]
+
+
+def test_cada_tag_fora_da_lista_e_um_problema():
+    r = _servico_com_tags().evaluate(REVISAO, [_declarado("My new", "Tag1", "X", "Y")])
+    assert [p.tag for p in r.api_tag_problems] == ["X", "Y"]
 
 
 def test_tag_invalida_e_conferida_mesmo_sem_requisito_no_stage():
     workflow = {"stages": [{"workflowStageId": 1402, "attributesRequisites": []}]}
     r = _servico_com_tags(workflow).evaluate(REVISAO, [_declarado("My new", "Errada")])
-    assert [i.tag for i in r.invalid_tags] == ["Errada"]
+    assert [i.tag for i in r.api_tag_problems] == ["Errada"]
 
 
 def test_tag_invalida_e_conferida_mesmo_sem_workflow_na_revisao():
     r = _servico_com_tags().evaluate({"id": 1}, [_declarado("My new", "Errada")])
-    assert [i.tag for i in r.invalid_tags] == ["Errada"]
+    assert [i.tag for i in r.api_tag_problems] == ["Errada"]
 
 
-def test_atributo_sem_tags_cadastradas_basta_estar_presente():
-    """Sem lista no catálogo não há contra o que comparar (V-23 §2: `CLI`)."""
-    workflow = {
-        "stages": [{
-            "workflowStageId": 1402,
-            "attributesRequisites": [{"attributeId": 96, "tagId": None, "mustHave": True}],
-        }]
-    }
-    r = _servico_com_tags(workflow).evaluate(REVISAO, [_declarado("CLI", "qualquer")])
-    assert not r.blocked
-    assert r.invalid_tags == []
+@pytest.mark.parametrize("tags", [(), ("Sensedia",), ("a", "b")])
+def test_atributo_sem_tags_cadastradas_e_um_problema_so(tags):
+    r = _servico_com_tags().evaluate(REVISAO, [_declarado("CLI", *tags)])
+    assert [(p.kind, p.attribute_name) for p in r.api_tag_problems] == [
+        (ATTRIBUTE_WITHOUT_CATALOG_TAGS, "CLI")
+    ]
 
 
-def test_atributo_fora_do_catalogo_nao_tem_tag_conferida():
+def test_atributo_fora_do_catalogo_e_problema_sem_sugestao():
     r = _servico_com_tags().evaluate(
         REVISAO,
         [_declarado("inventado", "x"), _declarado("My new", "Tag1"),
          _declarado("teste giroto", "teste giroto")],
     )
-    assert r.invalid_tags == []
+    assert [(p.kind, p.attribute_name, p.suggestions) for p in r.api_tag_problems] == [
+        (UNKNOWN_ATTRIBUTE, "inventado", [])
+    ]
+
+
+CATALOGO_ACENTUADO = [
+    {"id": 300, "name": "Domínio", "tags": ["Financeiro"]},
+    {"id": 301, "name": "Área", "tags": ["TI"]},
+]
+
+
+@pytest.mark.parametrize(
+    "declarado, sugestao",
+    [
+        ("Dominio", ["Domínio"]),
+        ("domínio", ["Domínio"]),
+        ("DOMINIO", ["Domínio"]),
+        ("area", ["Área"]),
+        ("Dominios", []),
+        ("Domino", []),
+        ("Domínio ", []),
+    ],
+)
+def test_sugestao_so_quando_difere_em_acento_ou_maiuscula(declarado, sugestao):
+    servico = GovernancePrecheckService(ManagerFake(atributos=CATALOGO_ACENTUADO))
+    r = servico.evaluate(REVISAO, [_declarado(declarado, "Financeiro")])
+    assert [(p.kind, p.suggestions) for p in r.api_tag_problems] == [
+        (UNKNOWN_ATTRIBUTE, sugestao)
+    ]
+
+
+def test_atributo_e_tags_validos_nao_tem_problema():
+    servico = GovernancePrecheckService(ManagerFake(atributos=CATALOGO_ACENTUADO))
+    r = servico.evaluate(REVISAO, [_declarado("Domínio", "Financeiro")])
+    assert r.api_tag_problems == []
+
+
+def test_lista_vazia_nao_tem_problema():
+    r = _servico_com_tags().evaluate(REVISAO, [])
+    assert r.api_tag_problems == []
 
 
 def test_api_tags_ausente_nao_confere_tags():
     """Ausente preserva (schema do basic info): nada é enviado, nada a conferir."""
     r = _servico_com_tags().evaluate(REVISAO, None)
-    assert r.invalid_tags == []
+    assert r.api_tag_problems == []
 
 
 def test_catalogo_e_lido_uma_vez_por_execucao():

@@ -27,7 +27,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
     GovernanceBlockedError,
-    InvalidTagError,
+    InvalidApiTagsError,
     ValidateError,
 )
 from apiops_orchestrator.application.services.contract_writer import ContractWriter
@@ -152,10 +152,9 @@ class PublishService:
         precheck = self._governance.evaluate(target, spec.get("apiTags"))
         warnings = self._writer.unread_files_warnings(loaded) + list(assembled.warnings)
         warnings += [f"Governança: {warning}" for warning in precheck.warnings]
-        # Antes do bloqueio: com tag inválida o Manager aceitaria e apagaria
-        # todas as `apiTags` — é o erro mais destrutivo, e é do repositório.
-        if precheck.invalid_tags:
-            raise InvalidTagError(precheck.invalid_tags)
+        # Repository errors in `apiTags` abort before the governance block.
+        if precheck.api_tag_problems:
+            raise InvalidApiTagsError(precheck.api_tag_problems)
         if precheck.blocked:
             raise GovernanceBlockedError(
                 workflow_id=precheck.workflow_id,

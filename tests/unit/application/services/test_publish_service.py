@@ -21,7 +21,7 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
     InvalidLayoutError,
     PublicationDivergenceError,
     PublicationRejectedError,
-    InvalidTagError,
+    InvalidApiTagsError,
     ValidateError,
 )
 from apiops_orchestrator.application.services.publish_service import (
@@ -342,7 +342,7 @@ BASIC_INFO_COM_TAGS = BASIC_INFO + """\
 def test_tag_fora_do_atributo_aborta_antes_de_escrever(tmp_path):
     manager = ManagerFake()
     repo = _repo(tmp_path, basic_info=BASIC_INFO_COM_TAGS.format(tag="TagInexistente"))
-    with pytest.raises(InvalidTagError):
+    with pytest.raises(InvalidApiTagsError):
         _servico(manager).publish(repo)
 
     assert "update_revision" not in manager.chamadas

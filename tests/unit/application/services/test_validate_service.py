@@ -22,7 +22,7 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
     InvalidLayoutError,
     PublicationDivergenceError,
     PublicationRejectedError,
-    InvalidTagError,
+    InvalidApiTagsError,
     TemplateNotConfiguredError,
 )
 from apiops_orchestrator.application.exceptions.manager_failure_messages import (
@@ -804,20 +804,57 @@ BASIC_INFO_COM_TAGS = BASIC_INFO + """\
 class _ManagerComCatalogoDeTags(ManagerFake):
     def list_attributes(self):
         self.chamadas.append("list_attributes")
-        return [{"id": 149, "name": "My new", "tags": ["Tag1", "Tag2"]}]
+        return [
+            {"id": 149, "name": "My new", "tags": ["Tag1", "Tag2"]},
+            {"id": 96, "name": "CLI", "tags": []},
+            {"id": 300, "name": "Domínio", "tags": ["Financeiro"]},
+        ]
 
 
 def test_tag_fora_do_atributo_aborta_antes_de_escrever(tmp_path):
     manager = _ManagerComCatalogoDeTags()
     repo = _repo(tmp_path, basic_info=BASIC_INFO_COM_TAGS.format(tag="TagInexistente"))
 
-    with pytest.raises(InvalidTagError) as capturado:
+    with pytest.raises(InvalidApiTagsError) as capturado:
         _servico(manager).validate(repo, confirm=SIM)
 
     message = capturado.value.message
     assert capturado.value.exit_code == 1
-    assert "`TagInexistente` em `My new`" in message and "Tag1, Tag2" in message
+    assert "a tag `TagInexistente` não existe no atributo `My new`" in message
+    assert "Tag1, Tag2" in message
     assert "Nada foi publicado." in message
+    assert "update_revision" not in manager.chamadas
+
+
+BASIC_INFO_COM_PROBLEMAS = BASIC_INFO + """\
+  apiTags:
+    - attributeName: DOMINIO
+      tags:
+        - Financeiro
+    - attributeName: Dominios
+      tags:
+        - Financeiro
+    - attributeName: CLI
+      tags:
+        - Sensedia
+    - attributeName: My new
+      tags: []
+"""
+
+
+def test_todos_os_problemas_de_apitags_saem_numa_mensagem_antes_de_escrever(tmp_path):
+    manager = _ManagerComCatalogoDeTags()
+    repo = _repo(tmp_path, basic_info=BASIC_INFO_COM_PROBLEMAS)
+
+    with pytest.raises(InvalidApiTagsError) as capturado:
+        _servico(manager).validate(repo, confirm=SIM)
+
+    message = capturado.value.message
+    assert capturado.value.exit_code == 1
+    assert "o atributo `DOMINIO` não existe no Manager. Você quis dizer `Domínio`?" in message
+    assert "o atributo `Dominios` não existe no Manager.\n" in message
+    assert "o atributo `CLI` não tem tags cadastradas no Manager" in message
+    assert "o atributo `My new` foi declarado sem tag (tags possíveis: Tag1, Tag2)" in message
     assert "update_revision" not in manager.chamadas
 
 

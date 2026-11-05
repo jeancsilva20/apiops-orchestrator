@@ -19,16 +19,22 @@ Regras de `apiTags` observadas na plataforma:
   attribute My new";
 * tag que não existe na lista do atributo é **aceita com 200 e apaga todas as
   `apiTags` da API**, sem erro e sem a governança barrar. Só o pré-check pode
-  impedir: daí `invalid_tags`, que aborta antes de qualquer escrita.
+  impedir: daí `api_tag_problems`, que aborta antes de qualquer escrita.
 """
 
 import logging
+import unicodedata
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
 
 logger = logging.getLogger(__name__)
+
+UNKNOWN_ATTRIBUTE = "unknown_attribute"
+ATTRIBUTE_WITHOUT_CATALOG_TAGS = "attribute_without_catalog_tags"
+MISSING_TAG = "missing_tag"
+INVALID_TAG = "invalid_tag"
 
 
 @dataclass(frozen=True)
@@ -39,12 +45,14 @@ class RequiredAttribute:
 
 
 @dataclass(frozen=True)
-class InvalidTag:
-    """Tag declarada em `apiTags` que não existe na lista do atributo no catálogo."""
+class ApiTagProblem:
+    """An `apiTags` entry that does not match the attribute catalog."""
 
+    kind: str
     attribute_name: str
-    tag: str
-    valid: List[str]
+    tag: Optional[str] = None
+    valid: List[str] = field(default_factory=list)
+    suggestions: List[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -54,7 +62,7 @@ class PrecheckResult:
     required: List[RequiredAttribute] = field(default_factory=list)
     missing_names: List[RequiredAttribute] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
-    invalid_tags: List[InvalidTag] = field(default_factory=list)
+    api_tag_problems: List[ApiTagProblem] = field(default_factory=list)
     # Stage da revisão como veio do workflow; `None` quando não foi encontrado.
     stage: Optional[Dict[str, Any]] = None
 
@@ -80,13 +88,13 @@ class GovernancePrecheckService:
     ) -> PrecheckResult:
         """Calcula o que falta para o stage da revisão alvo aceitar a publicação.
 
-        As tags inválidas são conferidas sempre, com ou sem requisito no stage:
-        a perda de `apiTags` acontece em qualquer workflow.
+        As `apiTags` são conferidas contra o catálogo sempre, com ou sem
+        requisito no stage.
         """
         workflow_id = revision.get("workflowId")
         stage_id = revision.get("workflowStageId")
         warnings: List[str] = []
-        invalid = self._invalid_tags(api_tags)
+        invalid = self._api_tag_problems(api_tags)
 
         if workflow_id is None or stage_id is None:
             warnings.append(
@@ -94,7 +102,7 @@ class GovernancePrecheckService:
                 "o Adaptive Governance não pode ser antecipado"
             )
             return PrecheckResult(
-                workflow_id, stage_id, warnings=warnings, invalid_tags=invalid
+                workflow_id, stage_id, warnings=warnings, api_tag_problems=invalid
             )
 
         workflow = self._manager_api.get_workflow(workflow_id) or {}
@@ -109,7 +117,7 @@ class GovernancePrecheckService:
                 "publicação."
             )
             return PrecheckResult(
-                workflow_id, stage_id, warnings=warnings, invalid_tags=invalid
+                workflow_id, stage_id, warnings=warnings, api_tag_problems=invalid
             )
 
         requirements = [
@@ -120,7 +128,7 @@ class GovernancePrecheckService:
                 workflow_id,
                 stage_id,
                 warnings=warnings,
-                invalid_tags=invalid,
+                api_tag_problems=invalid,
                 stage=stage,
             )
 
@@ -139,7 +147,7 @@ class GovernancePrecheckService:
 
         logger.info(
             "governanca.precheck workflow=%s stage=%s exigidos=%d faltantes=%d "
-            "tags_invalidas=%d",
+            "api_tag_problems=%d",
             workflow_id,
             stage_id,
             len(required),
@@ -181,29 +189,35 @@ class GovernancePrecheckService:
     def _by_name(self) -> Dict[str, _Attribute]:
         return {a.name: a for a in self._load_attributes() if a.name}
 
-    def _invalid_tags(
+    def _api_tag_problems(
         self, api_tags: Optional[Sequence[Dict[str, Any]]]
-    ) -> List[InvalidTag]:
-        """Tags declaradas que não existem na lista do atributo no catálogo.
-
-        Só confere atributos que o catálogo conhece **e** para os quais cadastra
-        tags: sem lista cadastrada não há contra o que comparar (comportamento da
-        plataforma nesse caso não foi medido).
-        """
+    ) -> List[ApiTagProblem]:
+        """Checks each declared attribute and its tags against the attribute catalog."""
         if not api_tags:
             return []
         by_name = self._by_name()
-        invalid: List[InvalidTag] = []
+        problems: List[ApiTagProblem] = []
         for declared in api_tags:
-            attribute = by_name.get(declared.get("attributeName"))
-            if attribute is None or not attribute.tags:
-                continue
-            for tag in declared.get("tags") or []:
-                if str(tag) not in attribute.tags:
-                    invalid.append(
-                        InvalidTag(str(attribute.name), str(tag), list(attribute.tags))
+            name = str(declared.get("attributeName") or "")
+            tags = [str(t) for t in (declared.get("tags") or [])]
+            attribute = by_name.get(name)
+            if attribute is None:
+                problems.append(
+                    ApiTagProblem(
+                        UNKNOWN_ATTRIBUTE, name, suggestions=_similar_names(name, by_name)
                     )
-        return invalid
+                )
+            elif not attribute.tags:
+                problems.append(ApiTagProblem(ATTRIBUTE_WITHOUT_CATALOG_TAGS, name))
+            elif not tags:
+                problems.append(ApiTagProblem(MISSING_TAG, name, valid=list(attribute.tags)))
+            else:
+                problems.extend(
+                    ApiTagProblem(INVALID_TAG, name, tag=tag, valid=list(attribute.tags))
+                    for tag in tags
+                    if tag not in attribute.tags
+                )
+        return problems
 
     def _present(self, api_tags: Optional[Sequence[Dict[str, Any]]]) -> set:
         """Ids dos atributos que o repositório declara de forma válida.
@@ -224,3 +238,15 @@ class GovernancePrecheckService:
                 continue
             present.add(attribute.attribute_id)
         return present
+
+
+def _fold(text: str) -> str:
+    """Returns the text without accents and in lower case."""
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in decomposed if not unicodedata.combining(c)).casefold()
+
+
+def _similar_names(name: str, catalog_names: Iterable[str]) -> List[str]:
+    """Catalog names that differ from `name` only in accents or letter case."""
+    folded = _fold(name)
+    return sorted(n for n in catalog_names if _fold(n) == folded)

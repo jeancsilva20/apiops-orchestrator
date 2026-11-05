@@ -21,6 +21,11 @@ from apiops_orchestrator.application.exceptions.manager_failure_messages import 
     API_NOT_FOUND_TEMPLATE,
     UNAVAILABLE_MESSAGE,
 )
+from apiops_orchestrator.application.services.governance_precheck_service import (
+    ATTRIBUTE_WITHOUT_CATALOG_TAGS,
+    MISSING_TAG,
+    UNKNOWN_ATTRIBUTE,
+)
 
 
 class ValidateError(Exception):
@@ -365,27 +370,41 @@ class GovernanceBlockedError(ValidateError):
         self.reasons = reasons
 
 
-class InvalidTagError(ValidateError):
-    """Tag declarada em `apiTags` que não existe na lista do atributo (pré-check).
+class InvalidApiTagsError(ValidateError):
+    """`apiTags` entries that do not match the attribute catalog (pre-check)."""
 
-    Aborta **antes** da escrita: o Manager aceita a gravação com 200 e apaga
-    todas as `apiTags` da API, sem erro e sem a governança barrar. É erro de
-    conteúdo do repositório, não bloqueio de governança — por isso `exit 1`.
-    """
-
-    def __init__(self, invalid: List[Any]):
-        listed = "\n".join(
-            f"  - `{i.tag}` em `{i.attribute_name}` "
-            f"(tags possíveis: {', '.join(i.valid)})"
-            for i in invalid
-        )
+    def __init__(self, problems: List[Any]):
+        listed = "\n".join(f"  - {_describe_api_tag_problem(p)}" for p in problems)
         super().__init__(
-            "Estas tags não existem no atributo em que foram declaradas, em "
-            f"`apiTags`:\n\n{listed}\n\n"
-            "Corrija o `api-basic-info.yaml` e rode o comando de novo.\n\n"
+            "O campo `apiTags` do arquivo `api-basic-info.yaml` possui problemas:\n\n"
+            f"{listed}\n\n"
+            "Corrija o `api-basic-info.yaml` e rode o comando novamente.\n\n"
             "Nada foi publicado."
         )
-        self.invalid = list(invalid)
+        self.problems = list(problems)
+
+
+def _describe_api_tag_problem(problem: Any) -> str:
+    """User-facing line for one `apiTags` problem."""
+    name = problem.attribute_name
+    valid = ", ".join(problem.valid)
+    if problem.kind == UNKNOWN_ATTRIBUTE:
+        text = f"o atributo `{name}` não existe no Manager."
+        if problem.suggestions:
+            options = " ou ".join(f"`{s}`" for s in problem.suggestions)
+            text += f" Você quis dizer {options}?"
+        return text
+    if problem.kind == ATTRIBUTE_WITHOUT_CATALOG_TAGS:
+        return (
+            f"o atributo `{name}` não tem tags cadastradas no Manager. Cadastre as "
+            "tags no Adaptive Governance antes de usar o atributo."
+        )
+    if problem.kind == MISSING_TAG:
+        return f"o atributo `{name}` foi declarado sem tag (tags possíveis: {valid})."
+    return (
+        f"a tag `{problem.tag}` não existe no atributo `{name}` "
+        f"(tags possíveis: {valid})."
+    )
 
 
 class PublicationRejectedError(ValidateError):

@@ -22,7 +22,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
     ApiInaccessibleError,
     GovernanceBlockedError,
-    InvalidTagError,
+    InvalidApiTagsError,
     TemplateNotConfiguredError,
 )
 from apiops_orchestrator.application.enums.manager_failure_kind_enum import (
@@ -220,8 +220,8 @@ class ValidateService:
         step("Verificando a governança")
         precheck = self._governance.evaluate(draft, spec.get("apiTags"))
         # Os avisos dizem quando o pré-check não pôde antecipar a governança
-        # (revisão sem workflow, stage ausente, tag específica): o dev precisa
-        # saber que o veredito virá da gravação.
+        # (revisão sem workflow, stage ausente): o dev precisa saber que o
+        # veredito virá da gravação.
         findings.extend(
             Finding(
                 severity=SEVERITY_WARNING,
@@ -230,10 +230,9 @@ class ValidateService:
             )
             for warning in precheck.warnings
         )
-        # Antes do bloqueio de governança: com tag inválida o Manager aceitaria e
-        # apagaria todas as `apiTags` — é o erro mais destrutivo, e é do repositório.
-        if precheck.invalid_tags:
-            raise InvalidTagError(precheck.invalid_tags)
+        # Repository errors in `apiTags` abort before the governance block.
+        if precheck.api_tag_problems:
+            raise InvalidApiTagsError(precheck.api_tag_problems)
         if precheck.blocked:
             raise GovernanceBlockedError(
                 workflow_id=precheck.workflow_id,
