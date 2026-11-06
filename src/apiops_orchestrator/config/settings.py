@@ -15,6 +15,8 @@ def _app_root() -> Path:
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 PACKAGE_ROOT = _app_root()
+# JSON schemas of the API repository files; inside the bundle when frozen.
+SCHEMAS_ROOT = Path(__file__).resolve().parents[1] / "domain" / "schemas"
 
 dotenv_path = PROJECT_ROOT / ".env"
 sen_path = PACKAGE_ROOT / ".sen"
@@ -96,6 +98,3 @@ class Settings(BaseSettings):
     PACKAGE_ROOT: Path = PACKAGE_ROOT
     # LEGADO: raiz do repositório para o `VersionerService`.
     API_REPO_FOLDER: Path = "./external-repo"
-
-    # Pasta dos JSON schemas, relativa a `src/`.
-    ORCHEST_SCHEMA_FOLDER: str = "apiops_orchestrator/domain/schemas"
