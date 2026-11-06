@@ -7,7 +7,8 @@
 #
 # Copia só o necessário do repo para uma pasta do Linux (sem .sen/.sen_session/.env),
 # monta um venv limpo, empacota com PyInstaller em arquivo único, confere que nenhum
-# segredo entrou no binário e gera, em dist/sen-<versão>/, o sen-<versão>-linux-x64.tar.gz
+# segredo entrou no binário e que todos os schemas do catalog.json entraram, e gera,
+# em dist/sen-<versão>/, o sen-<versão>-linux-x64.tar.gz
 # (o `sen`, o instalador, o `.sen.example` e o README do dev, scripts/README-executavel.md,
 # com a versão preenchida). O README vai dentro do tar.gz, o mesmo do pacote Windows.
 set -euo pipefail
@@ -18,6 +19,7 @@ PYTHON="${PYTHON:-python3.12}"
 RAIZ="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD="${HOME}/.cache/sen-build"
 FONTE="${BUILD}/fonte"
+SCHEMAS="${FONTE}/src/apiops_orchestrator/domain/schemas"
 VENV="${BUILD}/venv"
 
 # Nome de arquivo sensível numa linha do pyi-archive_viewer (nomes vêm entre aspas).
@@ -57,22 +59,36 @@ PY="${VENV}/bin/python"
 
 # Nunca coletar dados do pacote apiops_orchestrator (--collect-*/--add-data):
 # na máquina de quem gera, o .sen e a .sen_session moram dentro dele.
+# A exceção é a pasta dos schemas, que só tem JSON e é lida pelo `sen schema`.
 echo "[2/5] PyInstaller"
 "$PY" -m PyInstaller --onefile --clean --noconfirm --log-level WARN \
     --name sen \
     --copy-metadata apiops-orchestrator \
     --collect-data jsonschema_specifications \
+    --add-data "${SCHEMAS}:apiops_orchestrator/domain/schemas" \
+    --python-option "X utf8" \
     --specpath "$BUILD" \
     --workpath "${BUILD}/work" \
     --distpath "${BUILD}/out" \
     "${FONTE}/src/apiops_orchestrator/main.py"
 EXE="${BUILD}/out/sen"
 
-echo "[3/5] Conferindo que nenhum segredo entrou no binário"
+echo "[3/5] Conferindo o conteúdo do binário"
 CONTEUDO="$("${VENV}/bin/pyi-archive_viewer" --list --recursive "$EXE")"
 if VAZADOS="$(grep -E "$PADRAO_SENSIVEL" <<<"$CONTEUDO")"; then
     echo "Arquivo sensível dentro do binário:" >&2
     echo "$VAZADOS" >&2
+    exit 1
+fi
+ESPERADOS="$("$PY" -c 'import json, sys
+catalog = json.load(open(sys.argv[1], encoding="utf-8"))
+print("\n".join(sorted({"catalog.json", *(e["schema"] for e in catalog["layout"])})))' "${SCHEMAS}/catalog.json")"
+FALTANDO=""
+while read -r ARQUIVO; do
+    grep -qF "apiops_orchestrator/domain/schemas/${ARQUIVO}'" <<<"$CONTEUDO" || FALTANDO+=" ${ARQUIVO}"
+done <<<"$ESPERADOS"
+if [[ -n "$FALTANDO" ]]; then
+    echo "Schemas fora do binário:${FALTANDO}" >&2
     exit 1
 fi
 
@@ -80,6 +96,10 @@ echo "[4/5] Smoke test"
 SAIDA="$("$EXE" --version)"
 if ! grep -qF "$VERSAO" <<<"$SAIDA"; then
     echo "sen --version não respondeu ${VERSAO} (saída: ${SAIDA})" >&2
+    exit 1
+fi
+if ! SAIDA="$("$EXE" schema -o json)" || ! grep -qF "apiops.sen-schema/v1" <<<"$SAIDA"; then
+    echo "sen schema não listou o layout (saída: ${SAIDA})" >&2
     exit 1
 fi
 

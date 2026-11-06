@@ -5,7 +5,8 @@
 .DESCRIPTION
     Monta um venv limpo em build/exe (só dependências de runtime do
     requirements.txt + o pacote), empacota com PyInstaller em arquivo único,
-    confere que nenhum .sen/.sen_session/.env entrou no binário e gera, em
+    confere que nenhum .sen/.sen_session/.env entrou no binário e que todos os
+    schemas do catalog.json entraram, e gera, em
     dist/sen-<versão>/, o sen-<versão>-windows-x64.zip (o `sen.exe`, o
     instalador, o `install.cmd`, o `.sen.example` e o README do dev,
     scripts/README-executavel.md, com a versão preenchida). O README vai
@@ -26,6 +27,8 @@ $PyInstallerVersao = "6.22.3"
 $padraoSensivel = "[\\/']\.(sen|sen_session[^']*|env)'"
 
 $raiz = Split-Path -Parent $PSScriptRoot
+# Absoluto: o PyInstaller resolve caminho relativo a partir da pasta do .spec.
+$schemas = Join-Path $raiz "src\apiops_orchestrator\domain\schemas"
 $build = Join-Path $raiz "build\exe"
 $venv = Join-Path $build "venv"
 $dist = Join-Path $raiz "dist"
@@ -56,12 +59,16 @@ try {
 
     # Nunca coletar dados do pacote apiops_orchestrator (--collect-*/--add-data):
     # na máquina de quem gera, o .sen e a .sen_session moram dentro dele.
+    # A exceção é a pasta dos schemas, que só tem JSON e é lida pelo `sen schema`.
     Write-Host "[2/5] PyInstaller"
     Invoke-Nativo $py @(
         "-m", "PyInstaller", "--onefile", "--clean", "--noconfirm", "--log-level", "WARN",
         "--name", "sen",
         "--copy-metadata", "apiops-orchestrator",
         "--collect-data", "jsonschema_specifications",
+        "--add-data", "$schemas;apiops_orchestrator\domain\schemas",
+        # Saída em UTF-8 também em pipe e arquivo; sem isso o Windows usa cp1252.
+        "--python-option", "X utf8",
         "--specpath", $build,
         "--workpath", (Join-Path $build "work"),
         "--distpath", (Join-Path $build "out"),
@@ -69,7 +76,7 @@ try {
     )
     $exe = Join-Path $build "out\sen.exe"
 
-    Write-Host "[3/5] Conferindo que nenhum segredo entrou no binário"
+    Write-Host "[3/5] Conferindo o conteúdo do binário"
     $viewer = Join-Path $venv "Scripts\pyi-archive_viewer.exe"
     $conteudo = & $viewer --list --recursive $exe
     if ($LASTEXITCODE -ne 0) { throw "Não foi possível listar o conteúdo de $exe" }
@@ -77,11 +84,23 @@ try {
     if ($vazados) {
         throw "Arquivo sensível dentro do binário:`n$($vazados -join "`n")"
     }
+    $catalogo = Get-Content -Raw -Encoding UTF8 "$schemas\catalog.json" | ConvertFrom-Json
+    $esperados = @("catalog.json") + @($catalogo.layout | ForEach-Object { $_.schema }) | Select-Object -Unique
+    $faltando = $esperados | Where-Object {
+        -not ($conteudo -match "apiops_orchestrator[\\/]+domain[\\/]+schemas[\\/]+$([regex]::Escape($_))'")
+    }
+    if ($faltando) {
+        throw "Schemas fora do binário: $($faltando -join ', ')"
+    }
 
     Write-Host "[4/5] Smoke test"
     $saida = & $exe --version
     if ($LASTEXITCODE -ne 0 -or ($saida -join "") -notmatch [regex]::Escape($versao)) {
         throw "sen --version não respondeu $versao (saída: $saida)"
+    }
+    $saida = & $exe schema -o json
+    if ($LASTEXITCODE -ne 0 -or ($saida -join "") -notmatch "apiops\.sen-schema/v1") {
+        throw "sen schema não listou o layout (saída: $saida)"
     }
 
     Write-Host "[5/5] Pacote"
