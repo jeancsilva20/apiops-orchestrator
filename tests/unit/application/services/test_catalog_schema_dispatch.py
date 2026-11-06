@@ -114,6 +114,35 @@ def test_example_repository_passes_the_catalog_schemas(catalog):
     assert _schema_validator(catalog).validate(files) == []
 
 
+@pytest.mark.parametrize(
+    "api_tag",
+    [{"attributeName": "My new"}, {"attributeName": "My new", "tags": []}],
+)
+def test_api_tag_without_tag_is_refused_like_the_cli(catalog, api_tag):
+    """The pre-check refuses an attribute declared without tag in every case."""
+    loaded = _load_example()
+    basic_info = json.loads(json.dumps(loaded.basic_info))
+    basic_info["spec"]["apiTags"] = [api_tag]
+
+    problems = _schema_validator(catalog).validate([("api-basic-info.yaml", basic_info)])
+
+    assert len(problems) == 1
+    assert "apiTags" in problems[0]
+
+
+@pytest.mark.parametrize("api_tags", ["absent", []])
+def test_api_tags_absent_or_empty_stays_valid(catalog, api_tags):
+    """Absent keeps the Manager apiTags; an empty list removes them. Both are accepted by the CLI."""
+    loaded = _load_example()
+    basic_info = json.loads(json.dumps(loaded.basic_info))
+    if api_tags == "absent":
+        del basic_info["spec"]["apiTags"]
+    else:
+        basic_info["spec"]["apiTags"] = api_tags
+
+    assert _schema_validator(catalog).validate([("api-basic-info.yaml", basic_info)]) == []
+
+
 def test_problema_de_schema_e_reportado_com_o_caminho(catalog):
     importer = LocalFileImporterAdapter()
     validador = CatalogSchemaValidator(
