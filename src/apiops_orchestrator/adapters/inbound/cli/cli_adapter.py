@@ -19,12 +19,14 @@ from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from rich.tree import Tree
 from apiops_orchestrator.application.services.api_listing_service import (
     ApiListingService,
 )
 from apiops_orchestrator.application.services.completeness_service import (
     CompletenessService,
 )
+from apiops_orchestrator.application.services.schema_catalog import RepoFileType
 from apiops_orchestrator.adapters.inbound.cli.output_format import OutputFormat
 from apiops_orchestrator.adapters.inbound.cli.output_display import display_output
 from apiops_orchestrator.application.exceptions.login_exceptions import LoginError
@@ -1611,6 +1613,80 @@ def deploy(
         raise typer.Exit(code=e.exit_code)
     except Exception as e:
         _exit_on_unexpected(e, command="deploy")
+
+
+# ---------------------------------------------------------------------------
+# sen schema — hidden; the agent skills cite it (change add-sen-schema)
+# ---------------------------------------------------------------------------
+
+
+_TREE_GUIDE_WIDTH = 4
+
+
+def _render_schema_layout(entries) -> None:
+    """Draws the layout as a folder tree, with the type and the occurrence of each file."""
+    rows = [(e.file.split("/"), e) for e in entries]
+    name_end = max((_TREE_GUIDE_WIDTH * len(parts) + len(parts[-1]) for parts, _ in rows), default=0)
+    type_width = max((len(e.type) for e in entries), default=0)
+
+    tree = Tree("[bold]<repositório da API>[/bold]")
+    folders = {(): tree}
+    for parts, e in rows:
+        for depth in range(1, len(parts)):
+            key = tuple(parts[:depth])
+            if key not in folders:
+                folders[key] = folders[key[:-1]].add(_literal(f"{parts[depth - 1]}/"))
+        name = parts[-1].ljust(name_end - _TREE_GUIDE_WIDTH * len(parts))
+        folders[tuple(parts[:-1])].add(
+            f"{_literal(name)}  [bold]{_literal(e.type.ljust(type_width))}[/bold]  "
+            f"[grey53]{_literal(e.occurs)}[/grey53]"
+        )
+
+    get_console().print(tree)
+    rprint("\n[grey53]Schema de um tipo de arquivo: sen schema <tipo>[/grey53]")
+
+
+@sen_app.command("schema", hidden=True)
+def schema(
+    file_type: Optional[RepoFileType] = typer.Argument(
+        None,
+        metavar="[TIPO]",
+        help=(
+            "Tipo de arquivo do repositório da API: "
+            + ", ".join(t.value for t in RepoFileType)
+            + ". Sem ele, lista o layout."
+        ),
+        show_default=False,
+    ),
+    output: OutputFormat = typer.Option(
+        OutputFormat.TEXT, "--output", "-o", help="Formato da saída (text, json, yaml)."
+    ),
+):
+    """Mostra o layout do repositório da API ou o JSON Schema de um tipo de arquivo, sem rede."""
+    from apiops_orchestrator.application.exceptions.schema_exceptions import SchemaError
+    from apiops_orchestrator.application.services.schema_catalog import (
+        SchemaCatalog,
+        layout_document,
+    )
+    from apiops_orchestrator.config import settings as settings_module
+
+    catalog = SchemaCatalog(settings_module.SCHEMAS_ROOT)
+    try:
+        if file_type is None:
+            entries = catalog.layout()
+            display_output(
+                layout_document(entries),
+                output_format=output,
+                text_callback=lambda: _render_schema_layout(entries),
+            )
+            return
+        document = catalog.schema_for(file_type)
+    except SchemaError as e:
+        _print_error(e.message)
+        raise typer.Exit(code=e.exit_code)
+    # The schema is already JSON: the text output is the JSON itself.
+    as_yaml = output is OutputFormat.YAML
+    display_output(document, output_format=OutputFormat.YAML if as_yaml else OutputFormat.JSON)
 
 
 # ---------------------------------------------------------------------------
