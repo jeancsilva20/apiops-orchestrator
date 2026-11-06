@@ -1,0 +1,25 @@
+# escopo `all` — raiz da revision 8948 (revisionNumber 4)
+# API 400 · Orchestrator Auth API · /orq-auth/v1
+destination:
+  url: ''            # vazio = herda do escopo acima
+
+interceptors_request:
+  - type: Log
+    content:
+      acceptedTerms: true
+      ignoreBodyValidationMultiPartFormData: false
+  - type: OAuth
+    content:
+      grantTypes:
+        - CLIENT_CREDENTIALS
+      ignoreBodyValidationMultiPartFormData: false
+  - type: Log
+    content:
+      acceptedTerms: true
+      ignoreBodyValidationMultiPartFormData: false
+
+interceptors_response:
+  - type: Log
+    content:
+      acceptedTerms: true
+      ignoreBodyValidationMultiPartFormData: false

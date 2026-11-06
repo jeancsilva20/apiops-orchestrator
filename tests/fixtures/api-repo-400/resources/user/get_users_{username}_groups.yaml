@@ -1,0 +1,32 @@
+path: /users/{username}/groups
+destination:
+  url: "https://platform-production.sensedia.com/user-management/v1/users/{username}/groups"
+description: Devolve os grupos de acesso aos quais o usuário pertence.
+
+inherit: true
+# apenas herda o fluxo do nível acima: nenhum interceptor próprio
+
+summary: Lista os grupos de um usuário
+operationId: listarGruposDoUsuario
+tags:
+  - Usuarios
+parameters:
+  - name: limit
+    in: query
+    description: Quantidade máxima de grupos devolvidos
+    schema:
+      type: integer
+      minimum: 1
+      maximum: 100
+responses:
+  '200':
+    description: Grupos do usuário
+    content:
+      application/json:
+        schema:
+          type: array
+          description: Grupos aos quais o usuário pertence
+          items:
+            $ref: '#/components/schemas/Grupo'
+  '401':
+    $ref: '#/components/responses/NaoAutorizado'

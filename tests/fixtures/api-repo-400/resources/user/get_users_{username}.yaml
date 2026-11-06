@@ -1,0 +1,22 @@
+path: /users/{username}
+destination:
+  url: "https://platform-production.sensedia.com/user-management/v1/users/{username}"
+  timeout: "20"
+description: Devolve os dados cadastrais de um usuário da plataforma.
+
+inherit: true
+# apenas herda o fluxo do nível acima: nenhum interceptor próprio
+
+summary: Consulta um usuário
+operationId: consultarUsuario
+tags:
+  - Usuarios
+responses:
+  '200':
+    description: Usuário encontrado
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/Usuario'
+  '401':
+    $ref: '#/components/responses/NaoAutorizado'

@@ -14,14 +14,13 @@ import pytest
 from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_importer_adapter import (
     LocalFileImporterAdapter,
 )
-from apiops_orchestrator.application.services.repo_importer_service import (
-    RepoCanonicalReader,
-)
+from apiops_orchestrator.application.services.revision_writer import RevisionWriter
 from apiops_orchestrator.application.services.schema_validator import (
     CatalogSchemaValidator,
     SchemaValidator,
     select_schema,
 )
+from apiops_orchestrator.domain.services import openapi_contract_validator
 
 PASTA_SCHEMAS = (
     pathlib.Path(__file__).parents[4]
@@ -30,15 +29,8 @@ PASTA_SCHEMAS = (
     / "domain"
     / "schemas"
 )
-EXEMPLO_417 = (
-    pathlib.Path(__file__).parents[4]
-    / "docs"
-    / "feat-api-estructure"
-    / "decisoes-refino-409"
-    / "exemplos-gerados"
-    / "saida"
-    / "api-417-rev2"
-)
+# API 400 materialized from tests/fixtures/manager/api-400-rev4.json, plus the contract.
+EXAMPLE_REPO = pathlib.Path(__file__).parents[3] / "fixtures" / "api-repo-400"
 
 
 @pytest.fixture
@@ -80,27 +72,46 @@ def test_profundidade_extra_nao_casa(catalog):
     assert select_schema("resources/a/b/c.yaml", catalog) is None
 
 
-@pytest.mark.skipif(not EXEMPLO_417.is_dir(), reason="exemplo gerado ausente")
-def test_repositorio_real_passa_inteiro_pelo_catalogo(catalog):
-    importer = LocalFileImporterAdapter()
-    validador = CatalogSchemaValidator(
-        SchemaValidator(importer, PASTA_SCHEMAS), catalog
-    )
-    leitor = RepoCanonicalReader(importer)
+def _load_example():
+    return RevisionWriter(None, LocalFileImporterAdapter(), "validate").load(EXAMPLE_REPO)
 
-    carregado = leitor.load(str(EXEMPLO_417))
 
+def _example_files(loaded):
     files = [
-        ("api-basic-info.yaml", carregado.basic_info),
-        ("all.yaml", carregado.root),
+        ("api-basic-info.yaml", loaded.basic_info),
+        ("all.yaml", loaded.root),
+        ("components.yaml", loaded.components),
     ]
-    for resource in carregado.resources:
+    for resource in loaded.resources:
         files.append((resource.file_path, resource.data))
-        for operacao in resource.operations:
-            files.append((operacao.file_path, operacao.data))
+        files.extend((operation.file_path, operation.data) for operation in resource.operations)
+    return files
 
-    assert len(files) == 13
-    assert validador.validate(files) == []
+
+def _schema_validator(catalog):
+    return CatalogSchemaValidator(SchemaValidator(LocalFileImporterAdapter(), PASTA_SCHEMAS), catalog)
+
+
+def test_cli_accepts_the_example_repository():
+    """Reads the example the way `sen validate` does, with no contract error."""
+    loaded = _load_example()
+    result = openapi_contract_validator.validate(
+        basic_info=loaded.basic_info,
+        components=loaded.components,
+        resources=loaded.resources,
+        ignored=loaded.ignored,
+    )
+
+    assert loaded.ignored == []
+    assert result.errors == []
+    assert result.warnings == []
+
+
+def test_example_repository_passes_the_catalog_schemas(catalog):
+    files = _example_files(_load_example())
+
+    assert len(files) == 9
+    assert _schema_validator(catalog).validate(files) == []
 
 
 def test_problema_de_schema_e_reportado_com_o_caminho(catalog):
