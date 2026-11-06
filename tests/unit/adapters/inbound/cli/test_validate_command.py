@@ -525,6 +525,46 @@ def test_responder_n_encerra_sem_relatorio():
     assert "sobrescreve a regua" not in output
 
 
+class _AskingService(_ServicoFake):
+    """Asks for confirmation like the real service and writes only on yes."""
+
+    answer = None
+
+    def validate(self, repo_path, *, confirm, progress=None):
+        self.answer = confirm("Uma versão de rascunho será gravada na revisão 1 (id 9161).")
+        if not self.answer:
+            return _view(publication=PublicationResult(attempted=False))
+        return self._resultado
+
+
+def test_json_answered_no_through_stdin_writes_nothing():
+    """The pre-check of the agent skills: `echo n | sen validate -o json`."""
+    service = _AskingService(resultado=_view())
+    result = runner.invoke(
+        app, ["sen", "validate", "-o", "json"], obj=_ctx(service), input="n\n"
+    )
+
+    assert result.exit_code == 0
+    assert service.answer is False
+    assert "Validação cancelada. Nada foi gravado." in " ".join(result.output.split())
+    assert SCHEMA_SEN_VALIDATE_V1 not in result.output
+
+
+def test_json_answered_yes_through_stdin_ends_with_the_document():
+    """`echo y | sen validate -o json`: the document comes after the confirmation prompt."""
+    service = _AskingService(resultado=_view())
+    result = runner.invoke(
+        app, ["sen", "validate", "-o", "json"], obj=_ctx(service), input="y\n"
+    )
+
+    assert result.exit_code == 0
+    assert service.answer is True
+    after_prompt = result.output.split("Deseja prosseguir?", 1)[1]
+    document = json.loads(after_prompt[after_prompt.index("{"):])
+    assert document["schema"] == SCHEMA_SEN_VALIDATE_V1
+    assert document["publication"]["attempted"] is True
+
+
 def test_text_shows_the_documentation_warnings_only_in_their_block():
     short = "Estas descrições têm menos caracteres que o mínimo"
     view = _view(
