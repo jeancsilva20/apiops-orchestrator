@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "api-resource.schema.json",
-  "title": "Recurso (resources/<slug>/resource.yaml)",
-  "description": "Arquivo plano, sem involucro apiVersion/kind. Layout canonico da D-005 3/4; interceptors pela V-26 (inherit) e V-25 (tombstone).",
+  "title": "Recurso (resources/<recurso>/resource.yaml)",
+  "description": "Um por pasta de recurso: nome do recurso, parâmetros compartilhados pelas rotas e o destino e o fluxo de interceptors que as rotas herdam. Arquivo plano, sem o envelope apiVersion/kind. Extensões `x-*` são recusadas em qualquer nível de parameters: elas são do Manager, e o `sen validate` aborta. Valores de example, default, enum, value e const não são extensões.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -12,7 +12,7 @@
     "name": {
       "type": "string",
       "minLength": 1,
-      "description": "Nome do recurso no Manager. NAO precisa casar com o nome da pasta (D-005 3)."
+      "description": "Nome do recurso no Manager. Não precisa ser igual ao nome da pasta."
     },
     "description": {
       "type": [
@@ -25,22 +25,22 @@
     },
     "inherit": {
       "type": "boolean",
-      "description": "true = os itens declarados executam depois do fluxo herdado; sem itens, o escopo so herda. false = executa exatamente o fluxo declarado; sem itens, o escopo nao executa nenhum interceptor."
+      "description": "true: os interceptors declarados aqui executam depois do fluxo herdado; sem nenhum declarado, o recurso só herda. false: executa só o fluxo declarado; sem nenhum declarado, nenhum interceptor executa. Ausente vale true."
     },
     "parameters": {
       "type": "array",
-      "description": "OpenAPI parameters shared by every route of the resource, written in full. A path parameter must exist in every route template; the route overrides one with the same name and in.",
+      "description": "Parâmetros OpenAPI compartilhados por todas as rotas do recurso, escritos por inteiro. Um parâmetro de path precisa existir no path de todas as rotas; a rota sobrescreve um parâmetro com o mesmo name e in.",
       "items": {
         "type": "object"
       }
     },
     "interceptors_request": {
       "$ref": "#/$defs/fluxo",
-      "description": "Mapeia para o execution point FIRST. A ordem da lista e a fonte declarativa."
+      "description": "Interceptors do fluxo de requisição (execution point FIRST no Manager), na ordem de execução."
     },
     "interceptors_response": {
       "$ref": "#/$defs/fluxo",
-      "description": "Mapeia para o execution point SECOND. A ordem da lista e a fonte declarativa."
+      "description": "Interceptors do fluxo de resposta (execution point SECOND no Manager), na ordem de execução."
     }
   },
   "$defs": {
@@ -59,7 +59,7 @@
             "string",
             "null"
           ],
-          "description": "String vazia significa herdar do escopo acima (V-03). Aceita variavel de ambiente ($var)."
+          "description": "URL do backend. String vazia: herda do escopo acima. Aceita variável de ambiente do Manager ($var)."
         },
         "timeout": {
           "type": [
@@ -67,7 +67,7 @@
             "integer",
             "null"
           ],
-          "description": "Em segundos, teto de 60s do gateway. O wire devolve como STRING: preservar as aspas."
+          "description": "Timeout em segundos, até 60 (limite do gateway). Ausente: herda do escopo acima; sem valor em nenhum escopo, o gateway usa 60. Costuma ser escrito como texto, por exemplo \"30\"."
         }
       }
     },
@@ -90,10 +90,10 @@
         },
         "id": {
           "type": "integer",
-          "description": "Somente para type: Custom."
+          "description": "Só para type Custom: id do interceptor customizado no catálogo do tenant."
         },
         "content": {
-          "description": "Somente para tipos nativos.",
+          "description": "Só para tipos nativos: a configuração do interceptor, que o `sen validate` compara com a API-template.",
           "anyOf": [
             {
               "type": "object"

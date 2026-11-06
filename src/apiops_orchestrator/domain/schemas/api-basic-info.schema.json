@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "api-basic-info.schema.json",
-  "title": "ApiBasicInfo (api-basic-info.yaml)",
-  "description": "Unico arquivo do layout que mantem o involucro apiVersion/kind/spec. Contrato da D-002, revisado pela D-005 e pela D-11 (imutaveis) e D-12 (template).",
+  "title": "Informações básicas da API (api-basic-info.yaml)",
+  "description": "Identidade, governança e documentação da API. Único arquivo do repositório com o envelope apiVersion/kind/spec. Extensões `x-*` são recusadas em qualquer nível de spec.contact, spec.tags e spec.security, e como chaves do arquivo ou de spec: elas são do Manager, e o `sen validate` aborta.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -33,7 +33,7 @@
       "properties": {
         "id": {
           "type": "integer",
-          "description": "Id fisico da API no Manager. readOnly; e o endereco do GET, nao a identidade funcional (D-11)."
+          "description": "Id da API no Manager. Não altere."
         },
         "name": {
           "type": "string",
@@ -42,23 +42,23 @@
         "version": {
           "type": "string",
           "minLength": 1,
-          "description": "readOnly e IMUTAVEL. Junto com basePath define a identidade funcional: divergencia ABORTA a operacao na guarda 1 (D-11)."
+          "description": "Versão da API. Precisa ser igual à do Manager: o `sen validate` aborta quando diverge."
         },
         "basePath": {
           "type": "string",
           "minLength": 1,
-          "description": "readOnly e IMUTAVEL. Divergencia ABORTA a operacao na guarda 1 (D-11)."
+          "description": "Base path da API. Precisa ser igual ao do Manager: o `sen validate` aborta quando diverge."
         },
         "description": {
           "type": "string",
-          "description": "Obrigatoria no arquivo versionado: pesa no completeness."
+          "description": "Descrição da API. Conta para a nota de completeness."
         },
         "template": {
           "type": [
             "string",
             "integer"
           ],
-          "description": "Id da API-regua de interceptors (Golden Path), usado quando EXECUTION_MODE=local; na esteira o id vem de variavel de ambiente (V-11 binding). Declarado SEMPRE. Vazio = sem regua, e a D-12 determina ERRO: sem template nao ha validacao. Nao vem do wire - a plataforma nao tem esta chave."
+          "description": "Id da API-template, cujo fluxo de interceptors é o padrão com que o `sen validate` compara esta API. Sempre declarado; se estiver vazio, o `sen validate` para. Se não souber o id, peça ao administrador do Manager."
         },
         "apiResponsible": {
           "type": [
@@ -66,7 +66,7 @@
             "null"
           ],
           "additionalProperties": false,
-          "description": "Read-only no MVP; declarado sempre, mesmo vazio.",
+          "description": "Usuário e grupo responsáveis, como estão no Manager. Sempre declarado, mesmo vazio; alterações aqui não são publicadas.",
           "properties": {
             "username": {
               "type": [
@@ -84,11 +84,11 @@
         },
         "contact": {
           "type": "object",
-          "description": "OpenAPI info.contact of the API."
+          "description": "Contato da API (info.contact do OpenAPI)."
         },
         "tags": {
           "type": "array",
-          "description": "OpenAPI root tags, documentation groups of the routes. Not the apiTags of the governance.",
+          "description": "Tags raiz do OpenAPI: grupos de documentação das rotas. Não são as apiTags da governança.",
           "items": {
             "type": "object",
             "required": [
@@ -98,14 +98,14 @@
         },
         "security": {
           "type": "array",
-          "description": "OpenAPI root security requirements; each name must exist in components.yaml securitySchemes.",
+          "description": "Requisitos de segurança raiz do OpenAPI; cada nome precisa existir em securitySchemes do components.yaml.",
           "items": {
             "type": "object"
           }
         },
         "apiTags": {
           "type": "array",
-          "description": "Lista declarativa COMPLETA de pares (attributeName, tags[]). Regime de omissao: AUSENTE PRESERVA, lista VAZIA REMOVE. E sobre estes valores que o Adaptive Governance calcula o faltante no PUT da revision (W-7, D-020).",
+          "description": "Atributos de governança da API, cada um com suas tags, em lista completa. Ausente: o Manager mantém os atuais. Lista vazia: remove todos. Cada item precisa de ao menos uma tag, e o atributo e as tags precisam existir no catálogo do Adaptive Governance (conferido pelo `sen validate`, não por este schema).",
           "items": {
             "type": "object",
             "additionalProperties": false,

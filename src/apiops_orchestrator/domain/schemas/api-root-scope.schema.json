@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "api-root-scope.schema.json",
-  "title": "Escopo raiz da revision (all.yaml)",
-  "description": "Arquivo `all.yaml` na raiz do repositorio. Fechado pela V-18 (2026-10-15). Arquivo plano, sem involucro apiVersion/kind.",
+  "title": "Escopo raiz (all.yaml)",
+  "description": "Destino, timeout e fluxo de interceptors da API inteira: todo recurso e toda rota herdam daqui, a menos que declarem os próprios. Arquivo plano, sem o envelope apiVersion/kind.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -11,15 +11,15 @@
     },
     "interceptors_request": {
       "$ref": "#/$defs/fluxo",
-      "description": "Mapeia para o execution point FIRST. A ordem da lista e a fonte declarativa."
+      "description": "Interceptors do fluxo de requisição (execution point FIRST no Manager), na ordem de execução."
     },
     "interceptors_response": {
       "$ref": "#/$defs/fluxo",
-      "description": "Mapeia para o execution point SECOND. A ordem da lista e a fonte declarativa."
+      "description": "Interceptors do fluxo de resposta (execution point SECOND no Manager), na ordem de execução."
     },
     "inherit": {
       "type": "boolean",
-      "description": "INERTE NA RAIZ (V-18 2.2): a raiz da revision nao herda de nenhum escopo acima. Aceito no schema para que o comando possa emitir INFO em vez de falhar na gramatica."
+      "description": "Sem efeito no all.yaml: a raiz não herda de nenhum escopo."
     }
   },
   "$defs": {
@@ -38,7 +38,7 @@
             "string",
             "null"
           ],
-          "description": "String vazia significa herdar do escopo acima (V-03). Aceita variavel de ambiente ($var)."
+          "description": "URL do backend da API. String vazia: não definida na raiz, então os recursos e as rotas declaram a própria. Aceita variável de ambiente do Manager ($var)."
         },
         "timeout": {
           "type": [
@@ -46,7 +46,7 @@
             "integer",
             "null"
           ],
-          "description": "Em segundos, teto de 60s do gateway. O wire devolve como STRING: preservar as aspas (reparo de serializacao)."
+          "description": "Timeout em segundos, até 60 (limite do gateway). Ausente: o gateway usa 60. Costuma ser escrito como texto, por exemplo \"30\"."
         }
       }
     },
@@ -69,10 +69,10 @@
         },
         "id": {
           "type": "integer",
-          "description": "Somente para type: Custom. Id numerico do catalogo do tenant, estavel dentro de um ambiente (D-13)."
+          "description": "Só para type Custom: id do interceptor customizado no catálogo do tenant."
         },
         "content": {
-          "description": "Somente para tipos nativos: e a configuracao do interceptor, e e por ele que a conformidade compara (V-11 4).",
+          "description": "Só para tipos nativos: a configuração do interceptor, que o `sen validate` compara com a API-template.",
           "anyOf": [
             {
               "type": "object"

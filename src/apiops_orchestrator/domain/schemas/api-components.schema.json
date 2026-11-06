@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "api-components.schema.json",
-  "title": "OpenAPI components (components.yaml)",
-  "description": "Optional file at the repository root with the reusable OpenAPI 3 components. Every $ref of the contract points here.",
+  "title": "Componentes OpenAPI (components.yaml)",
+  "description": "Arquivo opcional na raiz do repositório com os componentes reutilizáveis do OpenAPI 3. Todo $ref do contrato aponta para cá. Extensões `x-*` são recusadas em qualquer nível: elas são do Manager, e o `sen validate` aborta. Nomes dentro de mapas, como o nome de um schema ou de uma propriedade, e valores de example, default, enum, value e const não são extensões.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
