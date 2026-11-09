@@ -5,7 +5,7 @@ Roteiros para um agente de IA (Claude Code) usar a CLI `sen` em nome de quem des
 | Skill | Para quê | Altera algo? |
 |---|---|---|
 | [`sen-explore`](sen-explore/SKILL.md) | Responder perguntas sobre as APIs do Manager e sobre o repositório local da API | Não |
-| [`sen-api-editor`](sen-api-editor/SKILL.md) | Alterar os arquivos do repositório da API (rotas, responses, timeout, backend, interceptors, apiTags, componentes) | Sim, sempre depois do seu ok |
+| [`sen-api-developer`](sen-api-developer/SKILL.md) | Alterar os arquivos do repositório da API (rotas, responses, timeout, backend, interceptors, apiTags, componentes) | Sim, sempre depois do seu ok |
 
 As skills não entram no build do `sen`. Elas ficam neste repositório e são instaladas por cópia.
 
@@ -30,14 +30,14 @@ Linux ou macOS, a partir da raiz deste repositório:
 
 ```bash
 mkdir -p ~/.claude/skills
-cp -r skills/sen-explore skills/sen-api-editor ~/.claude/skills/
+cp -r skills/sen-explore skills/sen-api-developer ~/.claude/skills/
 ```
 
 Windows (PowerShell), a partir da raiz deste repositório:
 
 ```powershell
 New-Item -ItemType Directory -Force "$HOME\.claude\skills" | Out-Null
-Copy-Item -Recurse skills\sen-explore, skills\sen-api-editor "$HOME\.claude\skills\"
+Copy-Item -Recurse skills\sen-explore, skills\sen-api-developer "$HOME\.claude\skills\"
 ```
 
 ## Proteger a credencial

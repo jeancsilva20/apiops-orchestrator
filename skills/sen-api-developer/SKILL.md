@@ -1,5 +1,5 @@
 ---
-name: sen-api-editor
+name: sen-api-developer
 description: >-
   Altera os arquivos YAML de um repositório de API do APIOps (api-basic-info.yaml, all.yaml,
   components.yaml e os arquivos em resources/) no formato que a CLI `sen` aceita, com o ok do usuário

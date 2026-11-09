@@ -10,7 +10,7 @@ description: >-
   `sen`. Exemplos: "quais as revisões da API 425?", "qual a nota da última revisão da API de
   pagamentos?", "em que ambiente está a revisão 3?", "quais rotas essa API tem e pra qual backend
   cada uma vai?", "quais interceptors a rota de token executa?". Não use para criar, alterar ou
-  remover algo no repositório, nem para validar ou gravar na Draft (use a sen-api-editor), nem para
+  remover algo no repositório, nem para validar ou gravar na Draft (use a sen-api-developer), nem para
   publicar, fazer deploy ou login.
 ---
 
@@ -86,8 +86,8 @@ Essas perguntas não usam rede.
 
 ## Perguntas que pedem gravação ou mudança
 
-- **Veredito da governança, conformidade com a régua ou nota depois de uma mudança:** o `sen validate` dá esses resultados gravando o repositório na Draft, e esta skill não grava. Explique isso e indique a sen-api-editor, que grava só com a confirmação do usuário, ou o próprio `sen validate`. Você pode mostrar o que a régua exige (`sen diag template`), mas não conclua se o repositório está conforme: quem decide é o `validate`.
-- **Pedido de mudança no repositório:** é trabalho da sen-api-editor. Não edite nada.
+- **Veredito da governança, conformidade com a régua ou nota depois de uma mudança:** o `sen validate` dá esses resultados gravando o repositório na Draft, e esta skill não grava. Explique isso e indique a sen-api-developer, que grava só com a confirmação do usuário, ou o próprio `sen validate`. Você pode mostrar o que a régua exige (`sen diag template`), mas não conclua se o repositório está conforme: quem decide é o `validate`.
+- **Pedido de mudança no repositório:** é trabalho da sen-api-developer. Não edite nada.
 
 ## Como responder
 
@@ -110,4 +110,4 @@ Essas perguntas não usam rede.
 | "o que a régua exige?" | `sen diag template -o json` |
 | "a Draft tem as mesmas rotas do repositório?" | `sen diag draft` contra `sen diag structure` |
 | "quais APIs estão abaixo de 70%?" | Avise quantas chamadas serão e espere o ok |
-| "essa API passaria na governança?" | Explique que o veredito exige gravar na Draft e indique a sen-api-editor |
+| "essa API passaria na governança?" | Explique que o veredito exige gravar na Draft e indique a sen-api-developer |
