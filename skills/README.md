@@ -4,8 +4,8 @@ Roteiros para um agente de IA (Claude Code) usar a CLI `sen` em nome de quem des
 
 | Skill | Para quê | Altera algo? |
 |---|---|---|
-| [`sen-explore`](sen-explore/SKILL.md) | Responder perguntas sobre as APIs do Manager e sobre o repositório local da API | Não |
-| [`sen-api-developer`](sen-api-developer/SKILL.md) | Alterar os arquivos do repositório da API (rotas, responses, timeout, backend, interceptors, apiTags, componentes) | Sim, sempre depois do seu ok |
+| [`sen-explore`](sen-explore/SKILL.md) | Responder perguntas sobre o que está no Manager: APIs, revisões, ambientes, régua e Draft. Completude e governança ficam de fora, porque dependem do Adaptive Governance | Não |
+| [`sen-api-developer`](sen-api-developer/SKILL.md) | Responder perguntas sobre os arquivos do repositório da API e alterá-los (rotas, responses, timeout, backend, interceptors, apiTags, componentes) | Sim. Mudança sem risco é aplicada direto; com risco, só depois do seu ok |
 
 As skills não entram no build do `sen`. Elas ficam neste repositório e são instaladas por cópia.
 
@@ -66,7 +66,6 @@ Por padrão, o Claude Code pede permissão a cada comando do `sen`. Os comandos 
 ```json
 "allow": [
   "Bash(sen list *)",
-  "Bash(sen completeness *)",
   "Bash(sen schema *)",
   "Bash(sen diag *)"
 ]
