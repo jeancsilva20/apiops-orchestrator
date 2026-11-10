@@ -358,9 +358,7 @@ def login(
         display_output(_login_document(session), output_format=output)
         return
 
-    expires_at = (
-        session.expiresAt.strftime("%d/%m/%Y %H:%M UTC") if session.expiresAt else "-"
-    )
+    expires_at = _expiry_label(session)
     if session.is_super_admin:
         # Privileged flow: show profile/scope only; no identity, no tokens.
         field_rows = [
@@ -375,6 +373,83 @@ def login(
         ]
     rprint(Align.center(_session_panel(field_rows, width=_framed_logo_width())))
     rprint()
+
+
+def _expiry_label(session: Any) -> str:
+    """Session expiry shown in the panels, in UTC."""
+    moment = session.expiresAt
+    if moment is None:
+        return "-"
+    if moment.tzinfo is not None:
+        moment = moment.astimezone(timezone.utc)
+    return moment.strftime("%d/%m/%Y %H:%M UTC")
+
+
+SCHEMA_SEN_WHOAMI_V1 = "apiops.sen-whoami/v1"
+
+NO_SESSION_MESSAGE = "Nenhuma sessão válida: faça `sen login`."
+
+
+def _whoami_document(session: Any) -> Dict[str, Any]:
+    """Builds the `apiops.sen-whoami/v1` document, without tokens."""
+    document: Dict[str, Any] = {
+        "schema": SCHEMA_SEN_WHOAMI_V1,
+        "authenticated": session is not None,
+    }
+    if session is None:
+        return document
+    document["profile"] = session.profile
+    if not session.is_super_admin:
+        document["user"] = {"name": session.userName, "email": session.userEmail}
+        document["groups"] = list(session.userGroups or [])
+    document["scope"] = session.scope
+    document["expiresAt"] = _iso_utc(session.expiresAt)
+    return document
+
+
+def _whoami_rows(session: Any) -> list:
+    """Label/value rows of the `sen whoami` panel."""
+    rows = []
+    if not session.is_super_admin:
+        rows.append(("usuário:", f"{session.userName} ({session.userEmail})"))
+    rows.append(("perfil:", session.profile))
+    if not session.is_super_admin:
+        rows.append(("grupos:", ", ".join(session.userGroups or [])))
+    rows.append(("escopo:", session.scope))
+    rows.append(("sessão:", f"válida até {_expiry_label(session)}"))
+    return rows
+
+
+@sen_app.command("whoami")
+def whoami(
+    ctx: typer.Context,
+    output: OutputFormat = typer.Option(
+        OutputFormat.TEXT, "--output", "-o", help="Formato da saída (text, json, yaml)."
+    ),
+):
+    """
+    Mostra os dados da sessão aberta pelo `sen login`, sem tokens.
+    Lê só a sessão local: não acessa a rede nem exige o .sen.
+    """
+    try:
+        store_factory = (ctx.obj or {}).get("session_store_factory")
+        if not callable(store_factory):
+            _print_error("Leitura da sessão indisponível no contexto.")
+            raise typer.Exit(code=1)
+        session = store_factory().load()
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        _exit_on_unexpected(exc, command="whoami")
+
+    if output is not OutputFormat.TEXT:
+        display_output(_whoami_document(session), output_format=output)
+    elif session is None:
+        rprint(NO_SESSION_MESSAGE)
+    else:
+        rprint(_session_panel(_whoami_rows(session), status=None, show_hint=False))
+    if session is None:
+        raise typer.Exit(code=1)
 
 
 _LOADER_FADE_STYLES = ("white", "grey78", "grey53", "grey35")
@@ -423,13 +498,18 @@ def _framed_logo_width() -> int:
     return len(_framed_logo().splitlines()[0])
 
 
-def _session_panel(field_rows: list, width: Optional[int] = None) -> Panel:
+def _session_panel(
+    field_rows: list,
+    width: Optional[int] = None,
+    status: Optional[str] = "Login realizado com sucesso.",
+    show_hint: bool = True,
+) -> Panel:
     """Painel de sessão estilo '>_ produto': header, status e campos alinhados.
 
     Toda a tipografia é branca; os rótulos ('usuário:', 'sessão:', etc.)
     ficam em negrito. Em consoles sem suporte aos cantos arredondados,
     cai para box ASCII ('+', '-', '|'). Quando `width` é fornecido, o
-    painel usa exatamente essa largura em vez de expandir no terminal.
+    painel usa exatamente essa largura; sem ele, ajusta-se ao conteúdo.
     """
     header = Text.assemble(
         (">_  ", "bold white"),
@@ -443,21 +523,19 @@ def _session_panel(field_rows: list, width: Optional[int] = None) -> Panel:
             f"[bold white]{label}[/bold white]",
             f"[white]{_literal(value)}[/white]",
         )
-    body = Group(
-        header,
-        Text(""),
-        Text("Login realizado com sucesso.", style="white"),
-        Text(""),
-        grid,
-        Text(""),
-        Text.from_markup(WELCOME_HINT, style="white"),
-    )
+    parts: list = [header, Text("")]
+    if status:
+        parts += [Text(status, style="white"), Text("")]
+    parts.append(grid)
+    if show_hint:
+        parts += [Text(""), Text.from_markup(WELCOME_HINT, style="white")]
     return Panel(
-        body,
+        Group(*parts),
         box=box.ROUNDED if _stdout_supports_rounded_box() else box.ASCII,
         border_style="grey53",
         padding=(0, 1),
         width=width,
+        expand=width is not None,
     )
 
 

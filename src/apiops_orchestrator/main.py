@@ -48,7 +48,7 @@ from apiops_orchestrator.application.services.completeness_service import (
     CompletenessService,
 )
 from apiops_orchestrator.application.services.login_service import LoginService
-from apiops_orchestrator.config.settings import Settings
+from apiops_orchestrator.config.settings import PACKAGE_ROOT, Settings
 from apiops_orchestrator.domain.services.session_access import Access
 from apiops_orchestrator.infrastructure.secure_storage.session_store import SessionStore
 
@@ -110,9 +110,19 @@ def _load_settings() -> Settings:
 
 
 def _build_session_store(settings: Settings) -> SessionStore:
-    """Única fábrica de `SessionStore` (evita stores divergentes: um dia cada
-    factory apontar um diretório diferente é bug silencioso de sessão)."""
+    """Fábrica de `SessionStore` dos comandos que carregam `Settings` (evita stores
+    divergentes). O `whoami` usa `build_session_store_factory`, que resolve a mesma pasta."""
     return SessionStore(directory=settings.PACKAGE_ROOT)
+
+
+def build_session_store_factory():
+    """Store of `sen whoami`: same folder as `Settings.PACKAGE_ROOT`, without loading the configuration."""
+
+    def factory() -> SessionStore:
+        directory = os.environ.get("PACKAGE_ROOT") or PACKAGE_ROOT
+        return SessionStore(directory=Path(directory))
+
+    return factory
 
 
 def build_login_service_factory():
@@ -311,6 +321,7 @@ def main():
         prog_name = "" if is_console_script else None
         ctx_obj = {
             "login_service_factory": build_login_service_factory(),
+            "session_store_factory": build_session_store_factory(),
             "api_listing_service_factory": build_listing_service_factory(),
             "completeness_service_factory": build_completeness_service_factory(),
             "validate_service_factory": build_validate_service_factory(),
