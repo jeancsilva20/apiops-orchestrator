@@ -65,6 +65,7 @@ from apiops_orchestrator.domain.models.validate_view import (
     ValidateRevision,
     ValidateView,
 )
+from apiops_orchestrator.domain.ports.governance_api_port import GovernanceApiPort
 from apiops_orchestrator.domain.ports.local_file_importer_port import (
     LocalFileImporterPort,
 )
@@ -143,6 +144,7 @@ class ValidateService:
     def __init__(
         self,
         manager_api: ManagerApiPort,
+        governance_api: GovernanceApiPort,
         importer: LocalFileImporterPort,
         settings: Settings,
         session: Optional[LoginSession] = None,
@@ -152,7 +154,7 @@ class ValidateService:
         self._settings = settings
         self._access = ApiAccessGuard(session)
         self._ruler = RulerService(manager_api, settings)
-        self._governance = GovernancePrecheckService(manager_api)
+        self._governance = GovernancePrecheckService(governance_api)
         self._writer = RevisionWriter(manager_api, importer, command="validate")
         self._contract = ContractWriter(manager_api, command="validate")
 
@@ -204,12 +206,14 @@ class ValidateService:
         ruler = self._e2_ruler(loaded)
 
         step("Comparando com o padrão")
+        # Without Adaptive Governance the repository `apiTags` are ignored.
         assembled = revision_payload.assemble(
             draft=draft,
             basic_info=loaded.basic_info,
             root=loaded.root,
             resources=loaded.resources,
             resolver_custom=self._writer.resolver_custom,
+            include_api_tags=self._governance.governance_available(),
         )
         findings = self._conformance(assembled.body, ruler)
         # Em local, o que vai sair do Manager é mostrado na confirmação, antes
@@ -270,10 +274,10 @@ class ValidateService:
             )
             if documentation.reason and documentation.reason not in reported:
                 findings.extend(_repository_warnings([documentation.reason], DOCUMENTATION_SCOPE))
+        completeness = CompletenessSummary()
+        if written is not None and precheck.available:
             step("Calculando o quality score")
             completeness = self._e4_completeness(revision["id"])
-        else:
-            completeness = CompletenessSummary()
 
         return ValidateView(
             schema=SCHEMA_SEN_VALIDATE_V1,

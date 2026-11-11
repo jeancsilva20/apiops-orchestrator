@@ -29,6 +29,7 @@ from apiops_orchestrator.application.exceptions.manager_failure_messages import 
     INTERNAL_ERROR_MESSAGE,
 )
 from apiops_orchestrator.application.services.validate_service import ValidateService
+from apiops_orchestrator.domain.models.governance_model import GovernanceAvailability
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiGovernanceBlockedError,
@@ -107,19 +108,32 @@ def _swagger_of(revision):
 
 
 class ManagerFake:
-    """Port fake que grava a sequência exata de chamadas."""
+    """Fake of the Manager and Governance ports that records the exact call sequence."""
 
-    def __init__(self, api=None, draft=None, workflow=None, customs=None, published=None):
+    def __init__(
+        self,
+        api=None,
+        draft=None,
+        workflow=None,
+        customs=None,
+        published=None,
+        availability=GovernanceAvailability.ENABLED,
+    ):
         self.api = api or API
         self.draft = draft or DRAFT
         self.workflow = workflow or WORKFLOW
         self.customs = customs if customs is not None else {}
         self._publicado = published
+        self._availability = availability
         self.chamadas = []
         self.payload_enviado = None
         self.written_swagger = None
 
     # --- leitura
+    def availability(self):
+        self.chamadas.append("availability")
+        return self._availability
+
     def get_api_by_id(self, api_id=None):
         self.chamadas.append("get_api_by_id")
         return REGUA if api_id == 414 else self.api
@@ -198,6 +212,7 @@ def _repo(tmp_path, basic_info=BASIC_INFO, extras=None):
 def _servico(manager, mode="local", revision=1):
     return ValidateService(
         manager_api=manager,
+        governance_api=manager,
         importer=LocalFileImporterAdapter(),
         settings=_settings(mode, revision),
     )
@@ -328,6 +343,7 @@ def _sessao(perfil="developer"):
 def _servico_da_sessao(manager, sessao):
     return ValidateService(
         manager_api=manager,
+        governance_api=manager,
         importer=LocalFileImporterAdapter(),
         settings=_settings(),
         session=sessao,
@@ -1022,7 +1038,10 @@ def test_esteira_sem_template_api_id_falha_antes_do_manager(tmp_path):
         TEMPLATE_API_ID=None, TARGET_REVISION_NUMBER=2,
     )
     servico = ValidateService(
-        manager_api=manager, importer=LocalFileImporterAdapter(), settings=settings
+        manager_api=manager,
+        governance_api=manager,
+        importer=LocalFileImporterAdapter(),
+        settings=settings,
     )
 
     with pytest.raises(TemplateNotConfiguredError) as capturado:
@@ -1236,3 +1255,45 @@ def test_unread_file_is_a_repository_finding_in_the_pipeline(tmp_path):
     [warning] = [a for a in view.findings if "tarefas.yaml" in a.message]
     assert warning.scope == "repositório"
     assert warning.severity == "WARNING"
+
+
+# --- cliente sem Adaptive Governance -----------------------------------------
+
+
+def test_sem_ag_apitags_sao_ignoradas_e_nada_do_ag_e_lido(tmp_path):
+    manager = _ManagerComCatalogoDeTags(availability=GovernanceAvailability.DISABLED)
+    repo = _repo(tmp_path, basic_info=BASIC_INFO_COM_PROBLEMAS)
+
+    view = _servico(manager).validate(repo, confirm=SIM)
+
+    assert view.publication.attempted and view.publication.verified
+    assert manager.payload_enviado["api"]["apiTags"] == DRAFT["api"]["apiTags"]
+    for chamada in ("list_attributes", "get_workflow", "get_revision_completeness"):
+        assert chamada not in manager.chamadas
+    assert manager.chamadas.index("availability") < manager.chamadas.index("update_revision")
+
+
+def test_sem_ag_governanca_e_completeness_saem_vazias(tmp_path):
+    manager = ManagerFake(availability=GovernanceAvailability.DISABLED)
+
+    doc = _servico(manager).validate(_repo(tmp_path), confirm=SIM).to_document()
+
+    assert doc["governance"] == {
+        "workflowId": None,
+        "stageId": None,
+        "required": [],
+        "missing": [],
+        "blocked": False,
+    }
+    assert doc["completeness"] == {"score": None, "gatePercent": None, "suggestions": []}
+    assert not [f for f in doc["findings"] if f["message"].startswith("Governança")]
+
+
+def test_deteccao_inconclusiva_segue_como_hoje(tmp_path):
+    manager = _ManagerComCatalogoDeTags(availability=GovernanceAvailability.UNKNOWN)
+    repo = _repo(tmp_path, basic_info=BASIC_INFO_COM_TAGS.format(tag="TagInexistente"))
+
+    with pytest.raises(InvalidApiTagsError):
+        _servico(manager).validate(repo, confirm=SIM)
+
+    assert "update_revision" not in manager.chamadas

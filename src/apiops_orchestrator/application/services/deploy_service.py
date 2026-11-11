@@ -52,6 +52,7 @@ from apiops_orchestrator.domain.models.validate_view import (
     ValidateApi,
     ValidateRevision,
 )
+from apiops_orchestrator.domain.ports.governance_api_port import GovernanceApiPort
 from apiops_orchestrator.domain.ports.local_file_importer_port import (
     LocalFileImporterPort,
 )
@@ -107,13 +108,14 @@ class DeployService:
     def __init__(
         self,
         manager_api: ManagerApiPort,
+        governance_api: GovernanceApiPort,
         importer: LocalFileImporterPort,
         settings: Settings,
     ):
         self._manager_api = manager_api
         self._importer = importer
         self._settings = settings
-        self._governance = GovernancePrecheckService(manager_api)
+        self._governance = GovernancePrecheckService(governance_api)
 
     def deploy(
         self,

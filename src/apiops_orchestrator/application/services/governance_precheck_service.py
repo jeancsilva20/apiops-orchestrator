@@ -27,7 +27,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
-from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
+from apiops_orchestrator.domain.ports.governance_api_port import GovernanceApiPort
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +65,8 @@ class PrecheckResult:
     api_tag_problems: List[ApiTagProblem] = field(default_factory=list)
     # Stage da revisão como veio do workflow; `None` quando não foi encontrado.
     stage: Optional[Dict[str, Any]] = None
+    # False when the Manager has no Adaptive Governance: nothing was evaluated.
+    available: bool = True
 
     @property
     def blocked(self) -> bool:
@@ -79,9 +81,13 @@ class _Attribute:
 
 
 class GovernancePrecheckService:
-    def __init__(self, manager_api: ManagerApiPort):
-        self._manager_api = manager_api
+    def __init__(self, governance_api: GovernanceApiPort):
+        self._governance_api = governance_api
         self._attributes: Optional[List[_Attribute]] = None
+
+    def governance_available(self) -> bool:
+        """Whether the Manager may have the Adaptive Governance; only a confirmed absence is False."""
+        return not self._governance_api.availability().absent
 
     def evaluate(
         self, revision: Dict[str, Any], api_tags: Optional[Sequence[Dict[str, Any]]]
@@ -89,8 +95,15 @@ class GovernancePrecheckService:
         """Calcula o que falta para o stage da revisão alvo aceitar a publicação.
 
         As `apiTags` são conferidas contra o catálogo sempre, com ou sem
-        requisito no stage.
+        requisito no stage. Sem Adaptive Governance, nada é avaliado.
         """
+        if not self.governance_available():
+            logger.info(
+                "governanca.precheck.skipped reason=governance_disabled api_tags_ignored=%d",
+                len(api_tags or []),
+            )
+            return PrecheckResult(None, None, available=False)
+
         workflow_id = revision.get("workflowId")
         stage_id = revision.get("workflowStageId")
         warnings: List[str] = []
@@ -105,7 +118,7 @@ class GovernancePrecheckService:
                 workflow_id, stage_id, warnings=warnings, api_tag_problems=invalid
             )
 
-        workflow = self._manager_api.get_workflow(workflow_id) or {}
+        workflow = self._governance_api.get_workflow(workflow_id) or {}
         stage = self._find_stage(workflow, stage_id)
         if stage is None:
             # A plataforma já exibiu esse estado uma vez (V-23 §3): a revisão
@@ -178,7 +191,7 @@ class GovernancePrecheckService:
                     name=a.get("name"),
                     tags=[str(t) for t in (a.get("tags") or [])],
                 )
-                for a in (self._manager_api.list_attributes() or [])
+                for a in (self._governance_api.list_attributes() or [])
                 if a.get("id") is not None
             ]
         return self._attributes

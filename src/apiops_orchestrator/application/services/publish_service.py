@@ -52,6 +52,7 @@ from apiops_orchestrator.domain.models.validate_view import (
 from apiops_orchestrator.domain.ports.local_file_importer_port import (
     LocalFileImporterPort,
 )
+from apiops_orchestrator.domain.ports.governance_api_port import GovernanceApiPort
 from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
 from apiops_orchestrator.domain.services import deployments, revision_payload
 
@@ -97,6 +98,7 @@ class PublishService:
     def __init__(
         self,
         manager_api: ManagerApiPort,
+        governance_api: GovernanceApiPort,
         importer: LocalFileImporterPort,
         settings: Settings,
     ):
@@ -104,7 +106,7 @@ class PublishService:
         self._settings = settings
         self._writer = RevisionWriter(manager_api, importer, command="publish")
         self._contract = ContractWriter(manager_api, command="publish")
-        self._governance = GovernancePrecheckService(manager_api)
+        self._governance = GovernancePrecheckService(governance_api)
         # Só a verificação de `Custom`: a régua em si não é lida pelo publish.
         self._customs = RulerService(manager_api, settings)
 
@@ -140,12 +142,14 @@ class PublishService:
         step("Verificando os interceptors Custom")
         self._customs.check_customs(self._writer.referenced_customs(loaded))
 
+        # Without Adaptive Governance the repository `apiTags` are ignored.
         assembled = revision_payload.assemble(
             draft=target,
             basic_info=loaded.basic_info,
             root=loaded.root,
             resources=loaded.resources,
             resolver_custom=self._writer.resolver_custom,
+            include_api_tags=self._governance.governance_available(),
         )
 
         step("Verificando a governança")

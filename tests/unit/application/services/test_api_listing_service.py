@@ -21,7 +21,11 @@ from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
 from apiops_orchestrator.domain.models.catalog_revision_model import (
     CatalogRevisionCompleteness,
 )
-from apiops_orchestrator.domain.models.workflow_stage_model import WorkflowStage
+from apiops_orchestrator.domain.models.governance_model import (
+    GovernanceAvailability,
+    WorkflowStage,
+)
+from apiops_orchestrator.domain.ports.governance_api_port import GovernanceApiPort
 from apiops_orchestrator.application.exceptions.listing_exceptions import (
     ApiCollectionError,
     ApiNotFound,
@@ -38,6 +42,12 @@ def _wire(raw) -> ApiCatalogEntry:
 
 def _page(rows, total):
     return ApiCatalogPage(rows=[_wire(r) for r in rows], total=total)
+
+
+def _governance(availability=GovernanceAvailability.ENABLED):
+    port = MagicMock(spec=GovernanceApiPort)
+    port.availability.return_value = availability
+    return port
 
 
 def _make_session(profile: str = "developer", groups=None) -> LoginSession:
@@ -65,7 +75,7 @@ class TestApiListingService:
 
     @pytest.fixture
     def service(self, mock_manager_api):
-        return ApiListingService(manager_api=mock_manager_api)
+        return ApiListingService(governance_api=_governance(), manager_api=mock_manager_api)
 
     def test_list_apis_without_id(self, mock_manager_api):
         # Arrange: listagem nascida do finder (port devolve TIPADO)
@@ -82,7 +92,7 @@ class TestApiListingService:
             ],
             total=2,
         )
-        service = ApiListingService(manager_api=mock_manager_api)
+        service = ApiListingService(governance_api=_governance(), manager_api=mock_manager_api)
 
         # Act
         result = service.list_apis()
@@ -112,7 +122,7 @@ class TestApiListingService:
                 {"id": 88, "revisionNumber": 9},
             ],
         })
-        service = ApiListingService(manager_api=mock_manager_api)
+        service = ApiListingService(governance_api=_governance(), manager_api=mock_manager_api)
 
         # Act
         result = service.list_apis(api_id=123)
@@ -174,7 +184,7 @@ class TestVisibilityOnListing:
     def test_listing_sources_from_finder_without_revisions_basic(
         self, mock_manager_api
     ):
-        service = ApiListingService(manager_api=mock_manager_api)
+        service = ApiListingService(governance_api=_governance(), manager_api=mock_manager_api)
 
         result = service.list_apis()
 
@@ -192,7 +202,7 @@ class TestVisibilityOnListing:
     ):
         """Sem sessao (visibilidade total) o offset vai direto ao servidor."""
         mock_manager_api.list_catalog_apis.return_value = _page([], 108)
-        service = ApiListingService(manager_api=mock_manager_api)
+        service = ApiListingService(governance_api=_governance(), manager_api=mock_manager_api)
 
         result = service.list_apis(offset=90, limit=5)
 
@@ -211,7 +221,7 @@ class TestVisibilityOnListing:
             "lastRevision": 900,
             "revisions": [{"id": 900, "revisionNumber": 1}],
         })
-        service = ApiListingService(manager_api=mock_manager_api)
+        service = ApiListingService(governance_api=_governance(), manager_api=mock_manager_api)
 
         result = service.list_apis(api_id=9)
 
@@ -221,7 +231,7 @@ class TestVisibilityOnListing:
     def test_without_session_passes_through_unfiltered_legacy(
         self, mock_manager_api
     ):
-        service = ApiListingService(manager_api=mock_manager_api, session=None)
+        service = ApiListingService(governance_api=_governance(), manager_api=mock_manager_api, session=None)
 
         result = service.list_apis()
 
@@ -229,7 +239,7 @@ class TestVisibilityOnListing:
 
     def test_developer_session_filters_by_visibility(self, mock_manager_api):
         service = ApiListingService(
-            manager_api=mock_manager_api,
+            governance_api=_governance(), manager_api=mock_manager_api,
             session=_make_session(groups=["APIOps"]),
         )
 
@@ -245,7 +255,7 @@ class TestVisibilityOnListing:
         # Restricao selada: GROUP exige pertenca ao GRUPO - a lista de logins
         # nao concede. isaac NAO esta em APIOps aqui.
         service = ApiListingService(
-            manager_api=mock_manager_api,
+            governance_api=_governance(), manager_api=mock_manager_api,
             session=_make_session(groups=["OutroGrupo"]),
         )
 
@@ -255,7 +265,7 @@ class TestVisibilityOnListing:
 
     def test_super_admin_session_sees_everything(self, mock_manager_api):
         service = ApiListingService(
-            manager_api=mock_manager_api,
+            governance_api=_governance(), manager_api=mock_manager_api,
             session=_make_session(profile="super-admin"),
         )
 
@@ -273,7 +283,7 @@ class TestVisibilityOnListing:
         session.userName = "isaac.machado"
         session.userGroups = []
 
-        service = ApiListingService(manager_api=mock_manager_api, session=session)
+        service = ApiListingService(governance_api=_governance(), manager_api=mock_manager_api, session=session)
 
         with pytest.raises(InsufficientSessionError, match="grupos de acesso"):
             service.list_apis()
@@ -286,7 +296,7 @@ class TestVisibilityOnListing:
             {"apiId": 9, "contextType": "GROUP", "contextGroupName": "APIOps"}
         )
         service = ApiListingService(
-            manager_api=mock_manager_api, session=_make_session(groups=["APIOps"])
+            governance_api=_governance(), manager_api=mock_manager_api, session=_make_session(groups=["APIOps"])
         )
 
         assert [entry.id for entry in service.list_apis(api_id=9)] == [9]
@@ -295,7 +305,7 @@ class TestVisibilityOnListing:
         self, mock_manager_api
     ):
         service = ApiListingService(
-            manager_api=mock_manager_api, session=_make_session(groups=["APIOps"])
+            governance_api=_governance(), manager_api=mock_manager_api, session=_make_session(groups=["APIOps"])
         )
 
         mock_manager_api.list_api_detail.return_value = None
@@ -316,7 +326,7 @@ class TestVisibilityOnListing:
             {"apiId": 9, "contextType": "GROUP", "contextGroupName": "Lab-tech"}
         )
         service = ApiListingService(
-            manager_api=mock_manager_api, session=_make_session(profile="super-admin")
+            governance_api=_governance(), manager_api=mock_manager_api, session=_make_session(profile="super-admin")
         )
 
         assert [entry.id for entry in service.list_apis(api_id=9)] == [9]
@@ -360,14 +370,18 @@ class TestApiRevisionsOrchestration:
         mock.get_revision_completeness.side_effect = _manager_completeness
         return mock
 
+    @pytest.fixture
+    def mock_governance_api(self):
+        return _governance()
+
     def test_one_catalog_call_rows_ordered_stage_names_complete(
-        self, mock_manager_api
+        self, mock_manager_api, mock_governance_api
     ):
-        mock_manager_api.get_workflow_stages.return_value = [
+        mock_governance_api.get_workflow_stages.return_value = [
             WorkflowStage(workflowStageId=420, workflowStageName="Stage One"),
             WorkflowStage(workflowStageId=753, workflowStageName="Teste"),
         ]
-        service = ApiListingService(manager_api=mock_manager_api)
+        service = ApiListingService(manager_api=mock_manager_api, governance_api=mock_governance_api)
 
         rows = service.api_revisions(400)
 
@@ -378,10 +392,10 @@ class TestApiRevisionsOrchestration:
 
         # economia: 1 chamada de frame + 1 de stages (workflow 139 unico)
         mock_manager_api.list_api_detail.assert_called_once_with(400)
-        mock_manager_api.get_workflow_stages.assert_called_once_with(139)
+        mock_governance_api.get_workflow_stages.assert_called_once_with(139)
 
-    def test_complete_comes_from_manager_not_from_the_frame(self, mock_manager_api):
-        service = ApiListingService(manager_api=mock_manager_api)
+    def test_complete_comes_from_manager_not_from_the_frame(self, mock_manager_api, mock_governance_api):
+        service = ApiListingService(manager_api=mock_manager_api, governance_api=mock_governance_api)
 
         rows = service.api_revisions(400)
 
@@ -397,29 +411,29 @@ class TestApiRevisionsOrchestration:
             ManagerApiTransportUnavailableError("timeout"),
         ],
     )
-    def test_completeness_failure_degrades_only_that_row(self, mock_manager_api, failure):
+    def test_completeness_failure_degrades_only_that_row(self, mock_manager_api, mock_governance_api, failure):
         def completeness(revision_id):
             if revision_id == 8876:
                 raise failure
             return _manager_completeness(revision_id)
 
         mock_manager_api.get_revision_completeness.side_effect = completeness
-        service = ApiListingService(manager_api=mock_manager_api)
+        service = ApiListingService(manager_api=mock_manager_api, governance_api=mock_governance_api)
 
         rows = service.api_revisions(400)
 
         assert [row.completeness_score for row in rows] == [74.3, None, 88.8]
 
-    def test_unexpected_completeness_error_is_not_swallowed(self, mock_manager_api):
+    def test_unexpected_completeness_error_is_not_swallowed(self, mock_manager_api, mock_governance_api):
         mock_manager_api.get_revision_completeness.side_effect = RuntimeError("bug")
-        service = ApiListingService(manager_api=mock_manager_api)
+        service = ApiListingService(manager_api=mock_manager_api, governance_api=mock_governance_api)
 
         with pytest.raises(RuntimeError):
             service.api_revisions(400)
 
-    def test_not_found_does_not_read_completeness(self, mock_manager_api):
+    def test_not_found_does_not_read_completeness(self, mock_manager_api, mock_governance_api):
         mock_manager_api.list_api_detail.return_value = None
-        service = ApiListingService(manager_api=mock_manager_api)
+        service = ApiListingService(manager_api=mock_manager_api, governance_api=mock_governance_api)
 
         with pytest.raises(ApiNotFound):
             service.api_revisions(999)
@@ -427,28 +441,28 @@ class TestApiRevisionsOrchestration:
         mock_manager_api.get_revision_completeness.assert_not_called()
 
     def test_invisible_api_reads_neither_stages_nor_completeness(
-        self, mock_manager_api
+        self, mock_manager_api, mock_governance_api
     ):
         service = ApiListingService(
-            manager_api=mock_manager_api, session=_make_session(groups=["APIOps"])
+            manager_api=mock_manager_api, governance_api=mock_governance_api, session=_make_session(groups=["APIOps"])
         )
 
         with pytest.raises(ApiNotFound):
             service.api_revisions(400)
 
-        mock_manager_api.get_workflow_stages.assert_not_called()
+        mock_governance_api.get_workflow_stages.assert_not_called()
         mock_manager_api.get_revision_completeness.assert_not_called()
 
-    def test_stage_failure_degrades_to_workflow_id(self, mock_manager_api):
-        mock_manager_api.get_workflow_stages.return_value = []
-        service = ApiListingService(manager_api=mock_manager_api)
+    def test_stage_failure_degrades_to_workflow_id(self, mock_manager_api, mock_governance_api):
+        mock_governance_api.get_workflow_stages.return_value = []
+        service = ApiListingService(manager_api=mock_manager_api, governance_api=mock_governance_api)
 
         rows = service.api_revisions(400)
 
         assert all(row.stage_name == 139 for row in rows)
 
-    def test_created_and_last_deploy_are_placeholder_cells(self, mock_manager_api):
-        service = ApiListingService(manager_api=mock_manager_api)
+    def test_created_and_last_deploy_are_placeholder_cells(self, mock_manager_api, mock_governance_api):
+        service = ApiListingService(manager_api=mock_manager_api, governance_api=mock_governance_api)
 
         rows = service.api_revisions(400)
 
@@ -456,12 +470,38 @@ class TestApiRevisionsOrchestration:
         assert all(not hasattr(row, "created") for row in rows)
         assert all(not hasattr(row, "last_deploy") for row in rows)
 
-    def test_not_found_raises_friendly_error(self, mock_manager_api):
+    def test_not_found_raises_friendly_error(self, mock_manager_api, mock_governance_api):
         mock_manager_api.list_api_detail.return_value = None
-        service = ApiListingService(manager_api=mock_manager_api)
+        service = ApiListingService(manager_api=mock_manager_api, governance_api=mock_governance_api)
 
         with pytest.raises(ApiCollectionError, match="não encontrada"):
             service.api_revisions(999)
+
+    def test_without_governance_reads_neither_stages_nor_completeness(
+        self, mock_manager_api
+    ):
+        governance = _governance(GovernanceAvailability.DISABLED)
+        service = ApiListingService(manager_api=mock_manager_api, governance_api=governance)
+
+        rows = service.api_revisions(400)
+
+        assert [row.revision_number for row in rows] == [1, 2, 3]
+        assert all(row.stage_name is None for row in rows)
+        assert all(row.completeness_score is None for row in rows)
+        governance.get_workflow_stages.assert_not_called()
+        mock_manager_api.get_revision_completeness.assert_not_called()
+        assert service.governance_available() is False
+
+    def test_inconclusive_detection_reads_as_today(self, mock_manager_api):
+        governance = _governance(GovernanceAvailability.UNKNOWN)
+        governance.get_workflow_stages.return_value = []
+        service = ApiListingService(manager_api=mock_manager_api, governance_api=governance)
+
+        rows = service.api_revisions(400)
+
+        assert [row.completeness_score for row in rows] == [74.3, 75.8, 88.8]
+        assert all(row.stage_name == 139 for row in rows)
+        assert service.governance_available() is True
 
 
 class TestManagerFailureTranslation:
@@ -479,7 +519,7 @@ class TestManagerFailureTranslation:
         )
 
         with pytest.raises(ApiCollectionError) as excinfo:
-            ApiListingService(manager_api=port).list_apis(offset=0, limit=10)
+            ApiListingService(governance_api=_governance(), manager_api=port).list_apis(offset=0, limit=10)
 
         message = str(excinfo.value)
         assert message == INTERNAL_ERROR_MESSAGE
@@ -497,7 +537,7 @@ class TestManagerFailureTranslation:
         )
 
         with pytest.raises(ApiCollectionError) as excinfo:
-            ApiListingService(manager_api=port).list_apis(offset=0, limit=10)
+            ApiListingService(governance_api=_governance(), manager_api=port).list_apis(offset=0, limit=10)
 
         assert str(excinfo.value) == expected
 
@@ -505,7 +545,7 @@ class TestManagerFailureTranslation:
         port.list_catalog_apis.side_effect = ManagerApiTransportUnavailableError("timeout")
 
         with pytest.raises(ApiCollectionError) as excinfo:
-            ApiListingService(manager_api=port).list_apis(offset=0, limit=10)
+            ApiListingService(governance_api=_governance(), manager_api=port).list_apis(offset=0, limit=10)
 
         assert str(excinfo.value) == UNAVAILABLE_MESSAGE
 
@@ -515,7 +555,7 @@ class TestManagerFailureTranslation:
         )
 
         with pytest.raises(ApiNotFound):
-            ApiListingService(manager_api=port).list_apis(api_id=400)
+            ApiListingService(governance_api=_governance(), manager_api=port).list_apis(api_id=400)
 
     def test_404_on_catalog_listing_has_no_business_reading(self, port):
         port.list_catalog_apis.side_effect = ManagerApiTransportRejectedError(
@@ -523,7 +563,7 @@ class TestManagerFailureTranslation:
         )
 
         with pytest.raises(ApiCollectionError) as excinfo:
-            ApiListingService(manager_api=port).list_apis(offset=0, limit=10)
+            ApiListingService(governance_api=_governance(), manager_api=port).list_apis(offset=0, limit=10)
 
         assert str(excinfo.value) == INTERNAL_ERROR_MESSAGE
 
@@ -566,7 +606,7 @@ def _paged_service(catalog, profile="developer"):
     port = MagicMock(spec=ManagerApiPort)
     port.list_catalog_apis.side_effect = catalog
     session = _make_session(profile=profile, groups=["APIOps"])
-    return ApiListingService(manager_api=port, session=session)
+    return ApiListingService(governance_api=_governance(), manager_api=port, session=session)
 
 
 class TestPagedCatalogScan:

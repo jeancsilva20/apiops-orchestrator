@@ -6,7 +6,6 @@ from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
 from apiops_orchestrator.domain.models.catalog_revision_model import (
     CatalogRevisionCompleteness,
 )
-from apiops_orchestrator.domain.models.workflow_stage_model import WorkflowStage
 
 
 class ManagerApiError(Exception):
@@ -121,11 +120,6 @@ class ManagerApiPort(ABC):
         pass
 
     @abstractmethod
-    def get_workflow_stages(self, workflow_id: int) -> List[WorkflowStage]:
-        """Contract to fetch the stages catalog of one workflow."""
-        pass
-
-    @abstractmethod
     def publish_api_changes(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """LEGADO: cria revisão (`POST /revisions`). Nenhum comando usa; mantido para o versionamento futuro."""
         pass
@@ -160,19 +154,6 @@ class ManagerApiPort(ABC):
     @abstractmethod
     def deploy_revision(self, environment_id: int, revision_id: int) -> Optional[int]:
         """Coloca a revisão no ar no ambiente e devolve o id do deploy."""
-
-    @abstractmethod
-    def get_workflow(self, workflow_id: int) -> Dict[str, Any]:
-        """Workflow do Adaptive Governance, com `stages[].attributesRequisites`."""
-
-    @abstractmethod
-    def list_attributes(self) -> List[Dict[str, Any]]:
-        """Catálogo `id ↔ name` dos atributos do AG.
-
-        Lido a cada execução: os requisitos são configuração mutável do tenant —
-        entre 2026-10-14 e 2026-10-15 o stage 1402 trocou um dos atributos que
-        exige (D-020 §3.4).
-        """
 
     def get_custom_interceptor_by_id(
         self, custom_interceptor_id: int

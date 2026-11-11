@@ -22,6 +22,7 @@ from apiops_orchestrator.application.services.manager_failure_translator import 
 from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
 from apiops_orchestrator.domain.models.catalog_revision_model import CatalogRevisionInfo
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
+from apiops_orchestrator.domain.ports.governance_api_port import GovernanceApiPort
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiPort,
     ManagerApiResponseTooLargeError,
@@ -61,11 +62,17 @@ class ApiListingService:
     def __init__(
         self,
         manager_api: ManagerApiPort,
+        governance_api: GovernanceApiPort,
         session: Optional[LoginSession] = None,
     ):
         self.manager_api = manager_api
+        self.governance_api = governance_api
         self.session = session
         self._guard = ApiAccessGuard(session)
+
+    def governance_available(self) -> bool:
+        """Whether the Manager may have the Adaptive Governance; only a confirmed absence is False."""
+        return not self.governance_api.availability().absent
 
     def list_apis(
         self,
@@ -122,17 +129,20 @@ class ApiListingService:
     def _api_revisions_internal(self, api_id: int) -> List[CatalogRevisionInfo]:
         entry = self._visible_detail(api_id)
 
-        workflow_ids = sorted(
-            {rev.workflowId for rev in entry.revisions if rev.workflowId is not None}
-        )
-        stage_names = self._resolve_stage_names(workflow_ids)
-
         listed = [
             revision
             for revision in entry.revisions
             if revision.id is not None and revision.revisionNumber
         ]
-        scores = self._read_completeness_scores([revision.id for revision in listed])
+        with_governance = self.governance_available()
+        stage_names: Dict[int, Optional[str]] = {}
+        scores: Dict[int, Optional[float]] = {}
+        if with_governance:
+            workflow_ids = sorted(
+                {rev.workflowId for rev in entry.revisions if rev.workflowId is not None}
+            )
+            stage_names = self._resolve_stage_names(workflow_ids)
+            scores = self._read_completeness_scores([revision.id for revision in listed])
 
         rows: List[CatalogRevisionInfo] = []
         for revision in listed:
@@ -145,9 +155,8 @@ class ApiListingService:
                 CatalogRevisionInfo(
                     revision_id=revision.id,
                     revision_number=int(revision.revisionNumber),
-                    stage_name=(
-                        stage_name if stage_name else revision.workflowId
-                    ),
+                    stage_name=stage_name
+                    or (revision.workflowId if with_governance else None),
                     environments=", ".join(revision.environments),
                     completeness_score=scores.get(revision.id),
                 )
@@ -264,7 +273,7 @@ class ApiListingService:
     def _resolve_stage_names(self, workflow_ids: List[int]) -> Dict[int, Optional[str]]:
         resolved: Dict[int, Optional[str]] = {}
         for workflow_id in workflow_ids:
-            for stage in self.manager_api.get_workflow_stages(workflow_id):
+            for stage in self.governance_api.get_workflow_stages(workflow_id):
                 resolved[stage.workflowStageId] = stage.workflowStageName
         return resolved
 

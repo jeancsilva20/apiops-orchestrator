@@ -12,6 +12,7 @@ from apiops_orchestrator.application.exceptions.listing_exceptions import (
 )
 from apiops_orchestrator.application.services.api_listing_service import ApiListingService
 from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
+from apiops_orchestrator.domain.ports.governance_api_port import GovernanceApiPort
 from apiops_orchestrator.domain.ports.manager_api_port import ApiCatalogPage, ManagerApiPort
 from apiops_orchestrator.infrastructure.utils.text_normalizer import accent_fold
 
@@ -55,7 +56,11 @@ def mock_manager_api():
 
 
 def _service(mock_manager_api) -> ApiListingService:
-    return ApiListingService(manager_api=mock_manager_api, session=None)
+    return ApiListingService(
+        manager_api=mock_manager_api,
+        governance_api=MagicMock(spec=GovernanceApiPort),
+        session=None,
+    )
 
 
 class TestCatalogFlowUnfiltered:

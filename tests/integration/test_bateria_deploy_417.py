@@ -87,9 +87,22 @@ def repo(tmp_path_factory, inicial):
     return folder
 
 
+def _governance_adapter():
+    from apiops_orchestrator.adapters.outbound.http.governance_api.governance_api_adapter import (
+        GovernanceApiAdapter,
+    )
+    from apiops_orchestrator.main import _build_admin_token, _load_settings
+
+    settings = _load_settings()
+    return GovernanceApiAdapter(
+        token=_build_admin_token(settings), max_retries=3, settings=settings
+    )
+
+
 def _servico(manager, revision, environment):
     return DeployService(
         manager_api=manager,
+        governance_api=_governance_adapter(),
         importer=LocalFileImporterAdapter(),
         settings=SimpleNamespace(
             EXECUTION_MODE="pipeline",

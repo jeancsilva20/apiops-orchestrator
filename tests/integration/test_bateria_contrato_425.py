@@ -132,6 +132,18 @@ def manager():
     )
 
 
+def _governance_adapter():
+    from apiops_orchestrator.adapters.outbound.http.governance_api.governance_api_adapter import (
+        GovernanceApiAdapter,
+    )
+    from apiops_orchestrator.main import _build_admin_token, _load_settings
+
+    settings = _load_settings()
+    return GovernanceApiAdapter(
+        token=_build_admin_token(settings), max_retries=3, settings=settings
+    )
+
+
 @pytest.fixture(scope="module")
 def lab(manager, tmp_path_factory):
     """API, Draft id and backup; restores the Draft swagger at the end of the module."""
@@ -163,7 +175,10 @@ def validate(manager):
     settings = _load_settings()
     assert not settings.pipeline_mode, "the battery runs in local mode, on the Draft"
     service = ValidateService(
-        manager_api=manager, importer=LocalFileImporterAdapter(), settings=settings
+        manager_api=manager,
+        governance_api=_governance_adapter(),
+        importer=LocalFileImporterAdapter(),
+        settings=settings,
     )
 
     def run(path):

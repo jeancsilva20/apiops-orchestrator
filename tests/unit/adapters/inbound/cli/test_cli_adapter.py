@@ -343,6 +343,56 @@ def test_revisions_json_has_null_score_and_nothing_but_the_document():
     assert [row["completeness_score"] for row in document] == [74.3, None]
 
 
+def _revisions_without_governance():
+    mock_service = MagicMock()
+    mock_service.governance_available.return_value = False
+    mock_service.api_revisions.return_value = [
+        CatalogRevisionInfo(
+            revision_id=5976, revision_number=1, stage_name=None,
+            environments="Default", completeness_score=None,
+        ),
+        CatalogRevisionInfo(
+            revision_id=23625, revision_number=3, stage_name=None,
+            environments="", completeness_score=None,
+        ),
+    ]
+    return mock_service
+
+
+def test_revisions_without_governance_hide_stage_and_complete():
+    result = runner.invoke(
+        app,
+        ["sen", "list", "api", "--id", "68", "--revisions"],
+        obj={"api_listing_service_factory": _revisions_without_governance},
+    )
+
+    assert result.exit_code == 0
+    for col in ("REV #", "REV ID", "ENVS", "5976", "Default"):
+        assert col in result.output
+    for hidden in ("STAGE", "COMPLETE", "None", "sem completeness"):
+        assert hidden not in result.output
+
+
+def test_revisions_json_without_governance_keeps_the_keys_as_null():
+    import json
+
+    result = runner.invoke(
+        app,
+        ["sen", "list", "api", "--id", "68", "--revisions", "-o", "json"],
+        obj={"api_listing_service_factory": _revisions_without_governance},
+    )
+
+    assert result.exit_code == 0
+    document = json.loads(result.output)
+    assert [(row["stage_name"], row["completeness_score"]) for row in document] == [
+        (None, None),
+        (None, None),
+    ]
+    assert list(document[0]) == [
+        "revision_id", "revision_number", "stage_name", "environments", "completeness_score",
+    ]
+
+
 def test_revisions_requires_id_pre_network():
     from unittest.mock import MagicMock
     mock_service = MagicMock()
@@ -497,6 +547,27 @@ def test_completeness_404_maps_to_exit2_notfound_guidance():
     assert result.exit_code == 2
     assert "5501" in result.output
     assert "sen list api --id X --revisions" in " ".join(result.output.split())
+
+
+def test_completeness_without_governance_exits_3_with_its_message():
+    from apiops_orchestrator.application.exceptions.completeness_exceptions import (
+        CompletenessGovernanceUnavailable,
+    )
+
+    mock_service = MagicMock()
+    mock_service.get_completeness.side_effect = CompletenessGovernanceUnavailable()
+
+    result = runner.invoke(
+        app,
+        ["sen", "completeness", "--id", "375", "--revision", "5513"],
+        obj={"completeness_service_factory": lambda: mock_service},
+    )
+
+    assert result.exit_code == 3
+    assert (
+        "A checagem de completude não está disponível: cliente não possui o "
+        "Adaptive Governance contratado."
+    ) in " ".join(result.output.split())
 
 
 def test_completeness_401_maps_to_exit2_guiding_sen_login():

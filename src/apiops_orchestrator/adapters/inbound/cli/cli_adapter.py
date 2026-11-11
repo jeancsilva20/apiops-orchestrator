@@ -679,6 +679,15 @@ REVISIONS_HEADER = (
     "ENVS",
     "COMPLETE",
 )
+# STAGE and COMPLETE come from the Adaptive Governance.
+_GOVERNANCE_COLUMNS = frozenset({2, 4})
+
+
+def _revision_columns(values: tuple, with_governance: bool) -> tuple:
+    """The values of the columns shown: without Adaptive Governance, STAGE and COMPLETE leave."""
+    if with_governance:
+        return values
+    return tuple(v for i, v in enumerate(values) if i not in _GOVERNANCE_COLUMNS)
 
 
 def _format_score(score):
@@ -718,21 +727,28 @@ def _render_revisions_grade(
     if not rows:
         rprint(f"[yellow]Nenhuma revisão encontrada para a API {api_id}.[/yellow]")
         return
+    with_governance = service.governance_available()
 
     def print_text():
         _render_grade(
-            [_revision_cells(row) for row in rows],
-            header=REVISIONS_HEADER,
-            column_justify=(None, None, None, None, "right"),
-            column_decorators=(
-                (lambda v: Text(str(v), style="bold white")),
-                None,
-                None,
-                None,
-                _score_cell,
+            [_revision_columns(_revision_cells(row), with_governance) for row in rows],
+            header=_revision_columns(REVISIONS_HEADER, with_governance),
+            column_justify=_revision_columns(
+                (None, None, None, None, "right"), with_governance
+            ),
+            column_decorators=_revision_columns(
+                (
+                    (lambda v: Text(str(v), style="bold white")),
+                    None,
+                    None,
+                    None,
+                    _score_cell,
+                ),
+                with_governance,
             ),
         )
-        _missing_completeness_note(api_id, rows)
+        if with_governance:
+            _missing_completeness_note(api_id, rows)
 
     display_output(
         [row.to_dict() for row in rows], output_format=output, text_callback=print_text

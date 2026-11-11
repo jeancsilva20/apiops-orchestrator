@@ -19,6 +19,7 @@ from apiops_orchestrator.domain.models.catalog_revision_model import (
     CatalogRevisionCompleteness,
 )
 from apiops_orchestrator.domain.models.deploy_model import SCHEMA_SEN_DEPLOY_V1
+from apiops_orchestrator.domain.models.governance_model import GovernanceAvailability
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiGovernanceBlockedError,
     ManagerApiTransportRejectedError,
@@ -91,7 +92,7 @@ spec:
 
 
 class ManagerFake:
-    """Port fake: grava as chamadas e simula o efeito do `POST /deployments`."""
+    """Fake of the Manager and Governance ports: records the calls and simulates `POST /deployments`."""
 
     def __init__(
         self,
@@ -102,6 +103,7 @@ class ManagerFake:
         id_novo=269,
         efeito=True,
         erro_releitura=None,
+        availability=GovernanceAvailability.ENABLED,
     ):
         self.api = api or _api(deploys_rev3=[_deploy(267, 9327, 3, 7)])
         self.workflow = workflow or _workflow()
@@ -110,8 +112,13 @@ class ManagerFake:
         self.id_novo = id_novo
         self.efeito = efeito
         self.erro_releitura = erro_releitura
+        self._availability = availability
         self.chamadas = []
         self.post = None
+
+    def availability(self):
+        self.chamadas.append("availability")
+        return self._availability
 
     def get_api_by_id(self, api_id=None):
         self.chamadas.append("get_api_by_id")
@@ -177,7 +184,10 @@ def _repo(tmp_path, basic_info=BASIC_INFO):
 
 def _servico(manager, **cfg):
     return DeployService(
-        manager_api=manager, importer=LocalFileImporterAdapter(), settings=_settings(**cfg)
+        manager_api=manager,
+        governance_api=manager,
+        importer=LocalFileImporterAdapter(),
+        settings=_settings(**cfg),
     )
 
 
@@ -538,3 +548,28 @@ def test_um_unico_post_e_nada_mais_e_escrito(tmp_path):
     manager = ManagerFake()
     _servico(manager).deploy(_repo(tmp_path))
     assert manager.chamadas.count("deploy_revision") == 1
+
+
+# --- cliente sem Adaptive Governance -----------------------------------------
+
+
+def test_sem_ag_os_gates_do_stage_nao_se_aplicam(tmp_path):
+    workflow_que_barraria = _workflow(
+        deployable=[9],
+        completeness=90.0,
+        requirements=[{"attributeId": 231, "tagId": None, "mustHave": True}],
+    )
+    manager = ManagerFake(
+        workflow=workflow_que_barraria, availability=GovernanceAvailability.DISABLED
+    )
+
+    view = _servico(manager).deploy(_repo(tmp_path))
+
+    assert manager.post == (7, 9327)
+    assert view.deployment.status == "SUCCESS"
+    for chamada in ("get_workflow", "list_attributes", "get_revision_completeness"):
+        assert chamada not in manager.chamadas
+    governance = view.to_document()["governance"]
+    assert (governance["workflowId"], governance["stageId"]) == (None, None)
+    assert governance["deployableEnvironments"] == []
+    assert governance["violations"] == [] and governance["blocked"] is False

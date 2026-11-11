@@ -1,17 +1,18 @@
-import json
 import logging
 import re
 from typing import Dict, Any, List, Optional
 
-from requests.exceptions import RequestException
-
+from apiops_orchestrator.adapters.outbound.http.common.platform_request import (
+    bearer_headers,
+    platform_error_items,
+    platform_request,
+    rejection_signal,
+)
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ApiCatalogPage,
     ManagerApiGovernanceBlockedError,
     ManagerApiPort,
-    ManagerApiResponseTooLargeError,
     ManagerApiTransportRejectedError,
-    ManagerApiTransportUnavailableError,
     ManagerApiUnexpectedResponseError,
 )
 from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
@@ -20,17 +21,13 @@ from apiops_orchestrator.domain.models.catalog_revision_model import (
     CatalogRevision,
     CatalogRevisionCompleteness,
 )
-from apiops_orchestrator.domain.models.workflow_stage_model import WorkflowStage
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.infrastructure.exceptions.http_client_exceptions import (
     HttpClient4xxError,
-    HttpClientServerError,
 )
-from apiops_orchestrator.infrastructure.utils.http_client import HttpClient
 
 logger = logging.getLogger(__name__)
 
-GOVERNANCE_BASE_PATH = "/api-governance/api/v3/"
 FINDER_BASE_PATH = "/api-finder/api/v3/"
 
 
@@ -165,57 +162,29 @@ def _translate_row(raw: Any) -> Optional[ApiCatalogEntry]:
 _GOVERNANCE_VALIDATE_PATH = re.compile(r"/api-governance/.*/workflows/(\d+)/validate")
 
 
-def _platform_error_items(body: Any) -> List[Any]:
-    """Unwraps the platform error envelope into its items (V-23 §1).
-
-    The Manager answers `{"errors": [{"message": "<JSON as a string>"}]}`; the
-    inner JSON carries `messages[]` and `path`. Each item is the parsed inner
-    dict when the string is JSON, or the raw string otherwise (defensive: a
-    failed second parse never loses the text).
-    """
-    if not isinstance(body, dict):
-        return []
-    items: List[Any] = [body]
-    for error in body.get("errors") or []:
-        if not isinstance(error, dict):
-            continue
-        message = error.get("message")
-        if not isinstance(message, str):
-            continue
-        try:
-            items.append(json.loads(message))
-        except ValueError:
-            items.append(message)
-    return items
-
-
-def _platform_messages(body: Any) -> List[str]:
-    """Human-readable reasons the platform gave, in order and without repeats."""
-    found: List[str] = []
-    for item in _platform_error_items(body):
-        if isinstance(item, str):
-            candidates: List[Any] = [item]
-        elif isinstance(item, dict):
-            candidates = list(item.get("messages") or [])
-            if item is not body or not candidates:
-                candidates.append(item.get("message"))
-        else:
-            continue
-        for candidate in candidates:
-            text = candidate.strip() if isinstance(candidate, str) else ""
-            if text and text not in found:
-                found.append(text)
-    return found
-
-
 def _governance_workflow_id(body: Any) -> Optional[int]:
     """Workflow that blocked the write, from the error `path` — None if not governance."""
-    for item in _platform_error_items(body):
+    for item in platform_error_items(body):
         path = item.get("path") if isinstance(item, dict) else None
         match = _GOVERNANCE_VALIDATE_PATH.search(path) if isinstance(path, str) else None
         if match:
             return int(match.group(1))
     return None
+
+
+def _manager_rejection(
+    exc: HttpClient4xxError, fields: Dict[str, Any]
+) -> ManagerApiTransportRejectedError:
+    """Signal of a Manager 4xx: a 412 from the Adaptive Governance blocks the write."""
+    workflow_id = _governance_workflow_id(exc.body) if exc.status_code == 412 else None
+    if workflow_id is not None:
+        logger.info("manager_api.governance.blocked workflow_id=%s", workflow_id)
+        return ManagerApiGovernanceBlockedError(
+            workflow_id=workflow_id,
+            raw=exc.body if isinstance(exc.body, dict) else None,
+            **fields,
+        )
+    return rejection_signal(exc, fields)
 
 
 def _build_custom_search(query: str) -> str:
@@ -248,13 +217,9 @@ class ManagerApiAdapter(ManagerApiPort):
         self.api_id = api_id
         self.base_path = base_path
         self.max_retries = max_retries
-        self._stages_cache: Dict[int, List[WorkflowStage]] = {}
 
     def _get_headers(self) -> Dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self.token}",
-            "Content-Type": "application/json"
-        }
+        return bearer_headers(self.token)
 
     def _request(
         self,
@@ -263,62 +228,17 @@ class ManagerApiAdapter(ManagerApiPort):
         base_path: Optional[str] = None,
         **kwargs,
     ) -> Any:
-        """Executa a chamada e traduz transporte → sinais do port.
-
-        Mesma fronteira de tradução do OrchestratorAuthAdapter: exceções do
-        HttpClient/requests NÃO atravessam — o consumidor do port só vê os
-        dois desfechos de falha tipados. Demais exceções inesperadas
-        atravessam (rede de segurança no caller).
-        """
+        """Executa a chamada e traduz transporte → sinais do port."""
         path_prefix = base_path if base_path is not None else self.base_path
-        url = f"{self.host or ''}{path_prefix}{endpoint}"
-        headers = self._get_headers()
-
-        try:
-            return HttpClient.request(
-                method=method,
-                url=url,
-                headers=headers,
-                max_retries=self.max_retries,
-                **kwargs
-            )
-        except HttpClient4xxError as exc:
-            # INFO on purpose: with logging not wired, WARNING+ falls into
-            # logging.lastResort and would leak diagnostics to the user's stderr.
-            logger.info(
-                "manager_api.transport.rejected status_code=%s code=%s request_id=%s",
-                exc.status_code,
-                exc.code,
-                exc.request_id,
-            )
-            common = dict(
-                status_code=exc.status_code,
-                title=exc.title,
-                code=exc.code,
-                request_id=exc.request_id,
-                messages=_platform_messages(exc.body),
-            )
-            workflow_id = (
-                _governance_workflow_id(exc.body) if exc.status_code == 412 else None
-            )
-            if workflow_id is not None:
-                logger.info("manager_api.governance.blocked workflow_id=%s", workflow_id)
-                raise ManagerApiGovernanceBlockedError(
-                    workflow_id=workflow_id,
-                    raw=exc.body if isinstance(exc.body, dict) else None,
-                    **common,
-                ) from exc
-            if exc.status_code == 413:
-                raise ManagerApiResponseTooLargeError(**common) from exc
-            raise ManagerApiTransportRejectedError(**common) from exc
-        except HttpClientServerError as exc:
-            logger.info("manager_api.transport.unavailable reason=server_error")
-            raise ManagerApiTransportUnavailableError(str(exc)) from exc
-        except RequestException as exc:
-            logger.info("manager_api.transport.unavailable reason=connection_failure")
-            raise ManagerApiTransportUnavailableError(
-                "Manager API connection failed or timed out"
-            ) from exc
+        return platform_request(
+            method,
+            f"{self.host or ''}{path_prefix}{endpoint}",
+            headers=self._get_headers(),
+            max_retries=self.max_retries,
+            log_prefix="manager_api",
+            rejection=_manager_rejection,
+            **kwargs,
+        )
 
     def get_apis(self) -> list[Dict[str, Any]]:
         endpoint = "apis"
@@ -389,37 +309,6 @@ class ManagerApiAdapter(ManagerApiPort):
         endpoint = f"apis/{target_id}"
         return self._request("GET", endpoint)
 
-    def get_workflow_stages(self, workflow_id: int) -> List[WorkflowStage]:
-        if workflow_id in self._stages_cache:
-            return self._stages_cache[workflow_id]
-
-        endpoint = f"workflows/{workflow_id}/stages"
-        try:
-            stages = self._request("GET", endpoint, base_path=GOVERNANCE_BASE_PATH)
-        except Exception as exc:
-            logger.warning(
-                "workflow stages unavailable; degrading to empty catalog (%s)",
-                type(exc).__name__,
-            )
-            return []
-
-        rows = stages if isinstance(stages, list) else []
-        normalized: List[WorkflowStage] = []
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            stage_id = _wire_int(row.get("workflowStageId"))
-            if stage_id is None:
-                continue
-            normalized.append(
-                WorkflowStage(
-                    workflowStageId=stage_id,
-                    workflowStageName=_wire_str(row.get("workflowStageName")),
-                )
-            )
-        self._stages_cache[workflow_id] = normalized
-        return normalized
-
     def get_custom_interceptor_by_id(self, custom_interceptor_id: int) -> Dict[str, str] | None:
         """Custom do catálogo, ou `None` quando o id não existe mais.
 
@@ -486,18 +375,3 @@ class ManagerApiAdapter(ManagerApiPort):
             },
         )
         return _wire_int(response.get("id")) if isinstance(response, dict) else None
-
-    def get_workflow(self, workflow_id: int) -> Dict[str, Any]:
-        return self._request(
-            "GET", f"workflows/{workflow_id}", base_path=GOVERNANCE_BASE_PATH
-        )
-
-    def list_attributes(self) -> List[Dict[str, Any]]:
-        payload = self._request("GET", "attributes", base_path=GOVERNANCE_BASE_PATH)
-        if isinstance(payload, list):
-            return payload
-        if isinstance(payload, dict):
-            for key in ("content", "data", "attributes"):
-                if isinstance(payload.get(key), list):
-                    return payload[key]
-        return []

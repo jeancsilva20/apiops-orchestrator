@@ -7,7 +7,6 @@ from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter 
     ManagerApiAdapter,
     _translate_completeness,
 )
-from apiops_orchestrator.domain.models.workflow_stage_model import WorkflowStage
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiGovernanceBlockedError,
     ManagerApiResponseTooLargeError,
@@ -131,7 +130,7 @@ def test_list_catalog_apis_hits_finder_with_params_and_reads_count(mock_settings
         api_id=123, settings=mock_settings,
     )
 
-    with patch("apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter.HttpClient.request") as mock_req:
+    with patch(MOCK_PATH) as mock_req:
         mock_req.return_value = ([{"apiId": 1}], {"count": "108"})
 
         page = adapter.list_catalog_apis(limit=95)
@@ -160,7 +159,7 @@ def test_list_catalog_apis_default_orders_by_api_id_asc(mock_settings):
         api_id=123, settings=mock_settings,
     )
 
-    with patch("apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter.HttpClient.request") as mock_req:
+    with patch(MOCK_PATH) as mock_req:
         mock_req.return_value = ([], {"count": "0"})
 
         adapter.list_catalog_apis(limit=1)
@@ -175,7 +174,7 @@ def test_list_catalog_apis_degrades_total_without_count_header(mock_settings):
         api_id=123, settings=mock_settings,
     )
 
-    with patch("apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter.HttpClient.request") as mock_req:
+    with patch(MOCK_PATH) as mock_req:
         mock_req.return_value = ([{"apiId": 7}], {})
 
         page = adapter.list_catalog_apis(limit=1)
@@ -190,7 +189,7 @@ def test_list_catalog_apis_non_list_payload_normalizes_to_empty(mock_settings):
         api_id=123, settings=mock_settings,
     )
 
-    with patch("apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter.HttpClient.request") as mock_req:
+    with patch(MOCK_PATH) as mock_req:
         mock_req.return_value = ({"result": "failure"}, {"count": "1"})
 
         page = adapter.list_catalog_apis(limit=1)
@@ -204,7 +203,7 @@ def test_list_catalog_apis_hits_finder_with_window_defaults(mock_settings):
         api_id=123, settings=mock_settings,
     )
 
-    with patch("apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter.HttpClient.request") as mock_req:
+    with patch(MOCK_PATH) as mock_req:
         mock_req.return_value = ([], {"count": "0"})
 
         adapter.list_catalog_apis(limit=1)
@@ -218,75 +217,6 @@ def _make_adapter(mock_settings):
         token="token123", base_path="/api-manager/api/v3/", max_retries=3,
         api_id=400, settings=mock_settings,
     )
-
-
-# Stages de workflow — catálogo capturado (sonda r2, workflow 139)
-STAGE_ROWS_SAMPLE = [
-    {"workflowStageId": 420, "workflowStageName": "Stage One", "position": 1},
-    {"workflowStageId": 753, "workflowStageName": "Teste", "position": 2},
-]
-
-
-def test_workflow_stages_uses_governance_base_path(mock_settings):
-    adapter = _make_adapter(mock_settings)
-
-    with patch(MOCK_PATH) as mock_request:
-        mock_request.return_value = STAGE_ROWS_SAMPLE
-        result = adapter.get_workflow_stages(139)
-
-        assert result == [
-            WorkflowStage(workflowStageId=420, workflowStageName="Stage One"),
-            WorkflowStage(workflowStageId=753, workflowStageName="Teste"),
-        ]
-        assert mock_request.call_args.kwargs["url"] == (
-            "http://urltest.com/api-governance/api/v3/workflows/139/stages"
-        )
-
-
-def test_workflow_stages_cached_per_executed_execution(mock_settings):
-    adapter = _make_adapter(mock_settings)
-
-    with patch(MOCK_PATH) as mock_request:
-        mock_request.return_value = STAGE_ROWS_SAMPLE
-
-        adapter.get_workflow_stages(139)
-        adapter.get_workflow_stages(139)  # segunda chamada: HIT, zero rede
-        adapter.get_workflow_stages(753)  # workflow distinto: MISS, 1 rede
-
-        assert mock_request.call_count == 2
-
-
-def test_workflow_stages_failures_are_never_cached_and_degrade(mock_settings):
-    adapter = _make_adapter(mock_settings)
-
-    with patch(MOCK_PATH) as mock_request:
-        # 1ª: falha -> [] ; 2ª: sucesso -> payload ; 3ª (agora em cache): sem rede
-        mock_request.side_effect = [RuntimeError("governance down"), STAGE_ROWS_SAMPLE, STAGE_ROWS_SAMPLE]
-
-        assert adapter.get_workflow_stages(139) == []
-        assert adapter.get_workflow_stages(139) == [
-            WorkflowStage(workflowStageId=420, workflowStageName="Stage One"),
-            WorkflowStage(workflowStageId=753, workflowStageName="Teste"),
-        ]
-        assert adapter.get_workflow_stages(139) == [
-            WorkflowStage(workflowStageId=420, workflowStageName="Stage One"),
-            WorkflowStage(workflowStageId=753, workflowStageName="Teste"),
-        ]
-        assert mock_request.call_count == 2  # falha nao entrou em cache
-
-
-def test_stages_cache_lives_only_within_adapter_instance(mock_settings):
-    adapter_a = _make_adapter(mock_settings)
-    adapter_b = _make_adapter(mock_settings)
-
-    with patch(MOCK_PATH) as mock_request:
-        mock_request.return_value = STAGE_ROWS_SAMPLE
-
-        adapter_a.get_workflow_stages(139)
-        adapter_a.get_workflow_stages(139)   # cache do A
-        adapter_b.get_workflow_stages(139)   # B não vê cache do A
-
-        assert mock_request.call_count == 2
 
 
 # ---------------------------------------------------------------------------
