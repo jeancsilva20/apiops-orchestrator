@@ -1297,3 +1297,20 @@ def test_deteccao_inconclusiva_segue_como_hoje(tmp_path):
         _servico(manager).validate(repo, confirm=SIM)
 
     assert "update_revision" not in manager.chamadas
+
+
+def test_sem_ag_a_confirmacao_nao_fala_da_nota_de_completeness(tmp_path):
+    questions = []
+    etapas = []
+
+    _servico(ManagerFake(availability=GovernanceAvailability.DISABLED)).validate(
+        _repo(tmp_path, extras=SHORT_RESPONSE_ROUTE),
+        confirm=lambda q: questions.append(q) or True,
+        progress=etapas.append,
+    )
+
+    [question] = questions
+    assert "completeness" not in question
+    assert "responses.200" not in question
+    assert "Verificando a governança" not in etapas
+    assert "Calculando o quality score" not in etapas

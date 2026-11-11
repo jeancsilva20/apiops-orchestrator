@@ -739,3 +739,17 @@ def test_sem_ag_apitags_sao_ignoradas_e_a_governanca_sai_vazia(tmp_path):
     assert (governance["workflowId"], governance["stageId"]) == (None, None)
     assert governance["required"] == [] and governance["missing"] == []
     assert not [w for w in view.warnings if w.startswith("Governança")]
+
+
+def test_sem_ag_a_governanca_nao_e_narrada(tmp_path):
+    etapas = []
+    _servico(ManagerFake(availability=GovernanceAvailability.DISABLED)).publish(
+        _repo(tmp_path), progress=etapas.append
+    )
+
+    assert "Verificando a governança" not in etapas
+    assert etapas[:3] == [
+        "Lendo o repositório",
+        "Consultando a API no Manager",
+        "Verificando os interceptors Custom",
+    ]

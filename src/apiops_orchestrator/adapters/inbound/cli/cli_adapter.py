@@ -719,15 +719,19 @@ def _missing_completeness_note(api_id: int, rows: List[CatalogRevisionInfo]) -> 
 def _render_revisions_grade(
     service: ApiListingService, api_id: int, output: OutputFormat
 ) -> None:
+    with_governance = service.governance_available()
     rows = _run_with_feedback(
         lambda: service.api_revisions(api_id),
-        label="Consultando completeness das revisões...",
+        label=(
+            "Consultando completeness das revisões..."
+            if with_governance
+            else "Consultando as revisões..."
+        ),
         narrate=output is OutputFormat.TEXT,
     )
     if not rows:
         rprint(f"[yellow]Nenhuma revisão encontrada para a API {api_id}.[/yellow]")
         return
-    with_governance = service.governance_available()
 
     def print_text():
         _render_grade(
@@ -1344,7 +1348,7 @@ def validate(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Aumenta o detalhamento da saída."),
 ):
     """
-    Valida o repositório da API e grava na Draft para obter o veredito da governança.
+    Valida o repositório da API realizando a subida no manager na revisão de rascunho.
     """
     try:
         service_factory = (ctx.obj or {}).get("validate_service_factory")
@@ -1869,11 +1873,16 @@ def diag_draft(
 
         def _text() -> None:
             rev = document["revision"]
+            # Without Adaptive Governance the revision has no workflow to show.
+            workflow = (
+                f"[grey53]workflow {rev['workflowId']} · stage {rev['workflowStageId']} "
+                "— lidos da revisão, reenviados intactos[/grey53]"
+                if rev["workflowId"] is not None
+                else ""
+            )
             rprint(
                 f"[bold]{_literal(api.get('name'))}[/bold]  [grey53]API {api.get('id')}[/grey53]\n"
-                f"revisão {rev['managerId']} (#{rev['revisionNumber']})  "
-                f"[grey53]workflow {rev['workflowId']} · stage {rev['workflowStageId']} "
-                "— lidos da revisão, reenviados intactos[/grey53]\n"
+                f"revisão {rev['managerId']} (#{rev['revisionNumber']})  {workflow}\n"
             )
             rprint(
                 f"  raiz: {len(governed)} governado(s), "

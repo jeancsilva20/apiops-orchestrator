@@ -573,3 +573,16 @@ def test_sem_ag_os_gates_do_stage_nao_se_aplicam(tmp_path):
     assert (governance["workflowId"], governance["stageId"]) == (None, None)
     assert governance["deployableEnvironments"] == []
     assert governance["violations"] == [] and governance["blocked"] is False
+
+
+@pytest.mark.parametrize(
+    "availability, narrated",
+    [(GovernanceAvailability.ENABLED, True), (GovernanceAvailability.DISABLED, False)],
+)
+def test_a_governanca_so_e_narrada_com_ag(tmp_path, availability, narrated):
+    etapas = []
+    _servico(ManagerFake(availability=availability)).deploy(
+        _repo(tmp_path), progress=etapas.append
+    )
+
+    assert ("Verificando a governança" in etapas) is narrated

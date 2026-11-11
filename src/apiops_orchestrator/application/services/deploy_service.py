@@ -138,7 +138,8 @@ class DeployService:
         environment = self._environment(api, environment_id)
         previous = _state(deployments.active_in_environment(api, environment_id))
 
-        step("Verificando a governança")
+        if self._governance.governance_available():
+            step("Verificando a governança")
         governance, warnings = self._evaluate_governance(api, revision, environment_id)
         if governance.blocked:
             raise DeployGovernanceBlockedError(

@@ -347,8 +347,9 @@ def test_diag_structure_aponta_o_arquivo_base_ausente(tmp_path):
 
 
 class _ManagerDoDraft:
-    def __init__(self, visibility):
+    def __init__(self, visibility, workflow=None):
         self.visibility = visibility
+        self.workflow = workflow or {}
         self.chamadas = []
 
     def get_api_by_id(self, api_id=None):
@@ -364,10 +365,13 @@ class _ManagerDoDraft:
 
     def get_revision(self, revision_id):
         self.chamadas.append("get_revision")
-        return {"id": revision_id, "revisionNumber": 1, "interceptors": [], "resources": []}
+        return {
+            "id": revision_id, "revisionNumber": 1, "interceptors": [], "resources": [],
+            **self.workflow,
+        }
 
 
-def _diag_draft(tmp_path, visibility):
+def _diag_draft(tmp_path, visibility, output="json", workflow=None):
     (tmp_path / "api-basic-info.yaml").write_text(
         "apiVersion: api-management.sensedia.com/v1\nkind: ApiBasicInfo\nspec:\n  id: 417\n",
         encoding="utf-8",
@@ -379,16 +383,37 @@ def _diag_draft(tmp_path, visibility):
         "userName": "isaac.machado", "userEmail": "isaac.machado@sensedia.com",
         "userGroups": ["APIOps"],
     })
-    manager = _ManagerDoDraft(visibility)
+    manager = _ManagerDoDraft(visibility, workflow)
     factory = lambda: (  # noqa: E731
         manager, SimpleNamespace(pipeline_mode=False), ApiAccessGuard(sessao)
     )
     resultado = runner.invoke(
         app,
-        ["sen", "diag", "draft", "--repo", str(tmp_path), "-o", "json"],
+        ["sen", "diag", "draft", "--repo", str(tmp_path), "-o", output],
         obj={"manager_api_factory": factory},
     )
     return resultado, manager
+
+
+VISIVEL = {"visibilityType": "GROUP", "groupVisibility": {"name": "APIOps"}}
+
+
+def test_diag_draft_sem_workflow_nao_mostra_workflow_nem_stage(tmp_path):
+    resultado, _ = _diag_draft(tmp_path, VISIVEL, output="text")
+
+    assert resultado.exit_code == 0
+    assert "revisão 9161 (#1)" in resultado.output
+    for ausente in ("workflow", "stage", "None"):
+        assert ausente not in resultado.output
+
+
+def test_diag_draft_com_workflow_mostra_workflow_e_stage(tmp_path):
+    resultado, _ = _diag_draft(
+        tmp_path, VISIVEL, output="text", workflow={"workflowId": 500, "workflowStageId": 1402}
+    )
+
+    assert resultado.exit_code == 0
+    assert "workflow 500 · stage 1402" in " ".join(resultado.output.split())
 
 
 @pytest.mark.parametrize(

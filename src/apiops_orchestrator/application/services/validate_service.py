@@ -185,7 +185,7 @@ class ValidateService:
         step("Lendo o repositório")
         loaded = self._writer.load(repo_path)
         unread_warnings = self._writer.unread_files_warnings(loaded)
-        contract, contract_warnings = self._contract.validate(loaded)
+        contract, completeness_warnings = self._contract.validate(loaded)
         spec = loaded.basic_info.get("spec") or {}
 
         step("Consultando a API no Manager")
@@ -206,6 +206,7 @@ class ValidateService:
         ruler = self._e2_ruler(loaded)
 
         step("Comparando com o padrão")
+        governance_available = self._governance.governance_available()
         # Without Adaptive Governance the repository `apiTags` are ignored.
         assembled = revision_payload.assemble(
             draft=draft,
@@ -213,7 +214,7 @@ class ValidateService:
             root=loaded.root,
             resources=loaded.resources,
             resolver_custom=self._writer.resolver_custom,
-            include_api_tags=self._governance.governance_available(),
+            include_api_tags=governance_available,
         )
         findings = self._conformance(assembled.body, ruler)
         # Em local, o que vai sair do Manager é mostrado na confirmação, antes
@@ -221,7 +222,8 @@ class ValidateService:
         if self._settings.pipeline_mode:
             findings.extend(_repository_warnings(unread_warnings + list(assembled.warnings)))
 
-        step("Verificando a governança")
+        if governance_available:
+            step("Verificando a governança")
         precheck = self._governance.evaluate(draft, spec.get("apiTags"))
         # Os avisos dizem quando o pré-check não pôde antecipar a governança
         # (revisão sem workflow, stage ausente): o dev precisa saber que o
@@ -261,7 +263,9 @@ class ValidateService:
             confirm,
             step,
             prepared,
-            list(contract_warnings) + list(prepared.warnings),
+            # Without Adaptive Governance there is no completeness score to lower.
+            (list(completeness_warnings) if governance_available else [])
+            + list(prepared.warnings),
             repository_warnings=unread_warnings,
         )
         publication = written.result if written else PublicationResult(attempted=False)

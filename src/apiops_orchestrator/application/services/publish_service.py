@@ -60,8 +60,8 @@ logger = logging.getLogger(__name__)
 
 PUBLISH_PIPELINE_ONLY = (
     "A publicação é feita só pela esteira: o comando não roda na sua máquina. "
-    "Para conferir o repositório contra a governança, use `sen validate`, que "
-    "grava na revisão Draft.\n\nNada foi publicado."
+    "Para validar o repositório, use `sen validate`, que faz a subida no manager "
+    "na revisão de rascunho.\n\nNada foi publicado."
 )
 
 
@@ -142,6 +142,7 @@ class PublishService:
         step("Verificando os interceptors Custom")
         self._customs.check_customs(self._writer.referenced_customs(loaded))
 
+        governance_available = self._governance.governance_available()
         # Without Adaptive Governance the repository `apiTags` are ignored.
         assembled = revision_payload.assemble(
             draft=target,
@@ -149,10 +150,11 @@ class PublishService:
             root=loaded.root,
             resources=loaded.resources,
             resolver_custom=self._writer.resolver_custom,
-            include_api_tags=self._governance.governance_available(),
+            include_api_tags=governance_available,
         )
 
-        step("Verificando a governança")
+        if governance_available:
+            step("Verificando a governança")
         precheck = self._governance.evaluate(target, spec.get("apiTags"))
         warnings = self._writer.unread_files_warnings(loaded) + list(assembled.warnings)
         warnings += [f"Governança: {warning}" for warning in precheck.warnings]

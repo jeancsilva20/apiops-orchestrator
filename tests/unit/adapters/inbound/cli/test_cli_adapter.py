@@ -369,7 +369,7 @@ def test_revisions_without_governance_hide_stage_and_complete():
     assert result.exit_code == 0
     for col in ("REV #", "REV ID", "ENVS", "5976", "Default"):
         assert col in result.output
-    for hidden in ("STAGE", "COMPLETE", "None", "sem completeness"):
+    for hidden in ("STAGE", "COMPLETE", "None", "completeness"):
         assert hidden not in result.output
 
 

@@ -79,7 +79,10 @@ class ContractWriter:
         self._command = command
 
     def validate(self, loaded: LoadedRepository) -> Tuple[RepositoryContract, List[str]]:
-        """Validates and extracts the repository contract; an error aborts before any write."""
+        """Validates and extracts the repository contract; an error aborts before any write.
+
+        The warnings returned are the ones that lower the completeness score.
+        """
         result = openapi_contract_validator.validate(
             basic_info=loaded.basic_info,
             components=loaded.components,
