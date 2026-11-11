@@ -51,7 +51,7 @@
         },
         "description": {
           "type": "string",
-          "description": "Descrição da API. Conta para a nota de completeness."
+          "description": "Descrição da API. Conta para a nota de completeness, quando o cliente tem o Adaptive Governance."
         },
         "template": {
           "type": [
@@ -105,7 +105,7 @@
         },
         "apiTags": {
           "type": "array",
-          "description": "Atributos de governança da API, cada um com suas tags, em lista completa. Ausente: o Manager mantém os atuais. Lista vazia: remove todos. Cada item precisa de ao menos uma tag, e o atributo e as tags precisam existir no catálogo do Adaptive Governance (conferido pelo `sen validate`, não por este schema).",
+          "description": "Atributos de governança da API, cada um com suas tags, em lista completa. Ausente: o Manager mantém os atuais. Lista vazia: remove todos. Cada item precisa de ao menos uma tag, e o atributo e as tags precisam existir no catálogo do Adaptive Governance (conferido pelo `sen validate`, não por este schema). Sem o Adaptive Governance contratado, o campo é ignorado.",
           "items": {
             "type": "object",
             "additionalProperties": false,
