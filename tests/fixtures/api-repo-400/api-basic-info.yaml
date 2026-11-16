@@ -1,0 +1,26 @@
+apiVersion: api-management.sensedia.com/v1
+kind: ApiBasicInfo
+spec:
+  id: 400
+  name: Orchestrator Auth API
+  version: 1.0.1
+  basePath: /orq-auth/v1
+  description: Auth API.
+  template: 414
+  apiResponsible:
+    username: paulo.silva
+    groupName: ""
+  apiTags:
+    - attributeName: My new
+      tags:
+        - Tag1
+  contact:
+    name: Time APIOps
+    email: apiops@exemplo.com
+  tags:
+    - name: Token
+      description: Emissão e validação de tokens de acesso
+    - name: Usuarios
+      description: Consulta de usuários e dos grupos de cada um
+  security:
+    - TokenPortador: []

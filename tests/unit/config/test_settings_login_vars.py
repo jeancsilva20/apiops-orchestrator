@@ -120,6 +120,14 @@ def test_package_root_points_to_module_directory():
     assert settings_module.PACKAGE_ROOT.name == "apiops_orchestrator"
 
 
+def test_schemas_root_is_the_package_schema_folder():
+    from apiops_orchestrator.config import settings as settings_module
+
+    root = settings_module.SCHEMAS_ROOT
+    assert root == settings_module.Path(settings_module.__file__).resolve().parents[1] / "domain" / "schemas"
+    assert (root / "catalog.json").is_file()
+
+
 def test_app_root_fora_do_binario_e_a_pasta_do_pacote(monkeypatch):
     from apiops_orchestrator.config import settings as settings_module
 

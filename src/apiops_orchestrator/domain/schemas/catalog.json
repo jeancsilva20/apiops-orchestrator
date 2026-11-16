@@ -1,34 +1,49 @@
 {
   "version": "2.0.0",
-  "comment": "Layout canonico da D-005 4, com all.yaml fechado pela V-18 (2026-10-15). Apenas api-basic-info.yaml carrega apiVersion/kind; os demais arquivos sao planos e NAO podem ser despachados por `kind`. Por isso o catalogo passa a declarar tambem o mapa por CAMINHO, consumido pela descoberta da E1. Primeira correspondencia vence.",
+  "comment": "Layout canonico da D-005 4, com all.yaml fechado pela V-18 (2026-10-15). Apenas api-basic-info.yaml carrega apiVersion/kind; os demais arquivos sao planos e NAO podem ser despachados por `kind`. Por isso o catalogo passa a declarar tambem o mapa por CAMINHO, consumido pela descoberta da E1. Primeira correspondencia vence. Each layout entry has a `name`, the file type that `sen schema` takes, plus `file` and `occurs`, which describe the file and how many of it the repository has.",
   "schemas": {
     "ApiBasicInfo": "api-basic-info.schema.json"
   },
   "layout": [
     {
+      "name": "basic-info",
+      "file": "api-basic-info.yaml",
+      "occurs": "um na raiz, obrigatório",
       "pattern": "api-basic-info.yaml",
       "schema": "api-basic-info.schema.json",
       "required": true
     },
     {
+      "name": "all",
+      "file": "all.yaml",
+      "occurs": "um na raiz, obrigatório",
       "pattern": "all.yaml",
       "schema": "api-root-scope.schema.json",
       "required": true,
       "comment": "Obrigatorio pelo nome exato: a ausencia aborta na E1, porque a raiz nao herda de ninguem e publicar sem ela apaga o fluxo da revision (V-18 2.3)."
     },
     {
+      "name": "components",
+      "file": "components.yaml",
+      "occurs": "um na raiz, opcional",
       "pattern": "components.yaml",
       "schema": "api-components.schema.json",
       "required": false,
       "comment": "Optional: reusable OpenAPI components of the contract."
     },
     {
+      "name": "resource",
+      "file": "resources/<recurso>/resource.yaml",
+      "occurs": "um por pasta, ao menos uma pasta",
       "pattern": "resources/*/resource.yaml",
       "schema": "api-resource.schema.json",
       "required": true,
       "comment": "Obrigatorio em cada pasta de recurso, pelo nome exato."
     },
     {
+      "name": "operation",
+      "file": "resources/<recurso>/<método>_<path>.yaml",
+      "occurs": "um por rota, ao menos um na pasta",
       "pattern": "resources/*/*.yaml",
       "schema": "api-operations.schema.json",
       "required": false,

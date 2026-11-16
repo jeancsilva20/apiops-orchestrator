@@ -1,0 +1,88 @@
+schemas:
+  Token:
+    type: object
+    description: Token de acesso emitido para o cliente
+    required:
+      - access_token
+      - token_type
+    properties:
+      access_token:
+        type: string
+        description: Token a enviar no cabeçalho Authorization
+      token_type:
+        type: string
+        description: Tipo do token, sempre Bearer
+      expires_in:
+        type: integer
+        description: Validade do token, em segundos
+  Usuario:
+    type: object
+    description: Usuário cadastrado na plataforma
+    properties:
+      username:
+        type: string
+        description: Identificador do usuário
+      email:
+        type: string
+        description: E-mail do usuário
+  Grupo:
+    type: object
+    description: Grupo de acesso de um usuário
+    properties:
+      name:
+        type: string
+        description: Nome do grupo
+  Erro:
+    type: object
+    description: Corpo das respostas de erro
+    properties:
+      message:
+        type: string
+        description: Descrição do erro
+securitySchemes:
+  BasicCliente:
+    type: http
+    scheme: basic
+    description: client_id e client_secret do cliente, em Basic
+  TokenPortador:
+    type: http
+    scheme: bearer
+    description: Token obtido em POST /oauth2/token
+responses:
+  NaoAutorizado:
+    description: Credencial ausente, inválida ou expirada
+    headers:
+      X-Request-Id:
+        $ref: '#/components/headers/X-Request-Id'
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/Erro'
+requestBodies:
+  SolicitacaoToken:
+    description: Pedido de token no fluxo client credentials
+    required: true
+    content:
+      application/x-www-form-urlencoded:
+        schema:
+          type: object
+          description: Campos do formulário de pedido de token
+          required:
+            - grant_type
+          properties:
+            grant_type:
+              type: string
+              description: Tipo de concessão, client_credentials
+        examples:
+          clientCredentials:
+            $ref: '#/components/examples/ClientCredentials'
+headers:
+  X-Request-Id:
+    description: Identificador da requisição no gateway
+    schema:
+      type: string
+examples:
+  ClientCredentials:
+    summary: Pedido no fluxo client credentials
+    value:
+      grant_type: client_credentials
