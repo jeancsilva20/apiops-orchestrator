@@ -87,11 +87,6 @@ class ApiCatalogPage:
 
 class ManagerApiPort(ABC):
     @abstractmethod
-    def get_apis(self) -> list[Dict[str, Any]]:
-        """Contract to search all APIs (manager cru — fluxo legado/bare)."""
-        pass
-
-    @abstractmethod
     def list_catalog_apis(
         self,
         limit: int,
@@ -106,7 +101,7 @@ class ManagerApiPort(ABC):
         pass
 
     @abstractmethod
-    def get_api_by_id(self, api_id: Optional[int] = None) -> Dict[str, Any]:
+    def get_api_by_id(self, api_id: int) -> Dict[str, Any]:
         """Contract to search data from the API by ID (manager)"""
         pass
 
@@ -123,11 +118,6 @@ class ManagerApiPort(ABC):
     @abstractmethod
     def get_workflow_stages(self, workflow_id: int) -> List[WorkflowStage]:
         """Contract to fetch the stages catalog of one workflow."""
-        pass
-
-    @abstractmethod
-    def publish_api_changes(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """LEGADO: cria revisão (`POST /revisions`). Nenhum comando usa; mantido para o versionamento futuro."""
         pass
 
     @abstractmethod

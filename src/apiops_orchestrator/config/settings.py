@@ -94,8 +94,5 @@ class Settings(BaseSettings):
     PROJECT_ROOT: Path = PROJECT_ROOT
     # Directory hosting the distributed package (holds `.sen` and `.sen_session`).
     PACKAGE_ROOT: Path = PACKAGE_ROOT
-    # LEGADO: raiz do repositório para o `VersionerService`.
-    API_REPO_FOLDER: Path = "./external-repo"
-
     # Pasta dos JSON schemas, relativa a `src/`.
     ORCHEST_SCHEMA_FOLDER: str = "apiops_orchestrator/domain/schemas"

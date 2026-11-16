@@ -240,12 +240,9 @@ def _translate_completeness(raw: Any) -> CatalogRevisionCompleteness:
 
 
 class ManagerApiAdapter(ManagerApiPort):
-    def __init__(self, token: str, base_path: str, max_retries: int, api_id: Optional[int] = None, settings: Optional[Settings] = None):
+    def __init__(self, token: str, base_path: str, max_retries: int, settings: Optional[Settings] = None):
         self.host = settings.HOST if settings is not None else None
         self.token = token
-        # LEGADO: id fixo, fallback de `get_api_by_id` usado pelo `VersionerService`;
-        # os comandos sempre passam o id.
-        self.api_id = api_id
         self.base_path = base_path
         self.max_retries = max_retries
         self._stages_cache: Dict[int, List[WorkflowStage]] = {}
@@ -320,10 +317,6 @@ class ManagerApiAdapter(ManagerApiPort):
                 "Manager API connection failed or timed out"
             ) from exc
 
-    def get_apis(self) -> list[Dict[str, Any]]:
-        endpoint = "apis"
-        return self._request("GET", endpoint)
-
     def list_api_detail(self, api_id: int) -> Optional[ApiCatalogEntry]:
         payload, _ = self._request(
             "GET",
@@ -384,9 +377,8 @@ class ManagerApiAdapter(ManagerApiPort):
             logger.warning("api-finder count header missing; degrading total")
             return -1
 
-    def get_api_by_id(self, api_id: int | None = None) -> Dict[str, Any]:
-        target_id = api_id if api_id is not None else self.api_id
-        endpoint = f"apis/{target_id}"
+    def get_api_by_id(self, api_id: int) -> Dict[str, Any]:
+        endpoint = f"apis/{api_id}"
         return self._request("GET", endpoint)
 
     def get_workflow_stages(self, workflow_id: int) -> List[WorkflowStage]:
@@ -446,11 +438,6 @@ class ManagerApiAdapter(ManagerApiPort):
             "name": json_response.get("name"),
             "script": json_response.get("script"),
         }
-
-    def publish_api_changes(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """LEGADO: cria revisão (`POST /revisions`). Nenhum comando usa; mantido para o versionamento futuro."""
-        endpoint = "revisions"
-        return self._request("POST", endpoint=endpoint, json=data)
 
     def get_revision(self, revision_id: int) -> Dict[str, Any]:
         return self._request("GET", f"revisions/{revision_id}")
