@@ -19,7 +19,6 @@ from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-
 from apiops_orchestrator.domain.models.api_model import as_wire
 from apiops_orchestrator.application.services.api_listing_service import (
     ApiListingService,
@@ -42,6 +41,11 @@ from apiops_orchestrator.application.exceptions.deploy_exceptions import (
 )
 from apiops_orchestrator.domain.models.completeness_view import CompletenessView
 from apiops_orchestrator.domain.models.deploy_model import DeployState, DeployView
+from apiops_orchestrator.application.exceptions.sync_exceptions import (
+    EXIT_DIFFERENCES,
+    SyncError,
+)
+from apiops_orchestrator.domain.models.sync_view import MODE_CHECK, SyncView
 from apiops_orchestrator.domain.models.publish_view import PublishView
 from apiops_orchestrator.domain.models.validate_view import (
     DOCUMENTATION_SCOPE,
@@ -1691,6 +1695,152 @@ def deploy(
         raise typer.Exit(code=e.exit_code)
     except Exception as e:
         _exit_on_unexpected(e, command="deploy")
+
+
+def _render_sync_text(view: SyncView) -> None:
+    """Renderiza a resposta do `sync` — mesma árvore de `json`/`yaml`."""
+    width = _validate_width()
+    identity = [("API", f"[bold white]{_literal(view.api.name or '-')}[/bold white]")]
+    detail = f"id {view.api.manager_id}"
+    if view.api.version:
+        detail += f"  ·  v{_literal(view.api.version)}"
+    if view.api.base_path:
+        detail += f"  ·  {_literal(view.api.base_path)}"
+    identity.append(("", f"[grey53]{detail}[/grey53]"))
+    identity.append(
+        (
+            "Revisão",
+            f"[white]#{view.revision.revision_number}[/white] "
+            f"[grey53](id {view.revision.manager_id})[/grey53]",
+        )
+    )
+    title = "Verificação" if view.mode == MODE_CHECK else "Carga"
+    arrow = "\u2192" if _supports_text("\u2192") else "->"
+    rprint()
+    rprint(_validate_panel(title, _field_grid(identity), width=width))
+    rprint()
+
+    if view.mode == MODE_CHECK:
+        if view.in_sync:
+            rprint("[bold green]Repositório e Manager iguais.[/bold green]")
+        else:
+            rprint(
+                f"[bold]Diferenças[/bold]  [red]{len(view.differences)}[/red]  "
+                f"[grey53](valor no repositório {arrow} valor no Manager)[/grey53]"
+            )
+            grid = Table.grid(padding=(0, 2))
+            grid.width = width
+            grid.add_column(overflow="fold", ratio=2)
+            grid.add_column(overflow="fold", ratio=2)
+            grid.add_column(overflow="fold", ratio=1)
+            grid.add_column(overflow="fold", ratio=1)
+            for d in view.differences:
+                grid.add_row(
+                    Text(d.file, style="white"),
+                    Text(d.field or "(arquivo)", style="grey53"),
+                    Text(str(d.repository)),
+                    Text(str(d.manager)),
+                )
+            rprint(grid)
+        rprint()
+    else:
+        rprint(f"[bold]Arquivos gerados[/bold]  {len(view.files)}")
+        for file_path in view.files:
+            rprint(f"  {_literal(file_path)}")
+        rprint()
+        rprint(
+            f"[grey53]{len(view.files)} arquivos · {view.resources} recursos · "
+            f"{view.operations} operações[/grey53]"
+        )
+        if view.longest_path:
+            rprint(
+                f"[grey53]maior caminho relativo: {len(view.longest_path)} caracteres "
+                f"{arrow} {_literal(view.longest_path)}[/grey53]"
+            )
+        rprint()
+
+    if view.warnings:
+        rprint(f"[bold]Avisos[/bold]  [yellow]{len(view.warnings)}[/yellow]")
+        _render_repo_warnings(
+            [
+                Finding(severity=SEVERITY_WARNING, scope=REPOSITORY_SCOPE, message=a)
+                for a in view.warnings
+            ]
+        )
+        rprint()
+
+    if view.mode != MODE_CHECK:
+        rprint(
+            "[bold]Próximo passo[/bold]  confira o `git diff`, faça o commit desta branch "
+            "e repita nas outras branches de ambiente; ao final, faça o push e ative as "
+            "proteções."
+        )
+        rprint()
+
+
+@sen_app.command("sync")
+def sync(
+    ctx: typer.Context,
+    api_id: Optional[int] = typer.Argument(
+        None,
+        help="Id da API no Manager. Opcional quando o `spec.id` do api-basic-info.yaml já está preenchido.",
+    ),
+    revision: int = typer.Option(
+        ...,
+        "--revision",
+        "-r",
+        help="Número da revisão (revisionNumber do Manager) que vai para o diretório atual.",
+    ),
+    check: bool = typer.Option(
+        False, "--check", help="Só compara o repositório com a revisão; não grava nada."
+    ),
+    output: OutputFormat = typer.Option(
+        OutputFormat.TEXT, "--output", "-o", help="Formato da saída (text, json, yaml)."
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Aumenta o detalhamento da saída."),
+):
+    """
+    Traz uma API do Manager para o repositório (carga) ou confere se os dois são iguais (--check).
+    """
+    try:
+        service_factory = (ctx.obj or {}).get("sync_service_factory")
+        if not callable(service_factory):
+            rprint("[bold red]Erro:[/bold red] Serviço de sync indisponível no contexto.")
+            raise typer.Exit(code=1)
+
+        service = cast(Callable[[], Any], service_factory)()
+        progress = _ValidateProgress(
+            initial_label="Verificando" if check else "Carregando",
+            narrate=output is OutputFormat.TEXT,
+        )
+        with progress:
+            run = service.check if check else service.sync
+            view = run(
+                repo_path=Path.cwd(),
+                api_id=api_id,
+                revision_number=revision,
+                progress=progress.step,
+            )
+
+        display_output(
+            view.to_document(),
+            output_format=output,
+            text_callback=lambda: _render_sync_text(view),
+        )
+        if check and not view.in_sync:
+            raise typer.Exit(code=EXIT_DIFFERENCES)
+
+    except typer.Exit:
+        raise
+    except SyncError as e:
+        _print_error(e.message)
+        raise typer.Exit(code=e.exit_code)
+    except LoginError as e:
+        # Sem sessão, token expirado ou fora do time APIOps: exit 2 da tabela do sync.
+        _print_error(e.message)
+        raise typer.Exit(code=2)
+    except Exception as e:
+        _exit_on_unexpected(e, command="sync")
 
 
 # ---------------------------------------------------------------------------
