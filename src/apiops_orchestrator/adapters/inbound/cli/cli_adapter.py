@@ -19,6 +19,8 @@ from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+
+from apiops_orchestrator.domain.models.api_model import as_wire
 from apiops_orchestrator.application.services.api_listing_service import (
     ApiListingService,
 )
@@ -1904,7 +1906,7 @@ def diag_draft(
             )
             raise typer.Exit(code=1)
 
-        draft = manager.get_revision(revision["id"]) or {}
+        draft = as_wire(manager.get_revision(revision["id"])) or {}
         governed, preserved = partition(draft.get("interceptors"))
 
         document = {

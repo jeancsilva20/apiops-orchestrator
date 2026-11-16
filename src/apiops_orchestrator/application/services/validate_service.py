@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
+from apiops_orchestrator.domain.models.api_model import as_wire
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
     ApiInaccessibleError,
     GovernanceBlockedError,
@@ -91,7 +92,7 @@ def api_visible(
 ) -> Optional[Dict[str, Any]]:
     """`GET /apis/{id}` da API do repositório; `None` se ela não existe ou a sessão não a enxerga."""
     try:
-        api = manager_api.get_api_by_id(api_id) or {}
+        api = as_wire(manager_api.get_api_by_id(api_id)) or {}
     except ManagerApiTransportRejectedError as exc:
         if classify_manager_failure(exc) is not ManagerFailureKind.NOT_FOUND:
             raise
@@ -193,7 +194,7 @@ class ValidateService:
         self._writer.guard_identity(spec, api)
 
         revision = self._target_revision(api)
-        draft = self._manager_api.get_revision(revision["id"]) or {}
+        draft = as_wire(self._manager_api.get_revision(revision["id"])) or {}
 
         # O payload é montado ANTES da conformidade, de propósito: a E2 precisa
         # avaliar o fluxo que SERÁ publicado, não o que está lá. Avaliar o

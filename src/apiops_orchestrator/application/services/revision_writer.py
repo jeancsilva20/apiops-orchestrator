@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 
+from apiops_orchestrator.domain.models.api_model import as_wire
 from apiops_orchestrator.application.exceptions.manager_failure_messages import (
     INTERNAL_ERROR_MESSAGE,
 )
@@ -51,7 +52,7 @@ from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiPort,
     ManagerApiTransportRejectedError,
 )
-from apiops_orchestrator.domain.services import revision_payload
+from apiops_orchestrator.domain.services import revision_payload, revisions
 from apiops_orchestrator.domain.services.repo_layout import RESOURCES_FOLDER
 
 logger = logging.getLogger(__name__)
@@ -214,19 +215,19 @@ class RevisionWriter:
     @staticmethod
     def revision_by_number(api: Dict[str, Any], number: int) -> Dict[str, Any]:
         """Resolve a revisão pelo NÚMERO (V-24). Criar revisão é ato humano."""
-        revisions = api.get("revisions") or []
-        if not revisions:
+        revision = revisions.revision_by_number(api, number)
+        if revision is not None:
+            return revision
+        numbers = revisions.revision_numbers(api)
+        if not numbers:
             raise ValidateError(
                 f"A API {api.get('id')} não tem nenhuma revisão no Manager. Criar "
                 "revisão é ato humano: crie a revisão pela interface do Manager e "
                 "rode o comando novamente."
             )
-        for revision in revisions:
-            if revision.get("revisionNumber") == number:
-                return revision
         raise ValidateError(
             f"A API não tem revisão de número {number}. Disponíveis: "
-            + ", ".join(str(r.get("revisionNumber")) for r in revisions)
+            + ", ".join(str(n) for n in numbers)
         )
 
     @staticmethod
@@ -297,7 +298,7 @@ class RevisionWriter:
 
         # E3.1: HTTP 200 não é prova de sucesso (W-8).
         step("Conferindo o que foi gravado")
-        published = self._manager_api.get_revision(revision["id"]) or {}
+        published = as_wire(self._manager_api.get_revision(revision["id"])) or {}
         divergences = revision_payload.verify(
             assembled.body, published, expected=assembled.expected
         )

@@ -26,6 +26,7 @@ from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_import
 )
 from apiops_orchestrator.application.services.validate_service import ValidateService
 from apiops_orchestrator.domain.services import repo_layout as layout
+from apiops_orchestrator.domain.models.api_model import Api, Revision
 from apiops_orchestrator.domain.services.repo_materializer import materialize
 
 API_ID = 425
@@ -50,12 +51,16 @@ def manager():
     )
     from apiops_orchestrator.main import _build_admin_token, _load_settings
 
+    from _wire import WireManager
+
     settings = _load_settings()
-    return ManagerApiAdapter(
-        token=_build_admin_token(settings),
-        base_path="/api-manager/api/v3/",
-        max_retries=3,
-        settings=settings,
+    return WireManager(
+        ManagerApiAdapter(
+            token=_build_admin_token(settings),
+            base_path="/api-manager/api/v3/",
+            max_retries=3,
+            settings=settings,
+        )
     )
 
 
@@ -130,7 +135,7 @@ def _repo(tmp_path, lab, root, resources):
     """Repositório inteiro: `root` são rótulos; `resources` é
     `{folder: (name, inherit, rótulos, {path: (inherit, rótulos)})}`."""
     basic_info = next(
-        a for a in materialize(lab["api"], lab["backup"]).files
+        a for a in materialize(Api.model_validate(lab["api"]), Revision.model_validate(lab["backup"])).files
         if a.file_path == layout.BASIC_INFO_FILE
     )
     (tmp_path / layout.BASIC_INFO_FILE).write_text(

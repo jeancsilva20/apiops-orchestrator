@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from apiops_orchestrator.domain.models.api_model import as_wire
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
     GovernanceBlockedError,
     InvalidApiTagsError,
@@ -130,10 +131,10 @@ class PublishService:
         spec = loaded.basic_info.get("spec") or {}
 
         step("Consultando a API no Manager")
-        api = self._manager_api.get_api_by_id(spec.get("id")) or {}
+        api = as_wire(self._manager_api.get_api_by_id(spec.get("id"))) or {}
         self._writer.guard_identity(spec, api)
         revision = self._writer.revision_by_number(api, number)
-        target = self._manager_api.get_revision(revision["id"]) or {}
+        target = as_wire(self._manager_api.get_revision(revision["id"])) or {}
 
         # Antes da montagem: o `content` de um `Custom` novo vem do catálogo, e
         # um `Custom` ausente precisa abortar com o escopo que o declara.

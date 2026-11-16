@@ -3,6 +3,7 @@ import logging
 import re
 from typing import Dict, Any, List, Optional
 
+import pydantic
 from requests.exceptions import RequestException
 
 from apiops_orchestrator.domain.ports.manager_api_port import (
@@ -15,6 +16,7 @@ from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiUnexpectedResponseError,
 )
 from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
+from apiops_orchestrator.domain.models.api_model import Api, Revision, WireModel
 from apiops_orchestrator.domain.models.api_visibility_model import OwnershipContext
 from apiops_orchestrator.domain.models.catalog_revision_model import (
     CatalogRevision,
@@ -377,9 +379,20 @@ class ManagerApiAdapter(ManagerApiPort):
             logger.warning("api-finder count header missing; degrading total")
             return -1
 
-    def get_api_by_id(self, api_id: int) -> Dict[str, Any]:
-        endpoint = f"apis/{api_id}"
-        return self._request("GET", endpoint)
+    def _model(self, model: type, payload: Any, what: str) -> Any:
+        """Validates the platform answer into a model; a shape the model refuses is unexpected."""
+        if not isinstance(payload, dict):
+            raise ManagerApiUnexpectedResponseError(f"Manager API returned a non-JSON {what}")
+        try:
+            return model.model_validate(payload)
+        except pydantic.ValidationError as exc:
+            logger.info("manager_api.%s.unexpected_shape errors=%d", what, exc.error_count())
+            raise ManagerApiUnexpectedResponseError(
+                f"Manager API returned a {what} in a shape the CLI does not recognize"
+            ) from exc
+
+    def get_api_by_id(self, api_id: int) -> Api:
+        return self._model(Api, self._request("GET", f"apis/{api_id}"), "api")
 
     def get_workflow_stages(self, workflow_id: int) -> List[WorkflowStage]:
         if workflow_id in self._stages_cache:
@@ -439,8 +452,8 @@ class ManagerApiAdapter(ManagerApiPort):
             "script": json_response.get("script"),
         }
 
-    def get_revision(self, revision_id: int) -> Dict[str, Any]:
-        return self._request("GET", f"revisions/{revision_id}")
+    def get_revision(self, revision_id: int) -> Revision:
+        return self._model(Revision, self._request("GET", f"revisions/{revision_id}"), "revision")
 
     def update_revision(
         self, revision_id: int, payload: Dict[str, Any]

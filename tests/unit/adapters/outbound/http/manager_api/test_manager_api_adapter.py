@@ -40,13 +40,13 @@ def test_get_api_calls_retry_util_correctly(mock_settings):
     token = "password123"
     adapter = ManagerApiAdapter(token=token, base_path="/api-manager/api/v3/", max_retries=3,
                                 settings=mock_settings)
-    expected_response = {"id": "123", "status": "ok"}
+    expected_response = {"id": 123, "status": "ok"}
 
     with patch(MOCK_PATH) as mock_request:
         mock_request.return_value = expected_response
         result = adapter.get_api_by_id(123)
 
-        assert result == expected_response
+        assert result.to_wire() == expected_response
         mock_request.assert_called_once_with(
             method="GET",
             url="http://urltest.com/api-manager/api/v3/apis/123",
@@ -93,7 +93,7 @@ def test_get_api_by_id_with_param_success(mock_settings):
         mock_request.return_value = expected_response
         result = adapter.get_api_by_id(api_id=api_id)
 
-        assert result == expected_response
+        assert result.to_wire() == expected_response
         mock_request.assert_called_once_with(
             method="GET",
             url=f"http://urltest.com/api-manager/api/v3/apis/{api_id}",

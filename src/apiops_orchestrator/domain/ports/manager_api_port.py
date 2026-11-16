@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Dict, Any, List, Optional
 
 from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
+from apiops_orchestrator.domain.models.api_model import Api, Revision
 from apiops_orchestrator.domain.models.catalog_revision_model import (
     CatalogRevisionCompleteness,
 )
@@ -101,8 +102,8 @@ class ManagerApiPort(ABC):
         pass
 
     @abstractmethod
-    def get_api_by_id(self, api_id: int) -> Dict[str, Any]:
-        """Contract to search data from the API by ID (manager)"""
+    def get_api_by_id(self, api_id: int) -> Api:
+        """`GET /apis/{id}` as `Api`: typed where the domain reads, the rest kept for the round-trip."""
         pass
 
     @abstractmethod
@@ -121,7 +122,7 @@ class ManagerApiPort(ABC):
         pass
 
     @abstractmethod
-    def get_revision(self, revision_id: int) -> Dict[str, Any]:
+    def get_revision(self, revision_id: int) -> Revision:
         """Estado completo de uma revisão: interceptors, resources e o `api` aninhado.
 
         É daqui que saem `workflowId` e `workflowStageId`, que o publish reenvia

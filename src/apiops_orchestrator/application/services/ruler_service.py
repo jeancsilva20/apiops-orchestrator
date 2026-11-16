@@ -21,6 +21,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence
 
+from apiops_orchestrator.domain.models.api_model import as_wire
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
     CustomNotFoundError,
     RulerUnreachableError,
@@ -173,7 +174,7 @@ class RulerService:
 
     def _read(self, template_id: int) -> Dict[str, Any]:
         try:
-            return self._manager_api.get_api_by_id(template_id) or {}
+            return as_wire(self._manager_api.get_api_by_id(template_id)) or {}
         except (ManagerApiTransportRejectedError, ManagerApiTransportUnavailableError) as exc:
             raise RulerUnreachableError(
                 template_id,
