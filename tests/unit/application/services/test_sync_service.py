@@ -472,3 +472,17 @@ def test_template_inexistente_aborta_sem_gravar(tmp_path):
 
     assert exc.value.exit_code == 3 and "999" in exc.value.message
     assert writer.written is None
+
+
+def test_check_ignora_a_ordem_das_apitags(tmp_path):
+    _loaded_repo(tmp_path)
+    reordered = copy.deepcopy(_fixture()["api"])
+    reordered["visibility"] = {"visibilityType": "ORGANIZATION"}
+    reordered["revisions"] = _api(_fixture()["revision"])["revisions"]
+    reordered["apiTags"] = list(reversed(reordered["apiTags"] + [{"attributeName": "Z", "tags": ["z"]}]))
+    # Same set as the repository once "Z" is removed; the order alone must not count.
+    reordered["apiTags"] = [t for t in reordered["apiTags"] if t["attributeName"] != "Z"]
+
+    view = _service(ManagerFake(api=reordered)).check(tmp_path, api_id=417, revision_number=2)
+
+    assert view.in_sync, view.differences

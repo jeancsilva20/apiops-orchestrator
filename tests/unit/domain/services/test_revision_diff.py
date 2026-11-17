@@ -56,3 +56,36 @@ def test_booleano_nao_vira_numero():
     repo = [_file("a.yaml", "inherit: true\n")]
     manager = [_file("a.yaml", "inherit: 1\n")]
     assert compare(repo, manager) == [Difference("a.yaml", "inherit", True, 1)]
+
+
+# --- apiTags: conjunto, não lista ------------------------------------------------
+
+def _basic_info(api_tags):
+    body = "spec:\n  id: 425\n  apiTags:\n"
+    for name, tags in api_tags:
+        body += f"  - attributeName: {name}\n    tags:\n" + "".join(f"    - {t}\n" for t in tags)
+    return [_file("api-basic-info.yaml", body)]
+
+
+def test_apitags_na_mesma_ordem_ou_em_outra_sao_iguais():
+    repo = _basic_info([("Autenticação", ["CyberArk"]), ("Produto", ["B", "A"]), ("Deploy", ["PRD"])])
+    manager = _basic_info([("Produto", ["A", "B"]), ("Deploy", ["PRD"]), ("Autenticação", ["CyberArk"])])
+    assert compare(repo, manager) == []
+
+
+def test_apitags_com_atributo_a_mais_ou_tag_diferente_aponta_o_atributo():
+    repo = _basic_info([("Produto", ["A"]), ("Deploy", ["PRD"])])
+    manager = _basic_info([("Produto", ["A", "B"]), ("Setor", ["Arquitetura"])])
+    assert compare(repo, manager) == [
+        Difference("api-basic-info.yaml", "spec.apiTags.Deploy", "PRD", ABSENT),
+        Difference("api-basic-info.yaml", "spec.apiTags.Produto", "A", "A, B"),
+        Difference("api-basic-info.yaml", "spec.apiTags.Setor", ABSENT, "Arquitetura"),
+    ]
+
+
+def test_apitags_vazia_contra_ausente_continua_diferenca():
+    repo = [_file("api-basic-info.yaml", "spec:\n  id: 425\n  apiTags: []\n")]
+    manager = [_file("api-basic-info.yaml", "spec:\n  id: 425\n")]
+    assert compare(repo, manager) == [
+        Difference("api-basic-info.yaml", "spec.apiTags", [], ABSENT)
+    ]
