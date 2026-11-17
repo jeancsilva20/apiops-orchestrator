@@ -6,6 +6,7 @@
     contrato     GET /revisions/{id}/swagger, só OpenAPI 3           GET
     carga        materialize(api, revisão, template, swagger) → escrita atômica
     verificação  materialize(remoto) × materialize(assemble(remoto, repositório))
+    customs      GET /custom-interceptors, só com Custom nas diferenças  GET
 
 Só `GET` no Manager. Recebe **ports**, nunca adapters concretos, e lê os modelos
 `Api` e `Revision` que o port devolve.
@@ -15,7 +16,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from apiops_orchestrator.application.enums.manager_failure_kind_enum import (
     ManagerFailureKind,
@@ -45,6 +46,7 @@ from apiops_orchestrator.application.services.repo_importer_service import (
     RepoCanonicalReader,
 )
 from apiops_orchestrator.domain.models.api_model import Api, Revision
+from apiops_orchestrator.domain.models.interceptor_model import CustomInterceptor
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
 from apiops_orchestrator.domain.models.sync_view import (
     MODE_CHECK,
@@ -82,6 +84,21 @@ _SPEC_FIELDS = ("name", "version", "basePath", "description", "apiResponsible", 
 
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _customs_saved_in(revision: Revision) -> Dict[int, CustomInterceptor]:
+    """Each Custom as saved in the content of the revision's interceptors, by id."""
+    scopes: List[Any] = [revision]
+    for resource in revision.resources:
+        scopes.append(resource)
+        scopes.extend(resource.operations)
+    saved: Dict[int, CustomInterceptor] = {}
+    for scope in scopes:
+        for item in scope.interceptors:
+            custom = item.custom
+            if custom is not None and item.custom_interceptor_id not in saved:
+                saved[item.custom_interceptor_id] = custom
+    return saved
 
 
 @dataclass(frozen=True)
@@ -210,6 +227,9 @@ class SyncService:
             revision_number,
             len(differences),
         )
+        customs, outside_catalog = self._custom_interceptors(
+            revision_diff.custom_ids(differences), remote.revision, step
+        )
         view = self._view(MODE_CHECK, remote, manager_side)
         return SyncView(
             schema=view.schema,
@@ -221,6 +241,8 @@ class SyncService:
             # about is the state of the API, not of the repository against it.
             warnings=[],
             differences=differences,
+            custom_interceptors=customs,
+            outside_catalog=outside_catalog,
         )
 
     # --- etapas compartilhadas -------------------------------------------------
@@ -249,6 +271,33 @@ class SyncService:
             ) from exc
         spec = data.get("spec") if isinstance(data, dict) else None
         return dict(spec) if isinstance(spec, dict) else {}
+
+    def _custom_interceptors(
+        self, ids: Set[int], revision: Revision, step: Progress
+    ) -> Tuple[List[CustomInterceptor], Optional[List[int]]]:
+        """The Customs of the given ids and those missing from the catalog, read only when needed.
+
+        The catalog is the source of each Custom; an id it lacks comes as saved in
+        the revision, or with the id alone.
+        """
+        if not ids:
+            return [], None
+        step("Consultando os interceptors customizados")
+        catalog: Optional[Dict[int, CustomInterceptor]]
+        try:
+            catalog = {
+                c.id: c for c in self._manager_api.list_custom_interceptors() if c.id is not None
+            }
+        except ManagerApiError as exc:
+            logger.info("sync.check.custom_catalog_unavailable error=%s", type(exc).__name__)
+            catalog = None
+        saved = _customs_saved_in(revision)
+        customs = [
+            (catalog or {}).get(custom_id) or saved.get(custom_id) or CustomInterceptor(id=custom_id)
+            for custom_id in sorted(ids)
+        ]
+        outside = None if catalog is None else [i for i in sorted(ids) if i not in catalog]
+        return customs, outside
 
     def _check_template(self, template: int, step: Progress) -> None:
         """The template API must exist and be visible, like the API itself."""

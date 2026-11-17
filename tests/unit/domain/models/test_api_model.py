@@ -5,7 +5,8 @@ import pathlib
 
 import pytest
 
-from apiops_orchestrator.domain.models.api_model import Api, Interceptor, Revision
+from apiops_orchestrator.domain.models.api_model import Api, Revision
+from apiops_orchestrator.domain.models.interceptor_model import Interceptor
 
 FIXTURES = pathlib.Path(__file__).parents[3] / "fixtures" / "manager"
 CASES = ["api-417-rev2", "api-400-rev4"]

@@ -1,7 +1,9 @@
 import importlib.metadata
 import logging
 import platform
+import re
 import sys
+from collections import Counter
 from contextlib import contextmanager
 import time
 from datetime import datetime, timezone
@@ -9,7 +11,7 @@ from pathlib import Path
 
 import yaml
 import typer
-from typing import Any, Callable, Dict, List, NoReturn, Optional, cast
+from typing import Any, Callable, Dict, List, NoReturn, Optional, Tuple, cast
 from rich import print as rprint
 from rich import box
 from rich import get_console
@@ -47,6 +49,12 @@ from apiops_orchestrator.application.exceptions.sync_exceptions import (
     SyncError,
 )
 from apiops_orchestrator.domain.models.sync_view import MODE_CHECK, SyncView
+from apiops_orchestrator.domain.services.revision_diff import (
+    ABSENT,
+    CUSTOM_TYPE,
+    Difference,
+    equivalent,
+)
 from apiops_orchestrator.domain.models.publish_view import PublishView
 from apiops_orchestrator.domain.models.validate_view import (
     DOCUMENTATION_SCOPE,
@@ -1698,40 +1706,185 @@ def deploy(
         _exit_on_unexpected(e, command="deploy")
 
 
-def _difference_value(value: Any) -> str:
-    """One difference side as the YAML reader sees it: `true`, `null`, text as is."""
+# `interceptors_request`, `interceptors_request[2]` or `interceptors_request[2].content.quota`.
+_INTERCEPTOR_FIELD = re.compile(r"^(interceptors_(?:request|response))(?:\[(\d+)\])?(?:\.(.+))?$")
+_SAME_STYLE = "grey53"
+_CHANGED_STYLE = "yellow"
+
+_Row = Tuple[Text, Text, Text]
+
+
+def _difference_text(value: Any) -> Text:
+    """One side of a difference as the YAML reader sees it."""
+    if isinstance(value, str) and value == ABSENT:
+        return Text(ABSENT, style=_SAME_STYLE)
     if value is None:
-        return "null"
+        return Text("null")
     if isinstance(value, bool):
-        return "true" if value else "false"
+        return Text("true" if value else "false")
+    if isinstance(value, str) and value == "":
+        return Text('""')
     if isinstance(value, (dict, list)):
-        return yaml.safe_dump(value, default_flow_style=True, allow_unicode=True).strip()
-    return str(value)
+        dumped = yaml.safe_dump(value, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        return Text(dumped.rstrip())
+    return Text(str(value))
 
 
-def _render_differences(differences, arrow: str, width: int) -> None:
-    """One block per file: the path whole on its own line, then `campo  repositório → Manager`.
+def _interceptor_label(item: Any, view: SyncView) -> str:
+    """The type of the interceptor; a Custom also shows its id, name and absence from the catalog."""
+    if not isinstance(item, dict):
+        return _difference_text(item).plain
+    kind = str(item.get("type"))
+    if kind != CUSTOM_TYPE or item.get("id") is None:
+        return kind
+    try:
+        custom_id = int(item["id"])
+    except (TypeError, ValueError):
+        return f"{CUSTOM_TYPE} {item['id']}"
+    custom = next((c for c in view.custom_interceptors if c.id == custom_id), None)
+    notes = [custom.name] if custom is not None and custom.name else []
+    if view.in_catalog(custom_id) is False:
+        notes.append("fora do catálogo")
+    return f"{CUSTOM_TYPE} {custom_id}" + (f" ({', '.join(notes)})" if notes else "")
 
-    A four-column table folded the paths in the middle of a word; the block keeps
-    the path readable and gives the values the rest of the width.
-    """
-    by_file: Dict[str, list] = {}
+
+def _interceptor_list_text(items: Any, other: Any, view: SyncView) -> Text:
+    """Numbered list of interceptors; the positions that differ from the other side stand out."""
+    if not isinstance(items, list) or not items:
+        return _difference_text(items)
+    others = other if isinstance(other, list) else []
+    text = Text()
+    for index, item in enumerate(items):
+        same = index < len(others) and equivalent(item, others[index])
+        if index:
+            text.append("\n")
+        text.append(
+            f"{index + 1}. {_interceptor_label(item, view)}",
+            style=_SAME_STYLE if same else _CHANGED_STYLE,
+        )
+    return text
+
+
+def _exclusive_lines(text: str, other: str) -> List[str]:
+    """Lines of `text` that `other` does not have, counting repeated lines."""
+    remaining = Counter(other.split("\n"))
+    lines: List[str] = []
+    for line in text.split("\n"):
+        if remaining[line] > 0:
+            remaining[line] -= 1
+        else:
+            lines.append(line)
+    return lines
+
+
+def _lines_text(lines: List[str]) -> Text:
+    if not lines:
+        return Text("-", style=_SAME_STYLE)
+    text = Text()
+    for index, line in enumerate(lines):
+        if index:
+            text.append("\n")
+        if line:
+            text.append(line)
+        else:
+            text.append("(linha vazia)", style=_SAME_STYLE)
+    return text
+
+
+def _value_cells(repository: Any, manager: Any) -> Tuple[Text, Text, Optional[str]]:
+    """Both sides of a field; text with several lines shows only the lines each side has alone."""
+    if isinstance(repository, str) and isinstance(manager, str) and (
+        "\n" in repository or "\n" in manager
+    ):
+        only_repository = _exclusive_lines(repository, manager)
+        only_manager = _exclusive_lines(manager, repository)
+        if not only_repository and not only_manager:
+            return _lines_text([]), _lines_text([]), "mesmas linhas, em outra ordem"
+        return _lines_text(only_repository), _lines_text(only_manager), "só as linhas que diferem"
+    return _difference_text(repository), _difference_text(manager), None
+
+
+def _field_text(name: str, note: Optional[str]) -> Text:
+    text = Text(name)
+    if note:
+        indent = " " * (len(name) - len(name.lstrip()) + 2)
+        text.append(f"\n{indent}({note})", style=_SAME_STYLE)
+    return text
+
+
+def _difference_rows(differences: List[Difference], view: SyncView) -> List[List[_Row]]:
+    """Table rows of one file, in groups: a field changed inside an interceptor joins its title row."""
+    groups: List[List[_Row]] = []
+    open_item: Optional[Tuple[str, str]] = None
     for d in differences:
+        match = _INTERCEPTOR_FIELD.match(d.field or "")
+        if match and match.group(2) is None:
+            groups.append([(
+                Text(match.group(1)),
+                _interceptor_list_text(d.repository, d.manager, view),
+                _interceptor_list_text(d.manager, d.repository, view),
+            )])
+            open_item = None
+        elif match and match.group(3) is None:
+            number = int(match.group(2)) + 1
+
+            def side(value: Any) -> Text:
+                if isinstance(value, str) and value == ABSENT:
+                    return _difference_text(value)
+                return Text(f"{number}. {_interceptor_label(value, view)}", style=_CHANGED_STYLE)
+
+            groups.append([(Text(match.group(1)), side(d.repository), side(d.manager))])
+            open_item = None
+        elif match and d.interceptor is not None:
+            item = (match.group(1), match.group(2))
+            if item != open_item:
+                title = f"{int(match.group(2)) + 1}. {d.interceptor}"
+                groups.append([(
+                    Text(match.group(1)),
+                    Text(title, style=_SAME_STYLE),
+                    Text(title, style=_SAME_STYLE),
+                )])
+                open_item = item
+            name = match.group(3)
+            if name.startswith("content."):
+                name = name[len("content."):]
+            repository, manager, note = _value_cells(d.repository, d.manager)
+            groups[-1].append((_field_text(f"  {name}", note), repository, manager))
+        else:
+            repository, manager, note = _value_cells(d.repository, d.manager)
+            groups.append([(_field_text(d.field or "", note), repository, manager)])
+            open_item = None
+    return groups
+
+
+def _render_differences(view: SyncView, width: int) -> None:
+    """One table per file (Campo | Repositório | Manager); a file on one side only is a line."""
+    by_file: Dict[str, List[Difference]] = {}
+    for d in view.differences:
         by_file.setdefault(d.file, []).append(d)
     for file, items in by_file.items():
         rprint()
+        if items[0].field is None:
+            where = "só no Manager" if items[0].repository == ABSENT else "só no repositório"
+            rprint(Text.assemble((file, "bold white"), "  ", (where, _CHANGED_STYLE)))
+            continue
         rprint(Text(file, style="bold white", overflow="fold"))
-        grid = Table.grid(padding=(0, 2))
-        grid.add_column(no_wrap=True, style="grey53")
-        grid.add_column(overflow="fold", max_width=width)
-        for d in items:
-            values = Text.assemble(
-                (_difference_value(d.repository), "white"),
-                f"  {arrow}  ",
-                (_difference_value(d.manager), "white"),
-            )
-            grid.add_row(Text("  " + (d.field or "(arquivo)")), values)
-        rprint(grid)
+        table = Table(
+            box=_GRADE_BOX,
+            header_style="bold cyan",
+            border_style="grey53",
+            padding=(0, 1),
+            expand=True,
+        )
+        table.add_column("Campo", overflow="fold", max_width=max(12, width * 2 // 5))
+        table.add_column("Repositório", overflow="fold", ratio=1)
+        table.add_column("Manager", overflow="fold", ratio=1)
+        groups = _difference_rows(items, view)
+        for group_index, group in enumerate(groups):
+            for row_index, row in enumerate(group):
+                last = row_index == len(group) - 1 and group_index < len(groups) - 1
+                table.add_row(*row, end_section=last)
+        get_console().print(table, width=width)
 
 
 def _render_sync_text(view: SyncView) -> None:
@@ -1751,8 +1904,7 @@ def _render_sync_text(view: SyncView) -> None:
             f"[grey53](id {view.revision.manager_id})[/grey53]",
         )
     )
-    title = "Verificação" if view.mode == MODE_CHECK else "Carga"
-    arrow = "\u2192" if _supports_text("\u2192") else "->"
+    title = "Verificação" if view.mode == MODE_CHECK else "API Importada"
     rprint()
     rprint(_validate_panel(title, _field_grid(identity), width=width))
     rprint()
@@ -1761,11 +1913,8 @@ def _render_sync_text(view: SyncView) -> None:
         if view.in_sync:
             rprint("[bold green]Repositório e Manager iguais.[/bold green]")
         else:
-            rprint(
-                f"[bold]Diferenças[/bold]  [red]{len(view.differences)}[/red]  "
-                f"[grey53](repositório {arrow} Manager)[/grey53]"
-            )
-            _render_differences(view.differences, arrow, width)
+            rprint(f"[bold]Diferenças[/bold]  [red]{len(view.differences)}[/red]")
+            _render_differences(view, width)
         rprint()
     else:
         rprint(f"[bold]Pasta[/bold]  {_literal(view.repository or '.')}")

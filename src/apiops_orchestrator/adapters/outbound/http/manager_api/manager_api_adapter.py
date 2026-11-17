@@ -17,6 +17,7 @@ from apiops_orchestrator.domain.ports.manager_api_port import (
 )
 from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
 from apiops_orchestrator.domain.models.api_model import Api, Revision, WireModel
+from apiops_orchestrator.domain.models.interceptor_model import CustomInterceptor
 from apiops_orchestrator.domain.models.api_visibility_model import OwnershipContext
 from apiops_orchestrator.domain.models.catalog_revision_model import (
     CatalogRevision,
@@ -451,6 +452,14 @@ class ManagerApiAdapter(ManagerApiPort):
             "name": json_response.get("name"),
             "script": json_response.get("script"),
         }
+
+    def list_custom_interceptors(self) -> List[CustomInterceptor]:
+        rows = self._request("GET", "custom-interceptors")
+        if not isinstance(rows, list):
+            raise ManagerApiUnexpectedResponseError(
+                "Manager API returned a non-list custom interceptor catalog"
+            )
+        return [self._model(CustomInterceptor, row, "custom interceptor") for row in rows]
 
     def get_revision(self, revision_id: int) -> Revision:
         return self._model(Revision, self._request("GET", f"revisions/{revision_id}"), "revision")

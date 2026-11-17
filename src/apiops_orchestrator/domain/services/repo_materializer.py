@@ -19,7 +19,8 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import yaml
 
-from apiops_orchestrator.domain.models.api_model import Api, Interceptor, Resource, Revision
+from apiops_orchestrator.domain.models.api_model import Api, Resource, Revision
+from apiops_orchestrator.domain.models.interceptor_model import Interceptor
 from apiops_orchestrator.domain.services import openapi_contract as contract
 from apiops_orchestrator.domain.services import repo_layout as layout
 from apiops_orchestrator.domain.services.revision_payload import repository_mock_content

@@ -14,6 +14,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from apiops_orchestrator.domain.models.interceptor_model import Interceptor
+
 
 class WireModel(BaseModel):
     """Base of the models read from the Manager: known fields typed, unknown kept."""
@@ -27,29 +29,6 @@ class WireModel(BaseModel):
 
 def _empty_list_when_null(value: Any) -> Any:
     return [] if value is None else value
-
-
-class Interceptor(WireModel):
-    id: Optional[int] = None
-    type: Optional[str] = None
-    execution_point: Optional[str] = Field(default=None, alias="executionPoint")
-    position: Optional[int] = None
-    status: Optional[str] = None
-    parent: Optional[Dict[str, Any]] = None
-    custom_interceptor_id: Optional[int] = Field(default=None, alias="customInterceptorId")
-    # Text (JSON serialized) for the native types; the platform may answer other shapes.
-    content: Optional[Any] = None
-
-    @property
-    def parent_id(self) -> Optional[int]:
-        return (self.parent or {}).get("id")
-
-    @property
-    def label(self) -> str:
-        """`Custom#<id>` or the type, for messages."""
-        if self.custom_interceptor_id:
-            return f"{self.type}#{self.custom_interceptor_id}"
-        return str(self.type)
 
 
 class _Scope(WireModel):
@@ -158,4 +137,4 @@ def as_wire(value: Any) -> Any:
     Used by `validate`, `publish` and `deploy` until they move to the models;
     anything that is not a model (a dict from a test fake) passes through.
     """
-    return value.to_wire() if isinstance(value, WireModel) else value
+    return value.to_wire() if isinstance(value, BaseModel) and hasattr(value, "to_wire") else value

@@ -28,6 +28,7 @@ from apiops_orchestrator.application.exceptions.sync_exceptions import (
 )
 from apiops_orchestrator.application.services.sync_service import SyncService
 from apiops_orchestrator.domain.models.api_model import Api, Revision
+from apiops_orchestrator.domain.models.interceptor_model import CustomInterceptor
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
 from apiops_orchestrator.domain.models.sync_view import MODE_CHECK, MODE_LOAD, SCHEMA_SEN_SYNC_V1
 from apiops_orchestrator.domain.ports.manager_api_port import (
@@ -79,7 +80,14 @@ class ManagerFake:
     """Port fake: grava cada chamada e só conhece GET."""
 
     def __init__(
-        self, api=None, revision=None, swagger=None, error_api=None, error_revision=None
+        self,
+        api=None,
+        revision=None,
+        swagger=None,
+        error_api=None,
+        error_revision=None,
+        customs=None,
+        error_customs=None,
     ):
         data = _fixture()
         self.revision = revision if revision is not None else copy.deepcopy(data["revision"])
@@ -87,7 +95,18 @@ class ManagerFake:
         self.swagger = swagger if swagger is not None else _swagger(self.revision)
         self.error_api = error_api
         self.error_revision = error_revision
+        self.customs = customs if customs is not None else [
+            {"id": 32, "name": "Release Notes (catálogo)", "script": "//release"},
+            {"id": 178, "name": "CyberArk (catálogo)", "script": "//auth"},
+        ]
+        self.error_customs = error_customs
         self.calls = []
+
+    def list_custom_interceptors(self):
+        self.calls.append("list_custom_interceptors")
+        if self.error_customs is not None:
+            raise self.error_customs
+        return [CustomInterceptor.model_validate(copy.deepcopy(c)) for c in self.customs]
 
     def get_revision_swagger(self, revision_id):
         self.calls.append(f"get_revision_swagger:{revision_id}")
@@ -498,3 +517,76 @@ def test_check_ignora_a_ordem_das_apitags(tmp_path):
     view = _service(ManagerFake(api=reordered)).check(tmp_path, api_id=417, revision_number=2)
 
     assert view.in_sync, view.differences
+
+
+# --- customs nas diferenças -----------------------------------------------------------
+
+
+def _replace_custom_in_root(tmp_path, old, new):
+    path = tmp_path / layout.ROOT_FILE
+    text = path.read_text(encoding="utf-8")
+    assert f"id: {old}\n" in text
+    path.write_text(text.replace(f"id: {old}\n", f"id: {new}\n", 1), encoding="utf-8")
+
+
+def _customs(view):
+    return [(c.id, c.name, view.in_catalog(c.id)) for c in view.custom_interceptors]
+
+
+def test_check_com_custom_nas_diferencas_le_o_catalogo_uma_vez(tmp_path):
+    _loaded_repo(tmp_path)
+    _replace_custom_in_root(tmp_path, 32, 999)
+    manager = ManagerFake()
+
+    view = _service(manager).check(tmp_path, api_id=417, revision_number=2)
+
+    # A Custom of another id is another interceptor: the root list comes whole.
+    assert [(d.file, d.field) for d in view.differences] == [(layout.ROOT_FILE, "interceptors_request")]
+    assert manager.calls.count("list_custom_interceptors") == 1
+    # Every Custom shown in the lists, from the catalog; an id it lacks is outside it.
+    assert _customs(view) == [
+        (32, "Release Notes (catálogo)", True),
+        (178, "CyberArk (catálogo)", True),
+        (999, None, False),
+    ]
+    assert view.outside_catalog == [999]
+
+
+def test_check_usa_o_custom_guardado_na_revisao_quando_o_catalogo_nao_tem(tmp_path):
+    _loaded_repo(tmp_path)
+    _replace_custom_in_root(tmp_path, 32, 999)
+
+    view = _service(ManagerFake(customs=[])).check(tmp_path, api_id=417, revision_number=2)
+
+    assert _customs(view) == [
+        (32, "Release Notes", False),
+        (178, "CyberArk and OAuth Autentication", False),
+        (999, None, False),
+    ]
+
+
+def test_check_sem_catalogo_segue_com_o_custom_da_revisao(tmp_path):
+    _loaded_repo(tmp_path)
+    _replace_custom_in_root(tmp_path, 32, 999)
+    manager = ManagerFake(error_customs=ManagerApiTransportRejectedError(403, "Forbidden"))
+
+    view = _service(manager).check(tmp_path, api_id=417, revision_number=2)
+
+    assert not view.in_sync and view.outside_catalog is None
+    assert _customs(view) == [
+        (32, "Release Notes", None),
+        (178, "CyberArk and OAuth Autentication", None),
+        (999, None, None),
+    ]
+
+
+def test_check_sem_custom_nas_diferencas_nao_le_o_catalogo(tmp_path):
+    _loaded_repo(tmp_path)
+    changed = copy.deepcopy(_fixture()["revision"])
+    changed["timeout"] = "45"
+    manager = ManagerFake(revision=changed)
+
+    view = _service(manager).check(tmp_path, api_id=417, revision_number=2)
+
+    assert not view.in_sync and view.custom_interceptors == []
+    assert "list_custom_interceptors" not in manager.calls

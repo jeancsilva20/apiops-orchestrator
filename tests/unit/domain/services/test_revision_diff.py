@@ -1,7 +1,15 @@
 """Diff semântico de duas árvores materializadas (`sen sync --check`)."""
 
+import yaml
+
 from apiops_orchestrator.domain.services.repo_materializer import MaterializedFile
-from apiops_orchestrator.domain.services.revision_diff import ABSENT, Difference, compare
+from apiops_orchestrator.domain.services.revision_diff import (
+    ABSENT,
+    Difference,
+    compare,
+    custom_ids,
+    equivalent,
+)
 
 
 def _file(path, text):
@@ -89,3 +97,85 @@ def test_apitags_vazia_contra_ausente_continua_diferenca():
     assert compare(repo, manager) == [
         Difference("api-basic-info.yaml", "spec.apiTags", [], ABSENT)
     ]
+
+
+# --- listas de interceptors: por posição -------------------------------------------
+
+LOG = {"type": "Log", "content": {"acceptedTerms": True}}
+MOCK = {"type": "Mock", "content": {"status": 200}}
+XSS = {"type": "XSS threat protection", "content": {"regexList": []}}
+
+
+def _rate_limit(quota):
+    return {"type": "Rate limit", "content": {"quota": quota, "interval": "SECOND"}}
+
+
+def _flow(*items, key="interceptors_request"):
+    return [_file("all.yaml", yaml.safe_dump({key: list(items)}, allow_unicode=True))]
+
+
+def test_campo_mudado_no_mesmo_interceptor_aponta_o_campo_e_o_tipo():
+    assert compare(_flow(LOG, _rate_limit(1000)), _flow(LOG, _rate_limit(500))) == [
+        Difference("all.yaml", "interceptors_request[1].content.quota", 1000, 500, "Rate limit")
+    ]
+
+
+def test_texto_numerico_igual_ao_numero_no_conteudo_nao_e_diferenca():
+    assert compare(_flow(_rate_limit(1000)), _flow(_rate_limit("1000"))) == []
+
+
+def test_interceptor_diferente_numa_posicao_traz_as_duas_listas_inteiras():
+    repo = [LOG, MOCK, _rate_limit(1000)]
+    manager = [LOG, XSS, _rate_limit(500), LOG]
+    assert compare(_flow(*repo), _flow(*manager)) == [
+        Difference("all.yaml", "interceptors_request", repo, manager),
+        # The field of the same interceptor still comes, below the lists.
+        Difference("all.yaml", "interceptors_request[2].content.quota", 1000, 500, "Rate limit"),
+    ]
+
+
+def test_custom_com_outro_id_e_outro_interceptor():
+    repo = [{"type": "Custom", "id": 32}, LOG]
+    manager = [{"type": "Custom", "id": 125}, LOG]
+    assert compare(_flow(*repo), _flow(*manager)) == [
+        Difference("all.yaml", "interceptors_request", repo, manager)
+    ]
+
+
+def test_itens_alem_do_fim_da_outra_lista_vem_um_a_um():
+    assert compare(_flow(LOG), _flow(LOG, MOCK, XSS)) == [
+        Difference("all.yaml", "interceptors_request[1]", ABSENT, MOCK),
+        Difference("all.yaml", "interceptors_request[2]", ABSENT, XSS),
+    ]
+
+
+def test_lista_so_de_um_lado_vem_inteira():
+    repo = _flow(LOG, MOCK, key="interceptors_response")
+    manager = [_file("all.yaml", "destination:\n  url: ''\n")]
+    assert compare(repo, manager) == [
+        Difference("all.yaml", "destination", ABSENT, {"url": ""}),
+        Difference("all.yaml", "interceptors_response", [LOG, MOCK], ABSENT),
+    ]
+
+
+def test_lista_de_interceptors_dentro_de_outro_campo_segue_a_regra_geral():
+    repo = [_file("a.yaml", "extra:\n  interceptors_request:\n  - type: Log\n")]
+    manager = [_file("a.yaml", "extra:\n  interceptors_request:\n  - type: Mock\n")]
+    assert compare(repo, manager) == [
+        Difference("a.yaml", "extra.interceptors_request[0].type", "Log", "Mock")
+    ]
+
+
+def test_equivalente_segue_as_regras_do_diff():
+    assert equivalent(_rate_limit(1000), _rate_limit("1000"))
+    assert not equivalent(_rate_limit(1000), _rate_limit(500))
+    assert not equivalent(True, 1)
+
+
+def test_ids_de_custom_nos_valores_das_diferencas():
+    differences = [
+        Difference("all.yaml", "interceptors_request", [{"type": "Custom", "id": 32}, LOG], ABSENT),
+        Difference("all.yaml", "interceptors_request[3]", ABSENT, {"type": "Custom", "id": "125"}),
+        Difference("all.yaml", "destination.url", "x", "y"),
+    ]
+    assert custom_ids(differences) == {32, 125}

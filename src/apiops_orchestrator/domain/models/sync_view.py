@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from apiops_orchestrator.domain.models.interceptor_model import CustomInterceptor
 from apiops_orchestrator.domain.models.validate_view import ValidateApi, ValidateRevision
 from apiops_orchestrator.domain.services.revision_diff import Difference
 
@@ -28,10 +29,20 @@ class SyncView:
     operations: int = 0
     warnings: List[str] = field(default_factory=list)
     differences: List[Difference] = field(default_factory=list)
+    # Customs that appear in the differences, and the ids of those missing from
+    # the tenant catalog (`None` when the catalog could not be read).
+    custom_interceptors: List[CustomInterceptor] = field(default_factory=list)
+    outside_catalog: Optional[List[int]] = None
 
     @property
     def in_sync(self) -> bool:
         return not self.differences
+
+    def in_catalog(self, custom_id: Optional[int]) -> Optional[bool]:
+        """Whether the custom is in the tenant catalog; `None` when the catalog was not read."""
+        if self.outside_catalog is None:
+            return None
+        return custom_id not in self.outside_catalog
 
     def to_document(self) -> Dict[str, Any]:
         """Árvore do contrato v1, na ordem declarada; cada modo traz só o seu bloco."""
@@ -60,6 +71,10 @@ class SyncView:
                     "manager": d.manager,
                 }
                 for d in self.differences
+            ]
+            document["customInterceptors"] = [
+                {"id": c.id, "name": c.name, "inCatalog": self.in_catalog(c.id)}
+                for c in self.custom_interceptors
             ]
         else:
             document["repository"] = self.repository

@@ -4,6 +4,7 @@ from typing import Dict, Any, List, Optional
 
 from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
 from apiops_orchestrator.domain.models.api_model import Api, Revision
+from apiops_orchestrator.domain.models.interceptor_model import CustomInterceptor
 from apiops_orchestrator.domain.models.catalog_revision_model import (
     CatalogRevisionCompleteness,
 )
@@ -170,3 +171,7 @@ class ManagerApiPort(ABC):
     ) -> Dict[str, str] | None:
         """Get the content of a custom interceptor"""
         pass
+
+    @abstractmethod
+    def list_custom_interceptors(self) -> List[CustomInterceptor]:
+        """Catalog of the tenant's custom interceptors."""

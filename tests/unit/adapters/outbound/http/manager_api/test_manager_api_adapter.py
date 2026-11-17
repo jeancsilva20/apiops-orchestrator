@@ -572,3 +572,29 @@ def test_update_revision_swagger_rejection_carries_the_platform_reasons(mock_set
             adapter.update_revision_swagger(9554, {})
 
     assert excinfo.value.messages == ["Invalid swagger"]
+
+
+def test_list_custom_interceptors_returns_catalog_models(mock_settings):
+    adapter = ManagerApiAdapter(token="t", base_path="/api-manager/api/v3/", max_retries=3,
+                                settings=mock_settings)
+    wire = [
+        {"id": 32, "name": "Release Notes", "script": "//release", "abort": False, "tags": ["APIOps"]},
+        {"id": 33, "name": "CyberArk", "script": "//auth"},
+    ]
+
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.return_value = wire
+        result = adapter.list_custom_interceptors()
+
+    assert [(c.id, c.name) for c in result] == [(32, "Release Notes"), (33, "CyberArk")]
+    assert [c.to_wire() for c in result] == wire
+    assert mock_request.call_args.kwargs["url"] == "http://urltest.com/api-manager/api/v3/custom-interceptors"
+
+
+def test_list_custom_interceptors_rejects_non_list(mock_settings):
+    adapter = ManagerApiAdapter(token="t", base_path="/api-manager/api/v3/", max_retries=3,
+                                settings=mock_settings)
+    with patch(MOCK_PATH) as mock_request:
+        mock_request.return_value = {"message": "x"}
+        with pytest.raises(ManagerApiUnexpectedResponseError):
+            adapter.list_custom_interceptors()
