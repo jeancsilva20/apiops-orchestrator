@@ -17,6 +17,7 @@ def _view(mode, **overrides):
         mode=mode,
         api=ValidateApi(manager_id=425, name="Lab", version="1.0.0", base_path="/lab/v1"),
         revision=ValidateRevision(manager_id=9999, revision_number=4),
+        repository="C:/repos/lab",
         files=["all.yaml", "api-basic-info.yaml", "resources/a/get_a.yaml", "resources/a/resource.yaml"],
         resources=1,
         operations=1,
@@ -29,11 +30,11 @@ def _view(mode, **overrides):
 def test_documento_da_carga():
     doc = _view(MODE_LOAD).to_document()
     assert list(doc) == [
-        "schema", "generatedAt", "mode", "api", "revision", "files", "counts", "longestPath", "warnings",
+        "schema", "generatedAt", "mode", "api", "revision", "repository", "files", "counts", "warnings",
     ]
     assert doc["mode"] == "load"
     assert doc["counts"] == {"files": 4, "resources": 1, "operations": 1}
-    assert doc["longestPath"] == "resources/a/resource.yaml"
+    assert doc["repository"] == "C:/repos/lab"
     assert "differences" not in doc
 
 
@@ -47,7 +48,7 @@ def test_documento_da_verificacao_com_diferencas():
     assert doc["differences"] == [
         {"file": "all.yaml", "field": "destination.timeout", "repository": "30", "manager": "99"}
     ]
-    assert "files" not in doc
+    assert "files" not in doc and "repository" not in doc
 
 
 def test_verificacao_sem_diferencas_esta_em_sincronia():

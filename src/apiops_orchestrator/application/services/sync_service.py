@@ -144,7 +144,7 @@ class SyncService:
             revision_number,
             len(result.files),
         )
-        return self._view(MODE_LOAD, remote, result)
+        return self._view(MODE_LOAD, remote, result, repository=str(Path(repo_path).resolve()))
 
     def check(
         self,
@@ -283,7 +283,9 @@ class SyncService:
             raise SyncError(f"{INTERNAL_ERROR_MESSAGE}\n\nNada foi gravado.") from exc
 
     @staticmethod
-    def _view(mode: str, remote: _Remote, result: MaterializationResult) -> SyncView:
+    def _view(
+        mode: str, remote: _Remote, result: MaterializationResult, repository: Optional[str] = None
+    ) -> SyncView:
         api, revision = remote.api, remote.revision
         return SyncView(
             schema=SCHEMA_SEN_SYNC_V1,
@@ -295,6 +297,7 @@ class SyncService:
             revision=ValidateRevision(
                 manager_id=revision.id, revision_number=revision.revision_number
             ),
+            repository=repository,
             files=sorted(result.paths),
             resources=len(revision.resources),
             operations=revision.total_operations,

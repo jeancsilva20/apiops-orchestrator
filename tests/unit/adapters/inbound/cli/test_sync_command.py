@@ -1,5 +1,6 @@
 """Borda do `sen sync`: gramática, exit codes, documento e ausência de token na saída."""
 
+from pathlib import Path
 import json
 
 import pytest
@@ -48,9 +49,11 @@ class _ServiceFake:
         self._result = result
         self._error = error
         self.calls = []
+        self.repo_paths = []
 
     def _run(self, name, repo_path, *, api_id, revision_number, progress=None):
         self.calls.append((name, api_id, revision_number))
+        self.repo_paths.append(repo_path)
         if progress is not None:
             progress("Consultando a API no Manager")
         if self._error is not None:
@@ -70,29 +73,32 @@ def _ctx(service):
 
 def test_carga_com_id_e_revisao():
     service = _ServiceFake(_view())
-    result = runner.invoke(app, ["sen", "sync", "425", "--revision", "4"], obj=_ctx(service))
+    result = runner.invoke(app, ["sen", "sync", "--id", "425", "--revision", "4"], obj=_ctx(service))
     assert result.exit_code == 0, result.output
     assert service.calls == [("sync", 425, 4)]
-    assert "API Lab" in result.output and "resources/a/get_a.yaml" in result.output
-    assert "Próximo passo" in result.output
+    assert "API Lab" in result.output
+    # The text shows the folder and the counts, not the file list nor a next step.
+    assert "Pasta" in result.output and "4 arquivos" in result.output
+    assert "resources/a/get_a.yaml" not in result.output
+    assert "Próximo passo" not in result.output
 
 
-def test_sem_id_passa_none_ao_servico():
+def test_sem_id_e_erro_de_uso_sem_chamar_o_servico():
     service = _ServiceFake(_view())
     result = runner.invoke(app, ["sen", "sync", "-r", "2"], obj=_ctx(service))
-    assert result.exit_code == 0, result.output
-    assert service.calls == [("sync", None, 2)]
+    assert result.exit_code == 2
+    assert service.calls == []
 
 
 def test_revision_e_obrigatoria():
     service = _ServiceFake(_view())
-    result = runner.invoke(app, ["sen", "sync", "425"], obj=_ctx(service))
+    result = runner.invoke(app, ["sen", "sync", "--id", "425"], obj=_ctx(service))
     assert result.exit_code == 2 and service.calls == []
 
 
 def test_saida_json_so_com_o_documento():
     result = runner.invoke(
-        app, ["sen", "sync", "425", "--revision", "4", "-o", "json"], obj=_ctx(_ServiceFake(_view()))
+        app, ["sen", "sync", "--id", "425", "--revision", "4", "-o", "json"], obj=_ctx(_ServiceFake(_view()))
     )
     assert result.exit_code == 0, result.output
     document = json.loads(result.stdout)
@@ -102,16 +108,16 @@ def test_saida_json_so_com_o_documento():
 
 def test_check_em_sincronia_sai_zero():
     service = _ServiceFake(_view(MODE_CHECK, files=[]))
-    result = runner.invoke(app, ["sen", "sync", "--check", "--revision", "2"], obj=_ctx(service))
+    result = runner.invoke(app, ["sen", "sync", "--id", "425", "--check", "--revision", "2"], obj=_ctx(service))
     assert result.exit_code == 0, result.output
-    assert service.calls == [("check", None, 2)]
+    assert service.calls == [("check", 425, 2)]
     assert "iguais" in result.output
 
 
 def test_check_com_diferenca_sai_oito_e_lista_arquivo_campo_e_valores():
     diff = Difference("resources/a/get_a.yaml", "destination.timeout", "30", "99")
     service = _ServiceFake(_view(MODE_CHECK, files=[], differences=[diff]))
-    result = runner.invoke(app, ["sen", "sync", "--check", "-r", "2"], obj=_ctx(service))
+    result = runner.invoke(app, ["sen", "sync", "--id", "425", "--check", "-r", "2"], obj=_ctx(service))
     assert result.exit_code == 8
     for piece in ("resources/a/get_a.yaml", "destination.timeout", "30", "99"):
         assert piece in result.output
@@ -121,7 +127,7 @@ def test_check_com_diferenca_em_json_tambem_sai_oito():
     diff = Difference("all.yaml", "destination.timeout", "30", "45")
     service = _ServiceFake(_view(MODE_CHECK, files=[], differences=[diff]))
     result = runner.invoke(
-        app, ["sen", "sync", "--check", "-r", "4", "-o", "json"], obj=_ctx(service)
+        app, ["sen", "sync", "--id", "425", "--check", "-r", "4", "-o", "json"], obj=_ctx(service)
     )
     assert result.exit_code == 8
     document = json.loads(result.stdout)
@@ -140,18 +146,34 @@ def test_check_com_diferenca_em_json_tambem_sai_oito():
 )
 def test_exit_codes_por_categoria(error, code):
     result = runner.invoke(
-        app, ["sen", "sync", "425", "--revision", "4"], obj=_ctx(_ServiceFake(error=error))
+        app, ["sen", "sync", "--id", "425", "--revision", "4"], obj=_ctx(_ServiceFake(error=error))
     )
     assert result.exit_code == code, result.output
     assert "Erro:" in result.output
 
 
 def test_factory_ausente():
-    result = runner.invoke(app, ["sen", "sync", "425", "--revision", "4"], obj={})
+    result = runner.invoke(app, ["sen", "sync", "--id", "425", "--revision", "4"], obj={})
     assert result.exit_code == 1 and "indisponível" in result.output
 
 
 def test_nenhum_token_na_saida():
     service = _ServiceFake(_view())
-    result = runner.invoke(app, ["sen", "sync", "425", "-r", "4"], obj=_ctx(service))
+    result = runner.invoke(app, ["sen", "sync", "--id", "425", "-r", "4"], obj=_ctx(service))
     assert "Bearer" not in result.output and "eyJ" not in result.output
+
+
+def test_repo_aponta_a_pasta_da_carga(tmp_path):
+    service = _ServiceFake(_view())
+    result = runner.invoke(
+        app, ["sen", "sync", "--id", "425", "-r", "4", "--repo", str(tmp_path)], obj=_ctx(service)
+    )
+    assert result.exit_code == 0, result.output
+    assert service.repo_paths == [tmp_path]
+
+
+def test_sem_repo_usa_o_diretorio_atual(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    service = _ServiceFake(_view())
+    runner.invoke(app, ["sen", "sync", "--id", "425", "-r", "4"], obj=_ctx(service))
+    assert service.repo_paths == [Path.cwd()]

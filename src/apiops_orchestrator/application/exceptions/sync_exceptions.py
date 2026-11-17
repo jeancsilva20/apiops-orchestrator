@@ -36,7 +36,7 @@ class MissingApiIdError(SyncError):
 
     def __init__(self):
         super().__init__(
-            "Informe o id da API: `sen sync <api-id> --revision <n>`. O `spec.id` do "
+            "Informe o id da API: `sen sync --id <api-id> --revision <n>`. O `spec.id` do "
             f"`api-basic-info.yaml` ainda não está preenchido.\n\n{NOTHING_WRITTEN}"
         )
 

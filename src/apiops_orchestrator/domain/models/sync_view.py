@@ -21,6 +21,8 @@ class SyncView:
     mode: str
     api: ValidateApi
     revision: ValidateRevision
+    # Absolute folder that received the load; `None` on `--check`.
+    repository: Optional[str] = None
     files: List[str] = field(default_factory=list)
     resources: int = 0
     operations: int = 0
@@ -30,10 +32,6 @@ class SyncView:
     @property
     def in_sync(self) -> bool:
         return not self.differences
-
-    @property
-    def longest_path(self) -> Optional[str]:
-        return max(self.files, key=len) if self.files else None
 
     def to_document(self) -> Dict[str, Any]:
         """Árvore do contrato v1, na ordem declarada; cada modo traz só o seu bloco."""
@@ -64,12 +62,12 @@ class SyncView:
                 for d in self.differences
             ]
         else:
+            document["repository"] = self.repository
             document["files"] = list(self.files)
             document["counts"] = {
                 "files": len(self.files),
                 "resources": self.resources,
                 "operations": self.operations,
             }
-            document["longestPath"] = self.longest_path
         document["warnings"] = list(self.warnings)
         return document

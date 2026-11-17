@@ -1744,19 +1744,11 @@ def _render_sync_text(view: SyncView) -> None:
             rprint(grid)
         rprint()
     else:
-        rprint(f"[bold]Arquivos gerados[/bold]  {len(view.files)}")
-        for file_path in view.files:
-            rprint(f"  {_literal(file_path)}")
-        rprint()
+        rprint(f"[bold]Pasta[/bold]  {_literal(view.repository or '.')}")
         rprint(
             f"[grey53]{len(view.files)} arquivos · {view.resources} recursos · "
             f"{view.operations} operações[/grey53]"
         )
-        if view.longest_path:
-            rprint(
-                f"[grey53]maior caminho relativo: {len(view.longest_path)} caracteres "
-                f"{arrow} {_literal(view.longest_path)}[/grey53]"
-            )
         rprint()
 
     if view.warnings:
@@ -1769,27 +1761,15 @@ def _render_sync_text(view: SyncView) -> None:
         )
         rprint()
 
-    if view.mode != MODE_CHECK:
-        rprint(
-            "[bold]Próximo passo[/bold]  confira o `git diff`, faça o commit desta branch "
-            "e repita nas outras branches de ambiente; ao final, faça o push e ative as "
-            "proteções."
-        )
-        rprint()
 
 
 @sen_app.command("sync")
 def sync(
     ctx: typer.Context,
-    api_id: Optional[int] = typer.Argument(
-        None,
-        help="Id da API no Manager. Opcional quando o `spec.id` do api-basic-info.yaml já está preenchido.",
-    ),
-    revision: int = typer.Option(
-        ...,
-        "--revision",
-        "-r",
-        help="Número da revisão (revisionNumber do Manager) que vai para o diretório atual.",
+    api_id: Optional[int] = typer.Option(..., "--id", help="Id da API no Manager."),
+    revision: int = typer.Option(..., "--revision", "-r", help="Número da revisão."),
+    repo: Optional[Path] = typer.Option(
+        None, "--repo", help="Repositório local de destino da API (default: diretório atual)."
     ),
     check: bool = typer.Option(
         False, "--check", help="Só compara o repositório com a revisão; não grava nada."
@@ -1816,7 +1796,7 @@ def sync(
         with progress:
             run = service.check if check else service.sync
             view = run(
-                repo_path=Path.cwd(),
+                repo_path=repo or Path.cwd(),
                 api_id=api_id,
                 revision_number=revision,
                 progress=progress.step,
