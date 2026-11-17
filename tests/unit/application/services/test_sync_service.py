@@ -474,6 +474,18 @@ def test_template_inexistente_aborta_sem_gravar(tmp_path):
     assert writer.written is None
 
 
+def test_check_nao_traz_avisos_de_materializacao(tmp_path):
+    """The load of the same API warns (own Log repeating an inherited one); the check must not."""
+    _loaded_repo(tmp_path)
+    loaded = _service().sync(tmp_path, api_id=417, revision_number=2)
+    assert loaded.warnings, "fixture without warnings would not exercise the rule"
+
+    view = _service().check(tmp_path, api_id=417, revision_number=2)
+
+    assert view.in_sync and view.warnings == []
+    assert view.to_document()["warnings"] == []
+
+
 def test_check_ignora_a_ordem_das_apitags(tmp_path):
     _loaded_repo(tmp_path)
     reordered = copy.deepcopy(_fixture()["api"])

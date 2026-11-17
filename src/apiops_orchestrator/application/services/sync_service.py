@@ -217,7 +217,9 @@ class SyncService:
             mode=MODE_CHECK,
             api=view.api,
             revision=view.revision,
-            warnings=view.warnings,
+            # A comparison reports differences only: what the materializer warns
+            # about is the state of the API, not of the repository against it.
+            warnings=[],
             differences=differences,
         )
 
