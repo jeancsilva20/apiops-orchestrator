@@ -118,18 +118,25 @@ class SyncService:
         *,
         api_id: Optional[int],
         revision_number: int,
+        template: Optional[int] = None,
         progress: Optional[Progress] = None,
     ) -> SyncView:
-        """Carga: grava no repositório a revisão informada, preservando o `template`."""
+        """Carga: grava no repositório a revisão informada.
+
+        `template` goes to `spec.template` after being checked in the Manager;
+        without it, the value already in the file is kept.
+        """
         step = progress or (lambda _: None)
         target = self._target(repo_path, api_id)
         remote = self._read_remote(target.api_id, revision_number, step)
+        if template is not None:
+            self._check_template(template, step)
 
         step("Montando a estrutura")
         result = materialize(
             remote.api,
             remote.revision,
-            template=target.spec.get("template", ""),
+            template=template if template is not None else target.spec.get("template", ""),
             swagger=remote.swagger,
         )
 
@@ -240,6 +247,13 @@ class SyncService:
             ) from exc
         spec = data.get("spec") if isinstance(data, dict) else None
         return dict(spec) if isinstance(spec, dict) else {}
+
+    def _check_template(self, template: int, step: Progress) -> None:
+        """The template API must exist and be visible, like the API itself."""
+        step("Consultando a API template no Manager")
+        api: Optional[Api] = self._call(lambda: self._manager_api.get_api_by_id(template), template)
+        if api is None or not self._access.can_see(from_api(api)):
+            raise ApiNotFoundError(template)
 
     def _read_remote(self, api_id: int, number: int, step: Progress) -> _Remote:
         step("Consultando a API no Manager")

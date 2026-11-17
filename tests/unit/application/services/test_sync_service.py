@@ -425,3 +425,50 @@ def test_check_aceita_mock_guardado_como_objeto_no_manager(tmp_path):
     view = _service(ManagerFake(revision=as_object)).check(tmp_path, api_id=417, revision_number=2)
 
     assert view.in_sync, view.differences
+
+
+# --- --template ----------------------------------------------------------------
+
+class ManagerSemTemplate(ManagerFake):
+    """Only the API 999 is missing; everything else answers like the fake."""
+
+    def get_api_by_id(self, api_id):
+        if api_id == 999:
+            self.calls.append(f"get_api_by_id:{api_id}")
+            raise ManagerApiTransportRejectedError(404, "Not Found")
+        return super().get_api_by_id(api_id)
+
+
+def test_template_informado_e_conferido_e_gravado(tmp_path):
+    _basic_info(tmp_path, {"template": 100})
+    manager, writer = ManagerFake(), WriterSpy()
+
+    _service(manager, writer).sync(tmp_path, api_id=417, revision_number=2, template=414)
+
+    assert yaml.safe_load(writer.written[layout.BASIC_INFO_FILE])["spec"]["template"] == 414
+    assert manager.calls == [
+        "get_api_by_id:417", "get_revision:9175", "get_revision_swagger:9175", "get_api_by_id:414"
+    ]
+
+
+def test_sem_template_mantem_o_do_arquivo(tmp_path):
+    _basic_info(tmp_path, {"template": 100})
+    manager, writer = ManagerFake(), WriterSpy()
+
+    _service(manager, writer).sync(tmp_path, api_id=417, revision_number=2)
+
+    assert yaml.safe_load(writer.written[layout.BASIC_INFO_FILE])["spec"]["template"] == 100
+    assert "get_api_by_id:100" not in manager.calls
+
+
+def test_template_inexistente_aborta_sem_gravar(tmp_path):
+    _basic_info(tmp_path, {"template": 100})
+    writer = WriterSpy()
+
+    with pytest.raises(ApiNotFoundError) as exc:
+        _service(ManagerSemTemplate(), writer).sync(
+            tmp_path, api_id=417, revision_number=2, template=999
+        )
+
+    assert exc.value.exit_code == 3 and "999" in exc.value.message
+    assert writer.written is None

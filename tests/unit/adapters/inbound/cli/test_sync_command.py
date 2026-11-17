@@ -50,9 +50,11 @@ class _ServiceFake:
         self._error = error
         self.calls = []
         self.repo_paths = []
+        self.templates = []
 
-    def _run(self, name, repo_path, *, api_id, revision_number, progress=None):
+    def _run(self, name, repo_path, *, api_id, revision_number, template=None, progress=None):
         self.calls.append((name, api_id, revision_number))
+        self.templates.append(template)
         self.repo_paths.append(repo_path)
         if progress is not None:
             progress("Consultando a API no Manager")
@@ -177,3 +179,21 @@ def test_sem_repo_usa_o_diretorio_atual(tmp_path, monkeypatch):
     service = _ServiceFake(_view())
     runner.invoke(app, ["sen", "sync", "--id", "425", "-r", "4"], obj=_ctx(service))
     assert service.repo_paths == [Path.cwd()]
+
+
+def test_template_vai_ao_servico_na_carga():
+    service = _ServiceFake(_view())
+    result = runner.invoke(
+        app, ["sen", "sync", "--id", "425", "-r", "4", "--template", "414"], obj=_ctx(service)
+    )
+    assert result.exit_code == 0, result.output
+    assert service.templates == [414]
+
+
+def test_template_com_check_e_erro_de_uso():
+    service = _ServiceFake(_view(MODE_CHECK, files=[]))
+    result = runner.invoke(
+        app, ["sen", "sync", "--id", "425", "-r", "4", "--check", "--template", "414"], obj=_ctx(service)
+    )
+    assert result.exit_code == 2
+    assert "--template" in result.output and service.calls == []

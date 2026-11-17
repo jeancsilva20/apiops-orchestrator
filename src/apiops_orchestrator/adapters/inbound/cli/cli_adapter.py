@@ -1771,6 +1771,9 @@ def sync(
     repo: Optional[Path] = typer.Option(
         None, "--repo", help="Repositório local de destino da API (default: diretório atual)."
     ),
+    template: Optional[int] = typer.Option(
+        None, "--template", help="Id da API template, gravado em spec.template."
+    ),
     check: bool = typer.Option(
         False, "--check", help="Só compara o repositório com a revisão; não grava nada."
     ),
@@ -1782,6 +1785,8 @@ def sync(
     """
     Traz uma API do Manager para o repositório (carga) ou confere se os dois são iguais (--check).
     """
+    if check and template is not None:
+        raise typer.BadParameter("--template não se aplica ao --check.", param_hint="--template")
     try:
         service_factory = (ctx.obj or {}).get("sync_service_factory")
         if not callable(service_factory):
@@ -1794,13 +1799,11 @@ def sync(
             narrate=output is OutputFormat.TEXT,
         )
         with progress:
-            run = service.check if check else service.sync
-            view = run(
-                repo_path=repo or Path.cwd(),
-                api_id=api_id,
-                revision_number=revision,
-                progress=progress.step,
-            )
+            common = dict(repo_path=repo or Path.cwd(), api_id=api_id, revision_number=revision)
+            if check:
+                view = service.check(**common, progress=progress.step)
+            else:
+                view = service.sync(**common, template=template, progress=progress.step)
 
         display_output(
             view.to_document(),
