@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import yaml
 import typer
 from typing import Any, Callable, Dict, List, NoReturn, Optional, cast
 from rich import print as rprint
@@ -1697,6 +1698,42 @@ def deploy(
         _exit_on_unexpected(e, command="deploy")
 
 
+def _difference_value(value: Any) -> str:
+    """One difference side as the YAML reader sees it: `true`, `null`, text as is."""
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (dict, list)):
+        return yaml.safe_dump(value, default_flow_style=True, allow_unicode=True).strip()
+    return str(value)
+
+
+def _render_differences(differences, arrow: str, width: int) -> None:
+    """One block per file: the path whole on its own line, then `campo  repositório → Manager`.
+
+    A four-column table folded the paths in the middle of a word; the block keeps
+    the path readable and gives the values the rest of the width.
+    """
+    by_file: Dict[str, list] = {}
+    for d in differences:
+        by_file.setdefault(d.file, []).append(d)
+    for file, items in by_file.items():
+        rprint()
+        rprint(Text(file, style="bold white", overflow="fold"))
+        grid = Table.grid(padding=(0, 2))
+        grid.add_column(no_wrap=True, style="grey53")
+        grid.add_column(overflow="fold", max_width=width)
+        for d in items:
+            values = Text.assemble(
+                (_difference_value(d.repository), "white"),
+                f"  {arrow}  ",
+                (_difference_value(d.manager), "white"),
+            )
+            grid.add_row(Text("  " + (d.field or "(arquivo)")), values)
+        rprint(grid)
+
+
 def _render_sync_text(view: SyncView) -> None:
     """Renderiza a resposta do `sync` — mesma árvore de `json`/`yaml`."""
     width = _validate_width()
@@ -1726,22 +1763,9 @@ def _render_sync_text(view: SyncView) -> None:
         else:
             rprint(
                 f"[bold]Diferenças[/bold]  [red]{len(view.differences)}[/red]  "
-                f"[grey53](valor no repositório {arrow} valor no Manager)[/grey53]"
+                f"[grey53](repositório {arrow} Manager)[/grey53]"
             )
-            grid = Table.grid(padding=(0, 2))
-            grid.width = width
-            grid.add_column(overflow="fold", ratio=2)
-            grid.add_column(overflow="fold", ratio=2)
-            grid.add_column(overflow="fold", ratio=1)
-            grid.add_column(overflow="fold", ratio=1)
-            for d in view.differences:
-                grid.add_row(
-                    Text(d.file, style="white"),
-                    Text(d.field or "(arquivo)", style="grey53"),
-                    Text(str(d.repository)),
-                    Text(str(d.manager)),
-                )
-            rprint(grid)
+            _render_differences(view.differences, arrow, width)
         rprint()
     else:
         rprint(f"[bold]Pasta[/bold]  {_literal(view.repository or '.')}")
