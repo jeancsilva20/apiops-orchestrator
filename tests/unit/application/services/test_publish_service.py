@@ -193,10 +193,6 @@ class ManagerFake:
         self.written_swagger = copy.deepcopy(document)
         return {"result": "success"}
 
-    def publish_api_changes(self, data):  # pragma: no cover - não deve ser chamado
-        self.chamadas.append("publish_api_changes")
-        raise AssertionError("o orquestrador nunca usa POST /revisions (D-005 §9)")
-
 
 def _settings(mode="pipeline", revision=2):
     return SimpleNamespace(
@@ -402,7 +398,6 @@ def test_um_unico_put_depois_de_todas_as_leituras_e_nenhum_post(tmp_path):
     _servico(manager).publish(_repo(tmp_path))
 
     assert manager.chamadas.count("update_revision") == 1
-    assert "publish_api_changes" not in manager.chamadas
     escrita = manager.chamadas.index("update_revision")
     for reading in ("get_api_by_id:417", "get_workflow"):
         assert manager.chamadas.index(reading) < escrita

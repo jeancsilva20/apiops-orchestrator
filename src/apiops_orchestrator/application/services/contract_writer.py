@@ -9,6 +9,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
+from apiops_orchestrator.domain.models.api_model import as_wire
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
     InvalidContractError,
 )
@@ -220,7 +221,7 @@ class ContractWriter:
         step("Conferindo o contrato gravado")
         try:
             written = self._manager_api.get_revision_swagger(revision_id)
-            revision = self._manager_api.get_revision(revision_id) or {}
+            revision = as_wire(self._manager_api.get_revision(revision_id)) or {}
         except ManagerApiError as exc:
             return _updated(
                 self._failure_warning(

@@ -104,7 +104,6 @@ class TestApiListingService:
         mock_manager_api.list_catalog_apis.assert_called_once_with(
             limit=25, offset=0, query=None
         )
-        mock_manager_api.get_apis.assert_not_called()
         mock_manager_api.get_api_by_id.assert_not_called()
 
     def test_list_apis_with_id(self, mock_manager_api):
@@ -288,8 +287,6 @@ class TestVisibilityOnListing:
         with pytest.raises(InsufficientSessionError, match="grupos de acesso"):
             service.list_apis()
 
-        # Bloqueio ANTES de consumir/complementar dados na colecao
-        mock_manager_api.get_apis.assert_not_called()
 
     def test_drill_down_shows_api_visible_to_the_session(self, mock_manager_api):
         mock_manager_api.list_api_detail.return_value = _wire(

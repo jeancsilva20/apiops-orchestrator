@@ -36,12 +36,16 @@ def manager():
     )
     from apiops_orchestrator.main import _build_admin_token, _load_settings
 
+    from _wire import WireManager
+
     settings = _load_settings()
-    return ManagerApiAdapter(
-        token=_build_admin_token(settings),
-        base_path="/api-manager/api/v3/",
-        max_retries=3,
-        settings=settings,
+    return WireManager(
+        ManagerApiAdapter(
+            token=_build_admin_token(settings),
+            base_path="/api-manager/api/v3/",
+            max_retries=3,
+            settings=settings,
+        )
     )
 
 

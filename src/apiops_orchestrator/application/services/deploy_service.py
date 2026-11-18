@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from apiops_orchestrator.domain.models.api_model import as_wire
 from apiops_orchestrator.application.exceptions.deploy_exceptions import (
     NO_DEPLOYMENT,
     DeployError,
@@ -62,7 +63,7 @@ from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiPort,
     ManagerApiTransportRejectedError,
 )
-from apiops_orchestrator.domain.services import deployments
+from apiops_orchestrator.domain.services import deployments, revisions
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +133,7 @@ class DeployService:
         spec = self._manifest(repo_path)
 
         step("Consultando a API no Manager")
-        api = self._manager_api.get_api_by_id(spec["id"]) or {}
+        api = as_wire(self._manager_api.get_api_by_id(spec["id"])) or {}
         self._identity(spec, api)
         revision = self._revision(api, number)
         environment = self._environment(api, environment_id)
@@ -256,15 +257,15 @@ class DeployService:
     @staticmethod
     def _revision(api: Dict[str, Any], number: int) -> Dict[str, Any]:
         """Revisão da API com o número informado."""
-        revisions = api.get("revisions") or []
-        for revision in revisions:
-            if revision.get("revisionNumber") == number and revision.get("id") is not None:
-                return revision
-        if not revisions:
+        revision = revisions.revision_by_number(api, number)
+        if revision is not None:
+            return revision
+        listed = revisions.revisions(api)
+        if not listed:
             available = "a API não tem nenhuma revisão"
         else:
             available = "Disponíveis: " + ", ".join(
-                f"{r.get('revisionNumber')} (id {r.get('id')})" for r in revisions
+                f"{r.get('revisionNumber')} (id {r.get('id')})" for r in listed
             )
         raise DeployError(
             f"A API {api.get('id')} não tem revisão de número {number}. "
@@ -407,7 +408,7 @@ class DeployService:
         """Relê a API e confirma o deploy criado; devolve o novo estado do ambiente."""
         step("Conferindo o deploy")
         try:
-            after = self._manager_api.get_api_by_id(api_id) or {}
+            after = as_wire(self._manager_api.get_api_by_id(api_id)) or {}
         except ManagerApiError as exc:
             raise self._failure(
                 base,

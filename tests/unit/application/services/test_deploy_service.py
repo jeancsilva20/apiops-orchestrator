@@ -161,9 +161,6 @@ class ManagerFake:
     def update_revision(self, *a, **k):  # pragma: no cover
         raise AssertionError("o deploy não grava conteúdo")
 
-    def publish_api_changes(self, *a, **k):  # pragma: no cover
-        raise AssertionError("o orquestrador nunca usa POST /revisions")
-
     def get_revision(self, *a, **k):  # pragma: no cover
         raise AssertionError("GET /revisions/{id} devolve deployments vazio (L-2)")
 

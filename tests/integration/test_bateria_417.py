@@ -39,6 +39,7 @@ from apiops_orchestrator.application.exceptions.validate_exceptions import (
 )
 from apiops_orchestrator.application.services.validate_service import ValidateService
 from apiops_orchestrator.domain.services.interceptor_flow import partition
+from apiops_orchestrator.domain.models.api_model import Api, Revision
 from apiops_orchestrator.domain.services.repo_materializer import materialize
 
 API_ID = 417
@@ -60,12 +61,16 @@ def manager():
         ManagerApiAdapter,
     )
 
+    from _wire import WireManager
+
     settings = _load_settings()
-    return ManagerApiAdapter(
-        token=_build_admin_token(settings),
-        base_path="/api-manager/api/v3/",
-        max_retries=3,
-        settings=settings,
+    return WireManager(
+        ManagerApiAdapter(
+            token=_build_admin_token(settings),
+            base_path="/api-manager/api/v3/",
+            max_retries=3,
+            settings=settings,
+        )
     )
 
 
@@ -118,7 +123,7 @@ def draft_id(backup):
 def baseline_repo(backup, draft_id, tmp_path_factory):
     """Materializa a PRÓPRIA Draft: publicá-la de volta é um no-op."""
     draft = backup["revisions"][str(draft_id)]
-    resultado = materialize(backup["api"], draft)
+    resultado = materialize(Api.model_validate(backup["api"]), Revision.model_validate(draft))
 
     root = tmp_path_factory.mktemp("baseline") / "repo"
     for file in resultado.files:

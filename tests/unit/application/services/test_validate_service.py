@@ -179,10 +179,6 @@ class ManagerFake:
         self.written_swagger = copy.deepcopy(document)
         return {"result": "success"}
 
-    def publish_api_changes(self, data):  # pragma: no cover - não deve ser chamado
-        self.chamadas.append("publish_api_changes")
-        raise AssertionError("o orquestrador nunca usa POST /revisions (D-005 §9)")
-
 
 def _settings(mode="local", revision=1):
     return SimpleNamespace(
@@ -251,7 +247,6 @@ def test_e3_faz_um_unico_put_e_nenhum_post(tmp_path):
     _servico(manager).validate(_repo(tmp_path), confirm=SIM)
 
     assert manager.chamadas.count("update_revision") == 1
-    assert "publish_api_changes" not in manager.chamadas
 
 
 def test_conferencia_relê_a_revisao_depois_de_publicar(tmp_path):

@@ -1055,6 +1055,16 @@ def test_mock_with_object_body_and_numeric_status_goes_as_the_text_the_manager_k
     assert revision_payload.verify(assembled.body, published, expected=assembled.expected) == []
 
 
+def test_repository_mock_content_is_the_inverse_of_the_text_the_manager_keeps():
+    declared = {"body": {"ok": True, "n": 1}, "status": 200, "headers": "h"}
+    assert revision_payload.repository_mock_content(
+        revision_payload._mock_content(declared)) == declared
+    # Free text and a non numeric status stay as they are; a non dict passes through.
+    assert revision_payload.repository_mock_content(
+        {"body": "texto livre", "status": "abc"}) == {"body": "texto livre", "status": "abc"}
+    assert revision_payload.repository_mock_content("x") == "x"
+
+
 def test_new_mock_with_object_body_goes_as_json_text():
     op = _Op("GET", {"path": "/x", "interceptors_request": [
         {"type": "Mock", "content": {"body": {"situação": "UP"}, "status": 503}}]})

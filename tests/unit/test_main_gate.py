@@ -45,6 +45,33 @@ def test_login_service_factory_uses_package_root_for_session_store(monkeypatch, 
     assert service.session_store.directory == tmp_path
 
 
+def test_session_store_factory_does_not_load_settings(monkeypatch):
+    monkeypatch.setattr(
+        main_mod, "Settings", MagicMock(side_effect=AssertionError("Settings must not load"))
+    )
+    monkeypatch.delenv("PACKAGE_ROOT", raising=False)
+
+    store = main_mod.build_session_store_factory()()
+
+    assert store.directory == main_mod.PACKAGE_ROOT
+
+
+def test_session_store_factory_honors_package_root_override(monkeypatch, tmp_path):
+    monkeypatch.setenv("PACKAGE_ROOT", str(tmp_path))
+
+    store = main_mod.build_session_store_factory()()
+
+    assert store.session_path == tmp_path / ".sen_session"
+
+
+def test_session_store_factory_is_in_context(recording_app, monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["main.py", "sen", "whoami"])
+
+    main_mod.main()
+
+    assert callable(recording_app.calls[0]["session_store_factory"])
+
+
 # ---------------------------------------------------------------------------
 # Gate de boot: main() é dispatch puro; Settings só nasce no consumo
 # ---------------------------------------------------------------------------

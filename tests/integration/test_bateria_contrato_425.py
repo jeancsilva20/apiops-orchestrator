@@ -26,6 +26,7 @@ from apiops_orchestrator.application.services.validate_service import ValidateSe
 from apiops_orchestrator.domain.services import openapi_contract
 from apiops_orchestrator.domain.services import repo_layout as layout
 from apiops_orchestrator.domain.services import revision_payload
+from apiops_orchestrator.domain.models.api_model import Api, Revision
 from apiops_orchestrator.domain.services.repo_materializer import materialize
 
 API_ID = 425
@@ -121,13 +122,17 @@ def manager():
     )
     from apiops_orchestrator.main import _build_admin_token, _load_settings
 
+    from _wire import WireManager
+
     settings = _load_settings()
     return _RecordingManager(
-        ManagerApiAdapter(
-            token=_build_admin_token(settings),
-            base_path="/api-manager/api/v3/",
-            max_retries=3,
-            settings=settings,
+        WireManager(
+            ManagerApiAdapter(
+                token=_build_admin_token(settings),
+                base_path="/api-manager/api/v3/",
+                max_retries=3,
+                settings=settings,
+            )
         )
     )
 
@@ -221,7 +226,7 @@ def _repository(
     changed_payload=False,
 ):
     """The Draft flow, materialized from the backup, with the contract on top."""
-    for file in materialize(lab["api"], lab["revision"]).files:
+    for file in materialize(Api.model_validate(lab["api"]), Revision.model_validate(lab["revision"])).files:
         target = tmp_path / file.file_path
         target.parent.mkdir(parents=True, exist_ok=True)
         text = file.text

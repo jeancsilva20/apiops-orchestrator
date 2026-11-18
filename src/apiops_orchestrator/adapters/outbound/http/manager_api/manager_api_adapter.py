@@ -2,6 +2,8 @@ import logging
 import re
 from typing import Dict, Any, List, Optional
 
+import pydantic
+
 from apiops_orchestrator.adapters.outbound.http.common.platform_request import (
     bearer_headers,
     platform_error_items,
@@ -16,6 +18,8 @@ from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiUnexpectedResponseError,
 )
 from apiops_orchestrator.domain.models.api_catalog_model import ApiCatalogEntry
+from apiops_orchestrator.domain.models.api_model import Api, Revision, WireModel
+from apiops_orchestrator.domain.models.interceptor_model import CustomInterceptor
 from apiops_orchestrator.domain.models.api_visibility_model import OwnershipContext
 from apiops_orchestrator.domain.models.catalog_revision_model import (
     CatalogRevision,
@@ -209,12 +213,9 @@ def _translate_completeness(raw: Any) -> CatalogRevisionCompleteness:
 
 
 class ManagerApiAdapter(ManagerApiPort):
-    def __init__(self, token: str, base_path: str, max_retries: int, api_id: Optional[int] = None, settings: Optional[Settings] = None):
+    def __init__(self, token: str, base_path: str, max_retries: int, settings: Optional[Settings] = None):
         self.host = settings.HOST if settings is not None else None
         self.token = token
-        # LEGADO: id fixo, fallback de `get_api_by_id` usado pelo `VersionerService`;
-        # os comandos sempre passam o id.
-        self.api_id = api_id
         self.base_path = base_path
         self.max_retries = max_retries
 
@@ -239,10 +240,6 @@ class ManagerApiAdapter(ManagerApiPort):
             rejection=_manager_rejection,
             **kwargs,
         )
-
-    def get_apis(self) -> list[Dict[str, Any]]:
-        endpoint = "apis"
-        return self._request("GET", endpoint)
 
     def list_api_detail(self, api_id: int) -> Optional[ApiCatalogEntry]:
         payload, _ = self._request(
@@ -304,10 +301,20 @@ class ManagerApiAdapter(ManagerApiPort):
             logger.warning("api-finder count header missing; degrading total")
             return -1
 
-    def get_api_by_id(self, api_id: int | None = None) -> Dict[str, Any]:
-        target_id = api_id if api_id is not None else self.api_id
-        endpoint = f"apis/{target_id}"
-        return self._request("GET", endpoint)
+    def _model(self, model: type, payload: Any, what: str) -> Any:
+        """Validates the platform answer into a model; a shape the model refuses is unexpected."""
+        if not isinstance(payload, dict):
+            raise ManagerApiUnexpectedResponseError(f"Manager API returned a non-JSON {what}")
+        try:
+            return model.model_validate(payload)
+        except pydantic.ValidationError as exc:
+            logger.info("manager_api.%s.unexpected_shape errors=%d", what, exc.error_count())
+            raise ManagerApiUnexpectedResponseError(
+                f"Manager API returned a {what} in a shape the CLI does not recognize"
+            ) from exc
+
+    def get_api_by_id(self, api_id: int) -> Api:
+        return self._model(Api, self._request("GET", f"apis/{api_id}"), "api")
 
     def get_custom_interceptor_by_id(self, custom_interceptor_id: int) -> Dict[str, str] | None:
         """Custom do catálogo, ou `None` quando o id não existe mais.
@@ -336,13 +343,16 @@ class ManagerApiAdapter(ManagerApiPort):
             "script": json_response.get("script"),
         }
 
-    def publish_api_changes(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """LEGADO: cria revisão (`POST /revisions`). Nenhum comando usa; mantido para o versionamento futuro."""
-        endpoint = "revisions"
-        return self._request("POST", endpoint=endpoint, json=data)
+    def list_custom_interceptors(self) -> List[CustomInterceptor]:
+        rows = self._request("GET", "custom-interceptors")
+        if not isinstance(rows, list):
+            raise ManagerApiUnexpectedResponseError(
+                "Manager API returned a non-list custom interceptor catalog"
+            )
+        return [self._model(CustomInterceptor, row, "custom interceptor") for row in rows]
 
-    def get_revision(self, revision_id: int) -> Dict[str, Any]:
-        return self._request("GET", f"revisions/{revision_id}")
+    def get_revision(self, revision_id: int) -> Revision:
+        return self._model(Revision, self._request("GET", f"revisions/{revision_id}"), "revision")
 
     def update_revision(
         self, revision_id: int, payload: Dict[str, Any]
