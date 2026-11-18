@@ -6,15 +6,20 @@
     Monta um venv limpo em build/exe (só dependências de runtime do
     requirements.txt + o pacote), empacota com PyInstaller em arquivo único,
     confere que nenhum .sen/.sen_session/.env entrou no binário e gera, em
-    dist/sen-<versão>/, o sen-<versão>-windows-x64.zip (o `sen.exe`, o
-    instalador, o `install.cmd`, o `.sen.example` e o README do dev,
-    scripts/README-executavel.md, com a versão preenchida). O README vai
-    dentro do zip, o mesmo do pacote Linux.
+    dist/sen-<versão>/<cliente>/, o sen-<versão>-<cliente>-windows-x64.zip
+    (o `sen.exe`, o instalador, o `install.cmd`, o `.sen.example` com os
+    endereços do cliente e o README do dev, scripts/README-executavel.md,
+    com a versão e o cliente preenchidos). O README vai dentro do zip, o
+    mesmo do pacote Linux.
+
+.PARAMETER Client
+    Cliente do pacote: nome de um arquivo de scripts/clients, sem o `.sen`.
 
 .EXAMPLE
-    .\scripts\build-exe.ps1
+    .\scripts\build-exe.ps1 -Client ecad
 #>
 param(
+    [string]$Client,
     [string]$Python = "python"
 )
 
@@ -30,6 +35,30 @@ $build = Join-Path $raiz "build\exe"
 $venv = Join-Path $build "venv"
 $dist = Join-Path $raiz "dist"
 
+# Devolve as linhas de scripts/clients/<cliente>.sen, depois de conferir o nome e as chaves.
+function Get-ClientBlock {
+    param([string]$Name)
+    $folder = Join-Path $PSScriptRoot "clients"
+    $available = (Get-ChildItem -Path $folder -Filter "*.sen" | ForEach-Object { $_.BaseName }) -join ", "
+    if (-not $Name) {
+        throw "Informe o cliente com -Client. Disponíveis: $available"
+    }
+    $file = Join-Path $folder "$Name.sen"
+    if ($Name -cnotmatch '^[a-z0-9-]+$' -or -not (Test-Path $file)) {
+        throw "Cliente '$Name' não existe em scripts\clients. Disponíveis: $available"
+    }
+    $lines = @(Get-Content -Encoding UTF8 $file)
+    foreach ($key in "AUTH_HOST", "AUTH_LOGIN_PATH") {
+        if (-not ($lines -match ('^' + $key + '=["'']?[^"''\s]'))) {
+            throw "scripts\clients\$Name.sen não define $key."
+        }
+    }
+    if ($lines -match '^\s*SEN_CREDENTIALS=') {
+        throw "scripts\clients\$Name.sen não pode definir SEN_CREDENTIALS."
+    }
+    return $lines
+}
+
 function Invoke-Nativo {
     param([string]$Exe, [string[]]$Argumentos)
     & $Exe @Argumentos
@@ -41,7 +70,8 @@ function Invoke-Nativo {
 Push-Location $raiz
 try {
     $versao = (Select-String -Path "pyproject.toml" -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
-    $nome = "sen-$versao-windows-x64"
+    $clientBlock = @(Get-ClientBlock $Client)
+    $nome = "sen-$versao-$Client-windows-x64"
     Write-Host "Gerando $nome" -ForegroundColor Cyan
 
     if (Test-Path $build) { Remove-Item -Recurse -Force $build }
@@ -88,13 +118,21 @@ try {
     $pacote = Join-Path $build $nome
     New-Item -ItemType Directory -Path $pacote | Out-Null
     Copy-Item $exe $pacote
-    Copy-Item "src\apiops_orchestrator\.sen.example" $pacote
+    # O .sen.example do pacote é o gabarito até a credencial, seguido dos endereços do cliente.
+    $template = @(Get-Content -Encoding UTF8 "src\apiops_orchestrator\.sen.example")
+    $credentialLine = -1
+    for ($i = 0; $i -lt $template.Count; $i++) {
+        if ($template[$i] -match '^SEN_CREDENTIALS=') { $credentialLine = $i; break }
+    }
+    if ($credentialLine -lt 0) { throw "O .sen.example não tem a linha SEN_CREDENTIALS=." }
+    $senExample = @($template[0..$credentialLine]) + "" + $clientBlock
+    [IO.File]::WriteAllLines((Join-Path $pacote ".sen.example"), [string[]]$senExample, (New-Object Text.UTF8Encoding $false))
     Copy-Item "scripts\install.ps1" $pacote
     Copy-Item "scripts\install.cmd" $pacote
-    # O README entra no zip, com a versão no lugar de <versão>, para os comandos funcionarem colados.
-    $readme = (Get-Content -Raw -Encoding UTF8 "scripts\README-executavel.md").Replace("<versão>", $versao)
+    # O README entra no zip, com a versão e o cliente preenchidos, para os comandos funcionarem colados.
+    $readme = (Get-Content -Raw -Encoding UTF8 "scripts\README-executavel.md").Replace("<versão>", $versao).Replace("<cliente>", $Client)
     [IO.File]::WriteAllText((Join-Path $pacote "README.md"), $readme)
-    $entrega = Join-Path $dist "sen-$versao"
+    $entrega = Join-Path $dist "sen-$versao\$Client"
     New-Item -ItemType Directory -Force -Path $entrega | Out-Null
     $readmeSolto = Join-Path $entrega "README.md"
     if (Test-Path $readmeSolto) { Remove-Item -Force $readmeSolto }

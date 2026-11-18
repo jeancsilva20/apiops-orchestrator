@@ -10,13 +10,11 @@
 # O arquivo .sen JAMAIS é versionado (see .gitignore) — este gabarito sim.
 # ============================================================================
 
-# Preencha apenas o SEN_CREDENTIALS; AUTH_HOST e AUTH_LOGIN_PATH já vêm prontos.
-
 # Credencial única do `sen login`: APENAS o blob Base64(client_id:secret), sem prefixo "Basic".
 # Geração (Linux):   printf '%s:%s' "<client_id>" "<client_secret>" | base64
 # Geração (Windows): [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("<client_id>:<client_secret>"))
 SEN_CREDENTIALS=""
 
-# Orchestrator Auth API do ECAD.
-AUTH_HOST="https://api-dev.ecad.org.br"
+# Orchestrator Auth API. No pacote de entrega, este bloco vem de scripts/clients/<cliente>.sen.
+AUTH_HOST="https://<host-do-ambiente>"
 AUTH_LOGIN_PATH="/orq-auth/v1/oauth2/token"

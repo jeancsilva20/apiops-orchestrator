@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Instala (ou atualiza) o `sen` em ~/.local/share/sen, coloca no PATH e configura a credencial.
 # No fim, apaga da pasta extraída os arquivos do pacote, para o único `sen` ser o instalado.
-# Uso, de fora da pasta extraída:  ./sen-<versão>-linux-x64/install.sh
+# Uso, de fora da pasta extraída:  ./sen-<versão>-<cliente>-linux-x64/install.sh
 set -euo pipefail
 
 ORIGEM="$(cd "$(dirname "$0")" && pwd)"

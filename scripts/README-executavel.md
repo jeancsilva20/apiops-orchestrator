@@ -4,8 +4,8 @@ CLI do APIOps Orchestrator. Nada mais precisa estar instalado: baixe o pacote do
 
 | Sistema | Pacote | Requisitos |
 |---|---|---|
-| Windows | `sen-<versão>-windows-x64.zip` | Windows 10 ou 11, 64 bits |
-| Linux | `sen-<versão>-linux-x64.tar.gz` | 64 bits, glibc 2.35 ou mais nova (Ubuntu 22.04+, Debian 12+, Fedora 36+) |
+| Windows | `sen-<versão>-<cliente>-windows-x64.zip` | Windows 10 ou 11, 64 bits |
+| Linux | `sen-<versão>-<cliente>-linux-x64.tar.gz` | 64 bits, glibc 2.35 ou mais nova (Ubuntu 22.04+, Debian 12+, Fedora 36+) |
 
 O instalador coloca o `sen` na sua pasta de usuário, põe no PATH e pede a credencial: `client_id` e `client_secret`, ou o Basic já pronto. No fim, ele apaga a pasta extraída, que não é mais necessária.
 
@@ -17,7 +17,7 @@ O instalador coloca o `sen` na sua pasta de usuário, põe no PATH e pede a cred
 
 ## Windows
 
-1. Extraia o zip: botão direito em `sen-<versão>-windows-x64.zip` > **Extrair tudo**. Não rode o instalador de dentro do zip aberto no Explorador de Arquivos.
+1. Extraia o zip: botão direito em `sen-<versão>-<cliente>-windows-x64.zip` > **Extrair tudo**. Não rode o instalador de dentro do zip aberto no Explorador de Arquivos.
 2. Na pasta extraída, dê dois cliques em `install.cmd`. Se o Windows pedir confirmação para executar, confirme.
 
    Ou, no PowerShell:
@@ -32,10 +32,10 @@ O `sen` fica em `%LOCALAPPDATA%\sen`.
 
 ## Linux
 
-No terminal, na pasta onde você extraiu o pacote (a que contém a pasta `sen-<versão>-linux-x64`):
+No terminal, na pasta onde você extraiu o pacote (a que contém a pasta `sen-<versão>-<cliente>-linux-x64`):
 
 ```bash
-./sen-<versão>-linux-x64/install.sh
+./sen-<versão>-<cliente>-linux-x64/install.sh
 ```
 
 Depois, abra um terminal novo. O `sen` fica em `~/.local/share/sen`, com um atalho em `~/.local/bin`.
