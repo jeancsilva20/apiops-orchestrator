@@ -1,0 +1,2 @@
+AUTH_HOST="https://api-consulting.sensedia.com/cli-2/orq-auth/v1"
+AUTH_LOGIN_PATH="/oauth2/token"

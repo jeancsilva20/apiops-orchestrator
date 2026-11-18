@@ -1,0 +1,8 @@
+name: Letras
+description: Cadastro e exclusão de letras de obras musicais do catálogo ECAD
+destination:
+  url: ''            # vazio = herda do escopo acima
+
+# inherit: true  executa o fluxo herdado do escopo acima e, depois, os interceptors declarados abaixo
+# inherit: false ignora o fluxo herdado e executa só os interceptors declarados abaixo
+inherit: true

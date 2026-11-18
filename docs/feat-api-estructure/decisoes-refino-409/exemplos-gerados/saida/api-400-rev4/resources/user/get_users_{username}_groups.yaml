@@ -1,0 +1,7 @@
+path: /users/{username}/groups
+destination:
+  url: "https://platform-production.sensedia.com/user-management/v1/users/{username}/groups"
+
+# inherit: true  executa o fluxo herdado do escopo acima e, depois, os interceptors declarados abaixo
+# inherit: false ignora o fluxo herdado e executa só os interceptors declarados abaixo
+inherit: true

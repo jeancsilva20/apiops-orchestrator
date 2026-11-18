@@ -1,0 +1,68 @@
+
+==============================================================================
+FASE 1 - carregar o repositorio local (E1)
+==============================================================================
+INFO    pasta: C:\Users\JEAN~2.SIL\AppData\Local\Temp\claude\C--Users-jean-silva-sensedia-Documents-Projetos-APIOps\55e1e6a1-f482-4a28-9ef2-9a76f1816253\scratchpad\trabalho2
+INFO    spec.id=417  name='Serviço de Letras 2.0.0'  version='1.0.0'  basePath='/letras/v2'  template=''
+INFO    apiTags no repo: [{"attributeName": "My new", "tags": ["Tag1"]}, {"attributeName": "teste giroto", "tags": ["teste giroto"]}]
+INFO       atribuicao-responsavel     [('GET', '/tarefas/{id}/atribuicao-responsavel'), ('POST', '/tarefas/{id}/atribuicao-responsavel')]
+INFO       health-check               [('GET', '/health-check')]
+INFO       letras                     [('DELETE', '/letras/{id}'), ('POST', '/tarefas/{id}/letras')]
+INFO       tarefas                    [('GET', '/tarefas'), ('GET', '/tarefas/{id}')]
+INFO    carregado: 4 recurso(s), 7 operacao(oes)
+INFO    token configurado (len=839)
+HTTP    GET /api-manager/api/v3/apis/417
+HTTP       -> 200
+
+==============================================================================
+FASE 2 - GUARDA 1: identidade (version e basePath)
+==============================================================================
+INFO    version   repo='1.0.0'                      manager='1.0.0'                      OK
+INFO    basePath  repo='/letras/v2'                 manager='/letras/v2'                 OK
+INFO    spec.id=417 -> API 'Serviço de Letras 2.0.0' (id usado apenas como endereco do GET)
+OK      guarda 1 passou
+
+==============================================================================
+FASE 5 - PUT UNICO da revisao 1 (Draft), DENSO
+==============================================================================
+HTTP    GET /api-manager/api/v3/apis/417
+HTTP       -> 200
+HTTP    GET /api-manager/api/v3/revisions/9161
+HTTP       -> 200
+HTTP    GET /api-manager/api/v3/revisions/9175
+HTTP       -> 200
+INFO    catalogo local de Custom montado a partir das revisions: [32, 125, 178]
+HTTP    GET /api-manager/api/v3/revisions/9161
+HTTP       -> 200
+INFO    idTemp de itens novos comeca em 19711 (unico no payload inteiro)
+INFO    api.apiTags: [{"attributeName": "My new", "tags": ["Tag1"]}, {"attributeName": "teste giroto", "tags": ["teste giroto"]}] -> [{"attributeName": "My new", "tags": ["Tag1"]}, {"attributeName": "teste giroto", "tags": ["teste giroto"]}]
+INFO    workflowId=500 workflowStageId=1402 (reenviados como estao; se o stage nao tiver attributesRequisites, o AG nao valida)
+OK      escopo all: 2 item(ns) CONSTRUIDO(S) do zero (declarado no repo, ausente no remoto): [('Custom', 32), ('Custom', 33)]
+INFO    montando a arvore a partir do repositorio (PUBLICAR_RECURSOS=True)
+INFO    GET /tarefas/{id}/atribuicao-responsavel: inherit:true -> fluxo herdado preservado (0 item(ns))
+INFO    POST /tarefas/{id}/atribuicao-responsavel: inherit:true -> fluxo herdado preservado (1 item(ns))
+OK      resource Atribuicao Responsavel: 2 item(ns) CONSTRUIDO(S) do zero (declarado no repo, ausente no remoto): [('Custom', 32), ('Custom', 33)]
+INFO    resource Atribuicao Responsavel: inherit:true -> fluxo herdado preservado (9 item(ns))
+OK      GET /health-check: 1 item(ns) CONSTRUIDO(S) do zero (declarado no repo, ausente no remoto): [('Custom', 32)]
+INFO    resource /health-check: inherit:true -> fluxo herdado preservado (0 item(ns))
+INFO    DELETE /letras/{id}: inherit:true -> fluxo herdado preservado (0 item(ns))
+INFO    POST /tarefas/{id}/letras: inherit:true -> fluxo herdado preservado (0 item(ns))
+INFO    resource Letras: inherit:true -> fluxo herdado preservado (0 item(ns))
+INFO    GET /tarefas: inherit:true -> fluxo herdado preservado (0 item(ns))
+OK      GET /tarefas/{id}: 2 item(ns) CONSTRUIDO(S) do zero (declarado no repo, ausente no remoto): [('Custom', 33), ('Log', None)]
+INFO    resource Tarefas: inherit:true -> fluxo herdado preservado (0 item(ns))
+INFO    operacoes: 7 mantida(s), 0 criada(s), 0 removida(s)
+INFO    resources no payload: 4 (remoto tinha 4)
+HTTP    PUT /api-manager/api/v3/revisions/9161
+HTTP       -> 200
+OK      PUT: ACEITO
+
+==============================================================================
+FASE 5.1 - conferencia pos-publicacao
+==============================================================================
+HTTP    GET /api-manager/api/v3/revisions/9161
+HTTP       -> 200
+INFO    operacoes: enviadas=7  presentes=7
+INFO    interceptors da raiz: enviados=8  presentes=8
+INFO    recursos: enviados=4  presentes=4
+OK      conferencia OK - o estado publicado corresponde ao enviado

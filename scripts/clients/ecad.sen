@@ -1,0 +1,3 @@
+# Orchestrator Auth API do ECAD.
+AUTH_HOST="https://api-dev.ecad.org.br"
+AUTH_LOGIN_PATH="/orq-auth/v1/oauth2/token"

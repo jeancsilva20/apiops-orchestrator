@@ -1,0 +1,6 @@
+# segredos e saidas de execucao nunca entram no git
+.token
+logs/
+__pycache__/
+*.bak
+*.py.txt

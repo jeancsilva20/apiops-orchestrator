@@ -1,0 +1,24 @@
+# escopo raiz da API: destination e interceptors herdados por todos os recursos e operações
+destination:
+  url: ''            # vazio = herda do escopo acima
+
+interceptors_request:
+  - type: Log
+    content:
+      acceptedTerms: true
+      ignoreBodyValidationMultiPartFormData: false
+  - type: OAuth
+    content:
+      grantTypes:
+        - CLIENT_CREDENTIALS
+      ignoreBodyValidationMultiPartFormData: false
+  - type: Log
+    content:
+      acceptedTerms: true
+      ignoreBodyValidationMultiPartFormData: false
+
+interceptors_response:
+  - type: Log
+    content:
+      acceptedTerms: true
+      ignoreBodyValidationMultiPartFormData: false

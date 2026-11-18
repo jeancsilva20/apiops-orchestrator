@@ -1,0 +1,53 @@
+- [x] 1. Layout e leitura
+  - [x] 1.1 `repo_layout.descobrir`: `components.yaml` (`COMPONENTS_FILE`) reconhecido na raiz, opcional (fora de `faltando`); `components.yml` cai em `ignorados` e a validação aponta
+  - [x] 1.2 `RepoCanonicalReader`: carrega `components.yaml` em `RepositorioCarregado.components`; ilegível segue o mecanismo de hoje
+  - [x] 1.3 Schemas: `api-components.schema.json` novo; campos de contrato em `api-basic-info`, `api-resource` e `api-operations` (`responses` obrigatório); `catalog.json`
+  - [x] 1.4 `test_repo_layout.py`, `test_repo_canonical_reader.py` e `test_catalog_schema_dispatch.py`
+- [x] 2. Swagger validate (D6, D7)
+  - [x] 2.1 `domain/services/openapi_contract_validator.py`: as 16 checagens, sem rede, com arquivo e posição em cada erro
+  - [x] 2.2 Normalizações (`openapi_contract.normalize_yaml`): status como texto, data do YAML como texto ISO; `summary` ← `description` na extração
+  - [x] 2.2b Avisos de descrição abaixo dos mínimos do completeness (D6), num aviso só, sem bloquear
+  - [x] 2.3 `InvalidContractError` em `validate_exceptions.py` (exit 1)
+  - [x] 2.4 `test_openapi_contract_validator.py`
+- [x] 3. Montagem e normalização (D3, D4, D5, D9, D10)
+  - [x] 3.1 `domain/services/openapi_contract.py`: `extract_contract` e `apply_contract`, conforme a tabela da D3
+  - [x] 3.2 Parâmetros do recurso em cada operação, a operação prevalece (D5); `parameters` ausente = `[]`; `responses` obrigatório (D4)
+  - [x] 3.3 `normalize_for_comparison`/`same_document`: padrões do OpenAPI, `required` como conjunto, `$ref` de parâmetro resolvido
+  - [x] 3.4 `removed_items` (D11)
+  - [x] 3.5 `test_openapi_contract.py`
+- [x] 4. Porta e adaptador do Manager
+  - [x] 4.1 `ManagerApiPort`: `get_revision_swagger` e `update_revision_swagger`; sinal `ManagerApiUnexpectedResponseError`
+  - [x] 4.2 `ManagerApiAdapter`: corpo fora de JSON vira o sinal
+  - [x] 4.3 `test_manager_api_adapter.py`
+- [x] 5. Etapa de contrato (D2, D8, D10, D12)
+  - [x] 5.1 `RevisionWriter.gravar_e_conferir` devolve `WrittenRevision` (resultado + estado lido na E3.1)
+  - [x] 5.2 `application/services/contract_writer.py` (`ContractWriter`): `validate` (C0), `prepare` (C1), `write` (C2–C4)
+  - [x] 5.3 Problemas da plataforma como warning (D8)
+  - [x] 5.4 `test_contract_writer.py`
+- [x] 6. `sen validate`
+  - [x] 6.1 C0 logo depois da leitura, antes de qualquer rede; C1 antes da confirmação; C2–C4 depois da E3.1 e antes da E4
+  - [x] 6.2 Confirmação diz que o swagger também é gravado e lista o que some (D11)
+  - [x] 6.3 Warnings em `achados`; formato do `-o` inalterado
+  - [x] 6.4 `test_validate_service.py`
+- [x] 7. `sen publish`
+  - [x] 7.1 Mesmas etapas, sem confirmação; warnings em `avisos`
+  - [x] 7.2 `test_publish_service.py`
+- [x] 8. CLI
+  - [x] 8.1 Rótulos das etapas novas vêm dos serviços; a CLI não muda
+- [x] 9. Regressão (cenários A do mapa)
+  - [x] 9.1 Suíte: 965 passam; as 7 falhas e os 2 erros de coleta são os da linha de base. Testes existentes mudaram só onde a D4 obriga (rotas ganharam `summary` + `responses`) e nos dublês (métodos de swagger); a ordem das etapas narradas e a última chamada do `publish` refletem a etapa nova
+  - [x] 9.2 Fluxo gravado e conferido igual ao de hoje, com e sem contrato
+- [x] 10. Medições no consulting (2026-10-26)
+  - [x] 10.1 I-1: gate do Adaptive Governance no PUT de swagger — não medida, por decisão (o desenho trata os dois desfechos)
+  - [x] 10.2 I-2: `THIRD` presente no documento atravessa o PUT igual; swagger sem ele o apaga — sem guarda (D12)
+  - [x] 10.3 I-6: GET sempre em JSON; 11 de 40 APIs em Swagger 2.0
+  - [x] 10.4 I-7: o completeness avalia o contrato; descrições curtas baixam a nota
+- [ ] 11. Baterias opt-in na 425
+  - [x] 11.1 `test_bateria_heranca_425.py`: rotas escritas com `responses` de rota não documentada (D4)
+  - [x] 11.2b Bateria estendida (2026-10-26), 26 de 26: rota nova `POST /c1-pura` documentada (`requestBody` por `$ref`, 201, 400) mantém o completeness (99,0 → 99,0) e a mesma rota sem documentação o derruba (97,5), com aviso e com a confirmação listando o que sai; mudança de payload (schema, `required`, limite de parâmetro, corpo) gravada e conferida; 18 contratos inválidos abortam sem chamada ao Manager; ida e volta com o extrator v2 (`apiops-versioner/extrair_estrutura_v2.py`, rodado sem alteração): contrato puxado igual ao que subiu e `validate` sobre o puxado sem PUT de swagger nem remoção anunciada. Draft restaurada e conferida
+  - [x] 11.2 `test_bateria_contrato_425.py` (opt-in): `sen validate` real com contrato na Draft da 425 — 4 de 4 em 2026-10-26 (contrato gravado com `servers` preservado; segunda execução sem PUT; remoção anunciada e runtime igual antes × depois do PUT do swagger; contrato inválido sem chamada ao Manager). Draft restaurada e conferida igual ao backup. Comparar com o backup **não** serve de oráculo: a ida e volta do materializador muda escopos com marcação parcial (achado nº 3 de 22/10, anterior a esta change)
+  - [ ] 11.3 `test_bateria_417.py` monta o repositório com o `repo_materializer`, que não escreve `responses`: só roda depois do ajuste do importador
+  - [x] 11.4 Regressão com `test_bateria_heranca_425.py` (2026-10-26): fases 1 e 3 passaram; a fase 2 caiu duas vezes no arnês (`GET /calls/{id}` 404 logo depois de a chamada aparecer na listagem — o detalhe do trace demora a existir). Lido depois pelo trace, o runtime da fase 2 bateu com o esperado nas 7 rotas, nas duas rodadas. Draft restaurada e conferida; ambiente 7 com redeploy da Draft (deploy 300). Robustez do arnês (tentar de novo no 404 do detalhe) fica como pendência, anterior a esta change
+- [x] 12. Documentação
+  - [x] 12.1 ~~Levar ao card as divergências da D14~~ — dispensado por ora (decisão do usuário em 2026-10-26); a tabela fica na D14 do design
+  - [x] 12.2 Ligar o mapa de cenários a esta change
