@@ -5,6 +5,7 @@ from apiops_orchestrator.application.exceptions.completeness_exceptions import (
     CompletenessApiNotFound,
     CompletenessDenied,
     CompletenessError,
+    CompletenessGovernanceUnavailable,
     CompletenessNotFound,
     CompletenessPlatformError,
     CompletenessUnauthorized,
@@ -28,6 +29,7 @@ from apiops_orchestrator.domain.models.completeness_view import (
     CompletenessView,
 )
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
+from apiops_orchestrator.domain.ports.governance_api_port import GovernanceApiPort
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiPort,
     ManagerApiTransportRejectedError,
@@ -51,12 +53,24 @@ class CompletenessService:
     """Use-case do `sen completeness`: espelho integral de completude por revisão.
     """
 
-    def __init__(self, manager_api: ManagerApiPort, session: Optional[LoginSession] = None):
+    def __init__(
+        self,
+        manager_api: ManagerApiPort,
+        governance_api: GovernanceApiPort,
+        session: Optional[LoginSession] = None,
+    ):
         self.manager_api = manager_api
+        self.governance_api = governance_api
         self.session = session
         self._guard = ApiAccessGuard(session)
 
+    def governance_available(self) -> bool:
+        """Whether the Manager may have the Adaptive Governance; only a confirmed absence is False."""
+        return not self.governance_api.availability().absent
+
     def get_completeness(self, api_id: int, revision_id: int) -> CompletenessView:
+        if not self.governance_available():
+            raise CompletenessGovernanceUnavailable()
         entry: Optional[ApiCatalogEntry]
         if self._guard.sees_everything():
             reading = self._fetch_reading(revision_id)

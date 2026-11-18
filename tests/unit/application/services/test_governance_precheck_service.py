@@ -9,6 +9,7 @@ from apiops_orchestrator.application.services.governance_precheck_service import
     UNKNOWN_ATTRIBUTE,
     GovernancePrecheckService,
 )
+from apiops_orchestrator.domain.models.governance_model import GovernanceAvailability
 
 # Catálogo e workflow espelham o estado real lido em 2026-10-15.
 CATALOGO = [
@@ -37,11 +38,18 @@ WORKFLOW_500 = {
 REVISAO = {"id": 9161, "workflowId": 500, "workflowStageId": 1402}
 
 
-class ManagerFake:
-    def __init__(self, workflow=None, atributos=None):
+class GovernanceFake:
+    def __init__(
+        self, workflow=None, atributos=None, availability=GovernanceAvailability.ENABLED
+    ):
         self._workflow = workflow if workflow is not None else WORKFLOW_500
         self._attributes = atributos if atributos is not None else CATALOGO
+        self._availability = availability
         self.chamadas = []
+
+    def availability(self):
+        self.chamadas.append(("availability", None))
+        return self._availability
 
     def get_workflow(self, workflow_id):
         self.chamadas.append(("get_workflow", workflow_id))
@@ -57,7 +65,7 @@ def _tags(*names):
 
 
 def test_todos_os_exigidos_presentes_nao_bloqueia():
-    r = GovernancePrecheckService(ManagerFake()).evaluate(
+    r = GovernancePrecheckService(GovernanceFake()).evaluate(
         REVISAO, _tags("My new", "teste giroto")
     )
     assert not r.blocked
@@ -67,7 +75,7 @@ def test_todos_os_exigidos_presentes_nao_bloqueia():
 
 def test_atributo_faltante_e_calculado_e_nomeado():
     """O T03 do caderno: removida a tag `My new`, falta exatamente 149."""
-    r = GovernancePrecheckService(ManagerFake()).evaluate(REVISAO, _tags("teste giroto"))
+    r = GovernancePrecheckService(GovernanceFake()).evaluate(REVISAO, _tags("teste giroto"))
     assert r.blocked
     assert [f.attribute_id for f in r.missing_names] == [149]
     assert r.missing_names[0].name == "My new"
@@ -75,7 +83,7 @@ def test_atributo_faltante_e_calculado_e_nomeado():
 
 def test_par_workflow_stage_vem_da_revisao():
     """D-020: lido em runtime, nunca configurado."""
-    manager = ManagerFake()
+    manager = GovernanceFake()
     r = GovernancePrecheckService(manager).evaluate(REVISAO, _tags("My new", "teste giroto"))
     assert (r.workflow_id, r.stage_id) == (500, 1402)
     assert ("get_workflow", 500) in manager.chamadas
@@ -84,7 +92,7 @@ def test_par_workflow_stage_vem_da_revisao():
 def test_stage_sem_requisito_nao_bloqueia():
     """Draft parada num stage sem `attributesRequisites`: nada é exigido ali."""
     revision = dict(REVISAO, workflowStageId=1401)
-    r = GovernancePrecheckService(ManagerFake()).evaluate(revision, [])
+    r = GovernancePrecheckService(GovernanceFake()).evaluate(revision, [])
     assert not r.blocked and r.required == []
 
 
@@ -102,7 +110,7 @@ def test_requisito_que_muda_entre_execucoes_e_refletido():
             }
         ],
     }
-    servico = GovernancePrecheckService(ManagerFake(workflow=antes))
+    servico = GovernancePrecheckService(GovernanceFake(workflow=antes))
     r = servico.evaluate(REVISAO, _tags("My new", "teste giroto"))
     assert [f.attribute_id for f in r.missing_names] == [96]
     assert r.missing_names[0].name == "CLI"
@@ -117,39 +125,39 @@ def test_requisito_sem_must_have_e_ignorado():
             }
         ]
     }
-    r = GovernancePrecheckService(ManagerFake(workflow=workflow)).evaluate(REVISAO, [])
+    r = GovernancePrecheckService(GovernanceFake(workflow=workflow)).evaluate(REVISAO, [])
     assert not r.blocked
 
 
 def test_stage_fora_do_workflow_degrada_com_aviso():
     """A plataforma já exibiu esse estado (V-23 §3): reportar, não assumir."""
     revision = dict(REVISAO, workflowStageId=420)
-    r = GovernancePrecheckService(ManagerFake()).evaluate(revision, [])
+    r = GovernancePrecheckService(GovernanceFake()).evaluate(revision, [])
     assert not r.blocked
     assert any("não existe no workflow" in a for a in r.warnings)
 
 
 def test_revisao_sem_workflow_degrada_com_aviso():
-    r = GovernancePrecheckService(ManagerFake()).evaluate({"id": 1}, [])
+    r = GovernancePrecheckService(GovernanceFake()).evaluate({"id": 1}, [])
     assert not r.blocked
     assert any("não declara" in a for a in r.warnings)
 
 
 def test_nome_fora_do_catalogo_nao_satisfaz_requisito():
-    r = GovernancePrecheckService(ManagerFake()).evaluate(
+    r = GovernancePrecheckService(GovernanceFake()).evaluate(
         REVISAO, _tags("atributo inventado", "My new")
     )
     assert [f.attribute_id for f in r.missing_names] == [231]
 
 
 def test_api_tags_ausente_deixa_tudo_faltando():
-    r = GovernancePrecheckService(ManagerFake()).evaluate(REVISAO, None)
+    r = GovernancePrecheckService(GovernanceFake()).evaluate(REVISAO, None)
     assert [f.attribute_id for f in r.missing_names] == [149, 231]
 
 
 def test_nenhuma_mensagem_de_erro_e_parseada():
     """V-23 §4: o faltante sai da subtração, não do texto da plataforma."""
-    servico = GovernancePrecheckService(ManagerFake())
+    servico = GovernancePrecheckService(GovernanceFake())
     r = servico.evaluate(REVISAO, _tags("teste giroto"))
     # o cálculo não depende de nenhum payload de erro ter sido visto
     assert r.missing_names and r.missing_names[0].name == "My new"
@@ -171,7 +179,7 @@ def _declarado(name, *tags):
 
 def _servico_com_tags(workflow=None):
     return GovernancePrecheckService(
-        ManagerFake(workflow=workflow, atributos=CATALOGO_COM_TAGS)
+        GovernanceFake(workflow=workflow, atributos=CATALOGO_COM_TAGS)
     )
 
 
@@ -267,7 +275,7 @@ CATALOGO_ACENTUADO = [
     ],
 )
 def test_sugestao_so_quando_difere_em_acento_ou_maiuscula(declarado, sugestao):
-    servico = GovernancePrecheckService(ManagerFake(atributos=CATALOGO_ACENTUADO))
+    servico = GovernancePrecheckService(GovernanceFake(atributos=CATALOGO_ACENTUADO))
     r = servico.evaluate(REVISAO, [_declarado(declarado, "Financeiro")])
     assert [(p.kind, p.suggestions) for p in r.api_tag_problems] == [
         (UNKNOWN_ATTRIBUTE, sugestao)
@@ -275,7 +283,7 @@ def test_sugestao_so_quando_difere_em_acento_ou_maiuscula(declarado, sugestao):
 
 
 def test_atributo_e_tags_validos_nao_tem_problema():
-    servico = GovernancePrecheckService(ManagerFake(atributos=CATALOGO_ACENTUADO))
+    servico = GovernancePrecheckService(GovernanceFake(atributos=CATALOGO_ACENTUADO))
     r = servico.evaluate(REVISAO, [_declarado("Domínio", "Financeiro")])
     assert r.api_tag_problems == []
 
@@ -292,7 +300,7 @@ def test_api_tags_ausente_nao_confere_tags():
 
 
 def test_catalogo_e_lido_uma_vez_por_execucao():
-    manager = ManagerFake(atributos=CATALOGO_COM_TAGS)
+    manager = GovernanceFake(atributos=CATALOGO_COM_TAGS)
     GovernancePrecheckService(manager).evaluate(
         REVISAO, [_declarado("My new", "Tag1"), _declarado("teste giroto", "teste giroto")]
     )
@@ -305,11 +313,48 @@ def test_catalogo_e_lido_uma_vez_por_execucao():
 @pytest.mark.parametrize("stage_id", [1401, 1402])
 def test_stage_encontrado_e_exposto_com_ou_sem_requisito(stage_id):
     revision = dict(REVISAO, workflowStageId=stage_id)
-    r = GovernancePrecheckService(ManagerFake()).evaluate(revision, _tags("My new", "teste giroto"))
+    r = GovernancePrecheckService(GovernanceFake()).evaluate(revision, _tags("My new", "teste giroto"))
     assert r.stage["workflowStageId"] == stage_id
 
 
 @pytest.mark.parametrize("revision", [dict(REVISAO, workflowStageId=420), {"id": 1}])
 def test_stage_nao_encontrado_fica_none(revision):
-    r = GovernancePrecheckService(ManagerFake()).evaluate(revision, [])
+    r = GovernancePrecheckService(GovernanceFake()).evaluate(revision, [])
     assert r.stage is None
+
+
+# --- cliente sem Adaptive Governance -----------------------------------------
+
+
+def test_sem_ag_o_resultado_e_neutro_e_nada_e_lido():
+    governance = GovernanceFake(
+        atributos=CATALOGO_COM_TAGS, availability=GovernanceAvailability.DISABLED
+    )
+    r = GovernancePrecheckService(governance).evaluate(
+        REVISAO, [_declarado("My new", "TagInexistente"), _declarado("inventado", "x")]
+    )
+    assert not r.available
+    assert (r.workflow_id, r.stage_id, r.stage) == (None, None, None)
+    assert r.required == [] and r.missing_names == [] and r.warnings == []
+    assert r.api_tag_problems == [] and not r.blocked
+    assert governance.chamadas == [("availability", None)]
+
+
+def test_deteccao_inconclusiva_avalia_como_hoje():
+    governance = GovernanceFake(availability=GovernanceAvailability.UNKNOWN)
+    r = GovernancePrecheckService(governance).evaluate(REVISAO, _tags("teste giroto"))
+    assert r.available
+    assert [f.attribute_id for f in r.missing_names] == [149]
+
+
+@pytest.mark.parametrize(
+    "availability, expected",
+    [
+        (GovernanceAvailability.ENABLED, True),
+        (GovernanceAvailability.UNKNOWN, True),
+        (GovernanceAvailability.DISABLED, False),
+    ],
+)
+def test_so_a_ausencia_confirmada_desliga_a_governanca(availability, expected):
+    servico = GovernancePrecheckService(GovernanceFake(availability=availability))
+    assert servico.governance_available() is expected

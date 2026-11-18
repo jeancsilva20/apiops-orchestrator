@@ -9,7 +9,9 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from apiops_orchestrator.domain.services.openapi_contract import (
+    FREE_VALUES as _FREE_VALUES,
     GOVERNED_SECTIONS,
+    NAME_MAPS as _NAME_MAPS,
     OPERATION_FIELDS,
     ROOT_FIELDS,
     normalize_yaml,
@@ -56,13 +58,6 @@ _DESCRIPTION_RULES = (
     ("property", "Descrição de propriedade", MIN_PROPERTY),
 )
 _MINIMUMS = {rule: minimum for rule, _, minimum in _DESCRIPTION_RULES}
-
-# Maps whose keys are names, not fields: an `x-` key there is not an extension.
-_NAME_MAPS = frozenset({
-    "properties", "patternProperties", "headers", "content", "responses", "examples",
-    "schemas", "requestBodies", "securitySchemes", "encoding", "mapping", "scopes",
-})
-_FREE_VALUES = frozenset({"example", "default", "enum", "value", "const"})
 
 _EXTENSION_PROBLEM = "extensões `x-*` são do Manager e não entram no repositório"
 

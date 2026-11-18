@@ -12,6 +12,9 @@ from apiops_orchestrator.adapters.inbound.cli.cli_adapter import app, CliError
 from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_importer_adapter import (
     LocalFileImporterAdapter,
 )
+from apiops_orchestrator.adapters.outbound.http.governance_api.governance_api_adapter import (
+    GovernanceApiAdapter,
+)
 from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter import (
     ManagerApiAdapter,
 )
@@ -38,6 +41,10 @@ from apiops_orchestrator.application.services.publish_service import (
     require_pipeline as exigir_esteira_no_publish,
 )
 from apiops_orchestrator.application.services.ruler_service import RulerService
+from apiops_orchestrator.application.services.sync_service import SyncService
+from apiops_orchestrator.adapters.outbound.filesystem.repo_writer_adapter import (
+    RepoWriterAdapter,
+)
 from apiops_orchestrator.application.services.session_access_guard import (
     require_access,
 )
@@ -150,17 +157,28 @@ def _build_admin_token(settings: Settings) -> str:
     return provider.obtain()
 
 
-def build_listing_service_factory():
-    def factory() -> ApiListingService:
-        settings = _load_settings()
-        manager_adapter = ManagerApiAdapter(
-            token=_build_admin_token(settings),
+def _build_platform_adapters(
+    settings: Settings,
+) -> tuple[ManagerApiAdapter, GovernanceApiAdapter]:
+    """Manager and Adaptive Governance adapters sharing one admin token."""
+    token = _build_admin_token(settings)
+    return (
+        ManagerApiAdapter(
+            token=token,
             base_path="/api-manager/api/v3/",
             max_retries=3,
             settings=settings,
-        )
+        ),
+        GovernanceApiAdapter(token=token, max_retries=3, settings=settings),
+    )
+
+
+def build_listing_service_factory():
+    def factory() -> ApiListingService:
+        settings = _load_settings()
+        manager_adapter, governance_adapter = _build_platform_adapters(settings)
         session = _build_session_store(settings).load()
-        return ApiListingService(manager_adapter, session=session)
+        return ApiListingService(manager_adapter, governance_adapter, session=session)
 
     return factory
 
@@ -168,14 +186,9 @@ def build_listing_service_factory():
 def build_completeness_service_factory():
     def factory() -> CompletenessService:
         settings = _load_settings()
-        manager_adapter = ManagerApiAdapter(
-            token=_build_admin_token(settings),
-            base_path="/api-manager/api/v3/",
-            max_retries=3,
-            settings=settings,
-        )
+        manager_adapter, governance_adapter = _build_platform_adapters(settings)
         session = _build_session_store(settings).load()
-        return CompletenessService(manager_adapter, session=session)
+        return CompletenessService(manager_adapter, governance_adapter, session=session)
 
     return factory
 
@@ -193,14 +206,10 @@ def build_validate_service_factory():
         require_access(
             session, Access.WRITE, command="validate", outcome="Nada foi publicado."
         )
-        manager_adapter = ManagerApiAdapter(
-            token=_build_admin_token(settings),
-            base_path="/api-manager/api/v3/",
-            max_retries=3,
-            settings=settings,
-        )
+        manager_adapter, governance_adapter = _build_platform_adapters(settings)
         return ValidateService(
             manager_api=manager_adapter,
+            governance_api=governance_adapter,
             importer=LocalFileImporterAdapter(),
             settings=settings,
             session=session,
@@ -221,14 +230,10 @@ def build_publish_service_factory():
             command="publish",
             outcome="Nada foi publicado.",
         )
-        manager_adapter = ManagerApiAdapter(
-            token=_build_admin_token(settings),
-            base_path="/api-manager/api/v3/",
-            max_retries=3,
-            settings=settings,
-        )
+        manager_adapter, governance_adapter = _build_platform_adapters(settings)
         return PublishService(
             manager_api=manager_adapter,
+            governance_api=governance_adapter,
             importer=LocalFileImporterAdapter(),
             settings=settings,
         )
@@ -248,16 +253,30 @@ def build_deploy_service_factory():
             command="deploy",
             outcome=NO_DEPLOYMENT,
         )
-        manager_adapter = ManagerApiAdapter(
-            token=_build_admin_token(settings),
-            base_path="/api-manager/api/v3/",
-            max_retries=3,
-            settings=settings,
-        )
+        manager_adapter, governance_adapter = _build_platform_adapters(settings)
         return DeployService(
             manager_api=manager_adapter,
+            governance_api=governance_adapter,
             importer=LocalFileImporterAdapter(),
             settings=settings,
+        )
+
+    return factory
+
+
+def build_sync_service_factory():
+    """Factory do `sen sync`, montada preguiçosamente como a do `validate`."""
+
+    def factory() -> SyncService:
+        settings = _load_settings()
+        session = _build_session_store(settings).load()
+        manager_adapter, governance_adapter = _build_platform_adapters(settings)
+        return SyncService(
+            manager_api=manager_adapter,
+            governance_api=governance_adapter,
+            importer=LocalFileImporterAdapter(),
+            writer=RepoWriterAdapter(),
+            session=session,
         )
 
     return factory
@@ -327,6 +346,7 @@ def main():
             "validate_service_factory": build_validate_service_factory(),
             "publish_service_factory": build_publish_service_factory(),
             "deploy_service_factory": build_deploy_service_factory(),
+            "sync_service_factory": build_sync_service_factory(),
             "regua_service_factory": build_ruler_service_factory(),
             "manager_api_factory": build_manager_api_factory(),
         }

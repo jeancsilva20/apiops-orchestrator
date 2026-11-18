@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
+from apiops_orchestrator.domain.models.api_model import as_wire
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
     ApiInaccessibleError,
     GovernanceBlockedError,
@@ -65,6 +66,7 @@ from apiops_orchestrator.domain.models.validate_view import (
     ValidateRevision,
     ValidateView,
 )
+from apiops_orchestrator.domain.ports.governance_api_port import GovernanceApiPort
 from apiops_orchestrator.domain.ports.local_file_importer_port import (
     LocalFileImporterPort,
 )
@@ -91,7 +93,7 @@ def api_visible(
 ) -> Optional[Dict[str, Any]]:
     """`GET /apis/{id}` da API do repositório; `None` se ela não existe ou a sessão não a enxerga."""
     try:
-        api = manager_api.get_api_by_id(api_id) or {}
+        api = as_wire(manager_api.get_api_by_id(api_id)) or {}
     except ManagerApiTransportRejectedError as exc:
         if classify_manager_failure(exc) is not ManagerFailureKind.NOT_FOUND:
             raise
@@ -143,6 +145,7 @@ class ValidateService:
     def __init__(
         self,
         manager_api: ManagerApiPort,
+        governance_api: GovernanceApiPort,
         importer: LocalFileImporterPort,
         settings: Settings,
         session: Optional[LoginSession] = None,
@@ -152,7 +155,7 @@ class ValidateService:
         self._settings = settings
         self._access = ApiAccessGuard(session)
         self._ruler = RulerService(manager_api, settings)
-        self._governance = GovernancePrecheckService(manager_api)
+        self._governance = GovernancePrecheckService(governance_api)
         self._writer = RevisionWriter(manager_api, importer, command="validate")
         self._contract = ContractWriter(manager_api, command="validate")
 
@@ -183,7 +186,7 @@ class ValidateService:
         step("Lendo o repositório")
         loaded = self._writer.load(repo_path)
         unread_warnings = self._writer.unread_files_warnings(loaded)
-        contract, contract_warnings = self._contract.validate(loaded)
+        contract, completeness_warnings = self._contract.validate(loaded)
         spec = loaded.basic_info.get("spec") or {}
 
         step("Consultando a API no Manager")
@@ -193,7 +196,7 @@ class ValidateService:
         self._writer.guard_identity(spec, api)
 
         revision = self._target_revision(api)
-        draft = self._manager_api.get_revision(revision["id"]) or {}
+        draft = as_wire(self._manager_api.get_revision(revision["id"])) or {}
 
         # O payload é montado ANTES da conformidade, de propósito: a E2 precisa
         # avaliar o fluxo que SERÁ publicado, não o que está lá. Avaliar o
@@ -204,12 +207,15 @@ class ValidateService:
         ruler = self._e2_ruler(loaded)
 
         step("Comparando com o padrão")
+        governance_available = self._governance.governance_available()
+        # Without Adaptive Governance the repository `apiTags` are ignored.
         assembled = revision_payload.assemble(
             draft=draft,
             basic_info=loaded.basic_info,
             root=loaded.root,
             resources=loaded.resources,
             resolver_custom=self._writer.resolver_custom,
+            include_api_tags=governance_available,
         )
         findings = self._conformance(assembled.body, ruler)
         # Em local, o que vai sair do Manager é mostrado na confirmação, antes
@@ -217,7 +223,8 @@ class ValidateService:
         if self._settings.pipeline_mode:
             findings.extend(_repository_warnings(unread_warnings + list(assembled.warnings)))
 
-        step("Verificando a governança")
+        if governance_available:
+            step("Verificando a governança")
         precheck = self._governance.evaluate(draft, spec.get("apiTags"))
         # Os avisos dizem quando o pré-check não pôde antecipar a governança
         # (revisão sem workflow, stage ausente): o dev precisa saber que o
@@ -257,7 +264,9 @@ class ValidateService:
             confirm,
             step,
             prepared,
-            list(contract_warnings) + list(prepared.warnings),
+            # Without Adaptive Governance there is no completeness score to lower.
+            (list(completeness_warnings) if governance_available else [])
+            + list(prepared.warnings),
             repository_warnings=unread_warnings,
         )
         publication = written.result if written else PublicationResult(attempted=False)
@@ -270,10 +279,10 @@ class ValidateService:
             )
             if documentation.reason and documentation.reason not in reported:
                 findings.extend(_repository_warnings([documentation.reason], DOCUMENTATION_SCOPE))
+        completeness = CompletenessSummary()
+        if written is not None and precheck.available:
             step("Calculando o quality score")
             completeness = self._e4_completeness(revision["id"])
-        else:
-            completeness = CompletenessSummary()
 
         return ValidateView(
             schema=SCHEMA_SEN_VALIDATE_V1,

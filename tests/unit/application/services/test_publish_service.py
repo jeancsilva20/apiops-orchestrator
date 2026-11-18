@@ -29,6 +29,7 @@ from apiops_orchestrator.application.services.publish_service import (
     PublishService,
     require_pipeline,
 )
+from apiops_orchestrator.domain.models.governance_model import GovernanceAvailability
 from apiops_orchestrator.domain.models.publish_view import SCHEMA_SEN_PUBLISH_V1
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiGovernanceBlockedError,
@@ -115,14 +116,23 @@ def _swagger_of(revision):
 
 
 class ManagerFake:
-    """Port fake que grava a sequência exata de chamadas e os ids tocados."""
+    """Fake of the Manager and Governance ports that records the call sequence and the ids touched."""
 
-    def __init__(self, api=None, workflow=None, customs=None, published=None, erro_put=None):
+    def __init__(
+        self,
+        api=None,
+        workflow=None,
+        customs=None,
+        published=None,
+        erro_put=None,
+        availability=GovernanceAvailability.ENABLED,
+    ):
         self.api = api or API
         self.workflow = workflow or WORKFLOW
         self.customs = customs if customs is not None else {}
         self._publicado = published
         self._erro_put = erro_put
+        self._availability = availability
         self.chamadas = []
         self.ids_lidos = []
         self.id_gravado = None
@@ -130,6 +140,10 @@ class ManagerFake:
         self.written_swagger = None
 
     # --- leitura
+    def availability(self):
+        self.chamadas.append("availability")
+        return self._availability
+
     def get_api_by_id(self, api_id=None):
         self.chamadas.append(f"get_api_by_id:{api_id}")
         return self.api
@@ -179,10 +193,6 @@ class ManagerFake:
         self.written_swagger = copy.deepcopy(document)
         return {"result": "success"}
 
-    def publish_api_changes(self, data):  # pragma: no cover - não deve ser chamado
-        self.chamadas.append("publish_api_changes")
-        raise AssertionError("o orquestrador nunca usa POST /revisions (D-005 §9)")
-
 
 def _settings(mode="pipeline", revision=2):
     return SimpleNamespace(
@@ -211,6 +221,7 @@ def _repo(tmp_path, basic_info=BASIC_INFO, extras=None):
 def _servico(manager, mode="pipeline", revision=2):
     return PublishService(
         manager_api=manager,
+        governance_api=manager,
         importer=LocalFileImporterAdapter(),
         settings=_settings(mode, revision),
     )
@@ -387,7 +398,6 @@ def test_um_unico_put_depois_de_todas_as_leituras_e_nenhum_post(tmp_path):
     _servico(manager).publish(_repo(tmp_path))
 
     assert manager.chamadas.count("update_revision") == 1
-    assert "publish_api_changes" not in manager.chamadas
     escrita = manager.chamadas.index("update_revision")
     for reading in ("get_api_by_id:417", "get_workflow"):
         assert manager.chamadas.index(reading) < escrita
@@ -706,3 +716,35 @@ def test_unread_file_is_warned_in_the_result(tmp_path):
 
     assert view.warnings[0].startswith("O comando não lê o arquivo abaixo")
     assert "`resources/x/tarefas.yaml` não é considerado operação" in view.warnings[0]
+
+
+# --- cliente sem Adaptive Governance -----------------------------------------
+
+
+def test_sem_ag_apitags_sao_ignoradas_e_a_governanca_sai_vazia(tmp_path):
+    manager = ManagerFake(availability=GovernanceAvailability.DISABLED)
+    repo = _repo(tmp_path, basic_info=BASIC_INFO_COM_TAGS.format(tag="TagInexistente"))
+
+    view = _servico(manager).publish(repo)
+
+    assert manager.payload_enviado["api"]["apiTags"] == []
+    assert "list_attributes" not in manager.chamadas
+    assert "get_workflow" not in manager.chamadas
+    governance = view.to_document()["governance"]
+    assert (governance["workflowId"], governance["stageId"]) == (None, None)
+    assert governance["required"] == [] and governance["missing"] == []
+    assert not [w for w in view.warnings if w.startswith("Governança")]
+
+
+def test_sem_ag_a_governanca_nao_e_narrada(tmp_path):
+    etapas = []
+    _servico(ManagerFake(availability=GovernanceAvailability.DISABLED)).publish(
+        _repo(tmp_path), progress=etapas.append
+    )
+
+    assert "Verificando a governança" not in etapas
+    assert etapas[:3] == [
+        "Lendo o repositório",
+        "Consultando a API no Manager",
+        "Verificando os interceptors Custom",
+    ]

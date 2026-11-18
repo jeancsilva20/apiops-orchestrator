@@ -7,6 +7,7 @@ catálogo e o objeto `visibility` do `GET /apis/{id}` — e os dois viram
 
 from typing import Any, Dict, List, Optional
 
+from apiops_orchestrator.domain.models.api_model import Api
 from apiops_orchestrator.domain.models.api_visibility_model import (
     ApiVisibility,
     OwnershipContext,
@@ -75,6 +76,11 @@ def from_api_payload(api: Dict[str, Any]) -> ApiVisibility:
             if isinstance(user, dict) and user.get("username")
         ],
     )
+
+
+def from_api(api: Api) -> ApiVisibility:
+    """Visibilidade a partir do modelo `Api`."""
+    return from_api_payload({"visibility": api.visibility})
 
 
 def _text(value: Any) -> Optional[str]:
