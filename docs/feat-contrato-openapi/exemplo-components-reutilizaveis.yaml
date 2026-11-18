@@ -1,0 +1,202 @@
+# Exemplo OpenAPI 3.0.3 com as seções de reutilização do `components` (D15).
+# Rotas inspiradas na API 417 (Tarefas). Cada `$ref` está na posição que a
+# seção dele exige — a mesma tabela que o Swagger validate vai checar.
+# Sem `x-*`: é só o contrato.
+# ATENÇÃO: foi o insumo da medição I-8. Depois dela, `components.parameters` saiu
+# do modelo (D15): o Manager expande o `$ref` de parâmetro, então no repo o
+# parâmetro é escrito por extenso, na operação ou no `resource.yaml`.
+openapi: 3.0.3
+info:
+  title: Tarefas
+  version: 2.0.0
+  contact:
+    name: Time Tarefas
+    email: tarefas@exemplo.com
+tags:
+  - name: Tarefas
+    description: Consulta e criação de tarefas
+security:
+  - TokenPortador: []                              # nome → components.securitySchemes
+
+paths:
+  /tarefas:
+    get:
+      tags: [Tarefas]
+      summary: Lista tarefas
+      description: Lista tarefas
+      operationId: listarTarefas
+      parameters:
+        - $ref: '#/components/parameters/Pagina'         # parameters → components.parameters
+        - $ref: '#/components/parameters/TamanhoPagina'
+        - name: status                                   # parâmetro próprio, por extenso
+          in: query
+          schema:
+            $ref: '#/components/schemas/StatusTarefa'    # schema → components.schemas
+      responses:
+        '200':
+          description: Página de tarefas
+          headers:
+            X-Total-Count:
+              $ref: '#/components/headers/TotalRegistros'  # headers → components.headers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaDeTarefas'
+        '400':
+          $ref: '#/components/responses/RequisicaoInvalida'  # responses → components.responses
+        '401':
+          $ref: '#/components/responses/NaoAutorizado'
+    post:
+      tags: [Tarefas]
+      summary: Cria uma tarefa
+      description: Cria uma tarefa
+      operationId: criarTarefa
+      requestBody:
+        $ref: '#/components/requestBodies/NovaTarefa'    # requestBody → components.requestBodies
+      responses:
+        '201':
+          description: Tarefa criada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tarefa'
+              examples:
+                criada:
+                  $ref: '#/components/examples/TarefaCriada'  # examples → components.examples
+        '400':
+          $ref: '#/components/responses/RequisicaoInvalida'
+        '401':
+          $ref: '#/components/responses/NaoAutorizado'
+
+  /tarefas/{id}:
+    get:
+      tags: [Tarefas]
+      summary: Consulta uma tarefa
+      description: Consulta uma tarefa
+      operationId: consultarTarefa
+      parameters:
+        - $ref: '#/components/parameters/IdTarefa'       # path param via $ref: precisa existir no template
+      responses:
+        '200':
+          description: Tarefa encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tarefa'
+        '401':
+          $ref: '#/components/responses/NaoAutorizado'
+        '404':
+          $ref: '#/components/responses/NaoEncontrado'
+
+  /health-check:
+    get:
+      summary: Verifica a saúde da API
+      description: Verifica a saúde da API
+      operationId: verificarSaude
+      security: []                                       # rota pública: sobrescreve o global
+      responses:
+        '200':
+          description: API no ar
+
+components:
+  securitySchemes:
+    TokenPortador:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token obtido no fluxo de autenticação do gateway
+
+  parameters:
+    Pagina:
+      name: page
+      in: query
+      description: Número da página, a partir de 1
+      schema: { type: integer, minimum: 1, default: 1 }
+    TamanhoPagina:
+      name: size
+      in: query
+      description: Itens por página
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    IdTarefa:
+      name: id
+      in: path
+      required: true
+      description: Identificador da tarefa
+      schema: { type: string, format: uuid }
+
+  headers:
+    TotalRegistros:
+      description: Total de registros, sem paginação
+      schema: { type: integer }
+
+  requestBodies:
+    NovaTarefa:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/NovaTarefa'
+
+  responses:
+    RequisicaoInvalida:
+      description: Requisição fora do contrato
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Erro'
+    NaoAutorizado:
+      description: Token ausente, inválido ou expirado
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Erro'
+    NaoEncontrado:
+      description: Tarefa não encontrada
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Erro'
+
+  examples:
+    TarefaCriada:
+      summary: Tarefa recém-criada
+      value:
+        id: 3f2b9c1e-8a4d-4f6b-9c2e-1a2b3c4d5e6f
+        titulo: Revisar contrato
+        status: ABERTA
+
+  schemas:
+    StatusTarefa:
+      type: string
+      enum: [ABERTA, EM_ANDAMENTO, CONCLUIDA]
+    NovaTarefa:
+      type: object
+      required: [titulo]
+      properties:
+        titulo: { type: string, example: Revisar contrato }
+    Tarefa:
+      type: object
+      required: [id, titulo, status]
+      properties:
+        id: { type: string, format: uuid }
+        titulo: { type: string }
+        status:
+          $ref: '#/components/schemas/StatusTarefa'
+    PaginaDeTarefas:
+      type: object
+      required: [itens]
+      properties:
+        itens:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tarefa'
+        pagina: { type: integer }
+    Erro:
+      type: object
+      description: Erro no formato RFC 9457
+      required: [title, status]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }

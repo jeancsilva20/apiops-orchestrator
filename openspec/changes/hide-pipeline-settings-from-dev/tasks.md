@@ -1,0 +1,36 @@
+- [x] 1. `sen publish` só na esteira (D2)
+  - [x] 1.1 `application/services/publish_service.py`: `exigir_esteira` recusa fora da esteira com a mensagem do catálogo; o `publish` a chama antes de qualquer rede; sai o caminho P-2 (Draft local)
+  - [x] 1.2 `publish_service.py`: remover a confirmação (`_gravar` e o parâmetro `confirmar`); avisos de remoção sempre no resultado
+  - [x] 1.3 `adapters/inbound/cli/cli_adapter.py`: o comando `publish` deixa de injetar a confirmação e de tratar a recusa/Ctrl+C do prompt
+  - [x] 1.4 `main.py`: a factory do publish chama `exigir_esteira` antes de obter o token, para recusar sem autenticar
+  - [x] 1.5 `tests/unit/application/services/test_publish_service.py` e `tests/unit/adapters/inbound/cli/test_publish_command.py`: trocar os casos locais (Draft, confirmação, recusa, Ctrl+C, avisos na confirmação) pela recusa sem rede
+- [x] 2. `sen deploy` (D1)
+  - [x] 2.1 `application/services/deploy_service.py`: `exigir_esteira` com a mensagem local do catálogo
+  - [x] 2.2 `main.py`: a factory do deploy chama `exigir_esteira` antes de obter o token (o requisito "antes de autenticar" não era cumprido: a factory autenticava antes do service recusar)
+  - [x] 2.3 `tests/unit/application/services/test_deploy_service.py`: texto novo e ausência dos nomes proibidos; documento da esteira com `executionMode`
+- [x] 3. `sen validate` local sempre na Draft (D3)
+  - [x] 3.1 `application/services/validate_service.py`: `numero_alvo` devolve 1 fora da esteira sem ler `TARGET_REVISION_NUMBER`; sai a recusa
+  - [x] 3.2 `cli_adapter.py`: `sen diag draft` usa `numero_alvo`
+  - [x] 3.3 `tests/unit/application/services/test_validate_service.py`: variável ausente, 1, 2 ou 3 na máquina local grava na Draft; na esteira continua lendo a variável
+- [x] 4. `executionMode` só na esteira (D4)
+  - [x] 4.1 `domain/models/validate_view.py` (`sem_modo_fora_da_esteira`), `publish_view.py`, `deploy_model.py`: omitir `executionMode` do documento fora da esteira
+  - [x] 4.2 `cli_adapter.py`: tirar a linha "Modo" dos painéis do validate, publish e deploy
+  - [x] 4.3 `test_validate_command.py`, `test_publish_command.py` e `test_deploy_service.py`: campo ausente em local, presente em pipeline
+- [x] 5. Configuração inválida (D5)
+  - [x] 5.1 `main.py`: `_load_settings` separa as chaves nomeáveis pelo modo lido de `os.environ`
+  - [x] 5.2 `tests/unit/test_pipeline_settings_guard.py`: credencial ausente nomeia a chave; `EXECUTION_MODE` inválido não é nomeado; `TARGET_REVISION_NUMBER` inválido é nomeado só com `EXECUTION_MODE=pipeline`; chave do dev + chave oculta acrescenta a frase genérica
+- [x] 6. Mensagens da esteira (D6)
+  - [x] 6.1 `application/services/regua_service.py`: aviso de divergência sem "definida em variável de ambiente"
+  - [x] 6.2 `test_regua_service.py`: ajustar o teste do aviso
+- [x] 7. `--help` em português (D7)
+  - [x] 7.1 `cli_adapter.py`: ajuda dos apps, comandos e opções conforme a tabela do design
+  - [x] 7.2 `test_cli_adapter.py`: ajustar asserções de texto de ajuda em inglês
+- [x] 8. Guarda (D8)
+  - [x] 8.1 `tests/unit/test_pipeline_settings_guard.py`: `--help` de cada comando, recusas do publish e do deploy, factories sem autenticar, painel e documentos do validate local e falha de carga da configuração
+- [x] 9. Documentação
+  - [x] 9.1 V-24: revisão de 21/10/2026 (local não publica mais)
+  - [x] 9.2 `comandos-cli.md`: recusa do deploy sem citar o modo
+  - [x] 9.3 Comentários de `config/settings.py` e `.env.example` sobre `TARGET_REVISION_NUMBER`
+- [x] 10. Verificação
+  - [x] 10.1 Suíte unitária: 796 passam; 8 falhas e 2 erros de coleta pré-existentes (os mesmos antes da change, fora do escopo)
+  - [x] 10.2 Smoke local (sem escrita): `sen deploy` e `sen publish` recusam com o texto do catálogo e exit 1, sem rede; `sen --help`, `sen publish --help` e `sen deploy --help` em português e sem nomes proibidos

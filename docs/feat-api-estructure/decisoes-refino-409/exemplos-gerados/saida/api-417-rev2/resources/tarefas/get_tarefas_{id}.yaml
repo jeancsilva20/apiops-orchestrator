@@ -1,0 +1,10 @@
+path: /tarefas/{id}
+destination:
+  url: "https://dev-backend.ecad.org.br/app-demo/servico-letras/v1/tarefas/{id}"
+description: >-
+  Retorna os dados completos de uma tarefa de busca de letra específica, incluindo o status
+  atual, o responsável e a obra musical associada.
+
+# inherit: true  executa o fluxo herdado do escopo acima e, depois, os interceptors declarados abaixo
+# inherit: false ignora o fluxo herdado e executa só os interceptors declarados abaixo
+inherit: true

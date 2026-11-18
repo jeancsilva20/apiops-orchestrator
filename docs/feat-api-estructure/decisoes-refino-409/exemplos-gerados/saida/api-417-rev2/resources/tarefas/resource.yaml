@@ -1,0 +1,9 @@
+name: Tarefas
+description: Gerenciamento de tarefas de busca de letra de obras musicais
+destination:
+  url: "https://google.com"
+  timeout: "30"
+
+# inherit: true  executa o fluxo herdado do escopo acima e, depois, os interceptors declarados abaixo
+# inherit: false ignora o fluxo herdado e executa só os interceptors declarados abaixo
+inherit: true

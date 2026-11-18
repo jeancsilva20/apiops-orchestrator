@@ -1,0 +1,32 @@
+- [x] 1. Domínio (D1, D2, D7)
+  - [x] 1.1 `domain/models/api_visibility_model.py`: `ApiVisibility` (tipo, owner, grupo, usuários); `OwnershipContext` passa a morar aqui
+  - [x] 1.2 `domain/models/api_catalog_model.py`: `ApiCatalogEntry.visibility()` monta `ApiVisibility` dos campos de contexto
+  - [x] 1.3 `domain/services/api_visibility.py`: `visible_to` (regra atual de `catalog_visibility.py`, sobre `ApiVisibility`) e `from_api_payload` (`visibility` do `GET /apis/{id}`); `catalog_visibility.py` removido
+  - [x] 1.4 Formato de `visibility` do `GET /apis/{id}` conferido em sonda só leitura (design, Riscos)
+  - [x] 1.5 `tests/unit/domain/services/test_catalog_visibility.py` → `test_api_visibility.py`; casos de `from_api_payload` (ME com `users[]`, GROUP, ORGANIZATION, sem `visibility`) e equivalência entre as duas fontes
+- [x] 2. Guarda (D3, D7)
+  - [x] 2.1 `application/services/api_access_guard.py`: `ApiAccessGuard(session)` com `sees_everything()` e `can_see(visibility)`
+  - [x] 2.2 `test_api_access_guard.py`: super admin, dev, sem sessão
+- [x] 3. `sen list` (D4, D5)
+  - [x] 3.1 `api_listing_service.py`: listagem e drill-down (`--id` e `-r`) usam a guarda; invisível lança `ApiNotFound` antes de stages e completeness
+  - [x] 3.2 `test_api_listing_service.py`: o teste que garantia o drill-down sem filtro vira os casos de API visível, invisível (mesma mensagem da inexistente) e super admin; `-r` invisível sem chamada a workflows e completeness
+- [x] 4. `sen completeness` (D4, D6)
+  - [x] 4.1 `completeness_service.py`: para dev, consulta da API antes da leitura, obrigatória; invisível ou inexistente → `CompletenessApiNotFound`; revisão fora de `revisions[]` → `CompletenessNotFound`; falha da consulta → família da falha; super admin sem mudança
+  - [x] 4.2 `completeness_exceptions.py`: `CompletenessApiNotFound`, `exit 2`
+  - [x] 4.3 `test_completeness_service.py`: a classe que garantia a degradação vira os cenários do spec, sem chamada a `/revisions/{rid}/completeness` nos casos recusados
+- [x] 5. `sen validate` (D4, D5)
+  - [x] 5.1 `validate_service.py`: verificação após o `GET /apis/{spec.id}`, antes da guarda de identidade
+  - [x] 5.2 `validate_exceptions.py`: `ApiInacessivelError`, `exit 1`
+  - [x] 5.3 `test_validate_service.py`: invisível para logo após o `GET /apis`; ME compartilhada segue; super admin segue
+- [x] 6. `sen diag draft` (D5)
+  - [x] 6.1 `cli_adapter.py`: a verificação após o `GET /apis/{spec.id}`, com a guarda vinda da `manager_api_factory`
+  - [x] 6.2 `test_validate_command.py`: API invisível (exit 1, só o `GET /apis`) e visível
+- [x] 7. Composition root
+  - [x] 7.1 `main.py`: a `manager_api_factory` devolve também a guarda; as factories dos serviços não mudam (D7)
+- [x] 8. Documentação
+  - [x] 8.1 `comandos-cli.md`: decisão transversal de visibilidade
+- [x] 9. Verificação
+  - [x] 9.1 Suíte unitária: 828 passam; 7 falhas e 2 erros de coleta pré-existentes, os mesmos de um worktree limpo do `HEAD`
+  - [x] 9.2 Smoke só leitura (21/10/2026, Manager de produção). Sessão de dev do grupo `Arquitetura` montada em memória, sobre os serviços reais: API 1 (Arquitetura) passa em `list --id`, `-r`, completeness e verificação do validate; API 22 (Arrecadação) é recusada nos quatro, com a mensagem de inexistente (exit 1 no list, 2 no completeness); `completeness --id 1 --revision 3530` (revisão da 22) responde revisão não encontrada; a listagem do dev traz a 1 e não a 22. Pelo CLI, com a sessão local de super admin: `list --id 22 -r` e `completeness --id 22 --revision 3530` seguem com exit 0
+  - [x] 9.3 Smoke pelo CLI com sessão de dev real (21/10/2026, grupos APIOps e Arquitetura): listagem com 28 APIs, com a 1 e a 52 (organização) e sem a 22; `list --id` e `-r` da 1 com exit 0, da 22 e da 999999 com a mesma mensagem e exit 1; `completeness` da 1 com exit 0, da 22 e da 999999 com a mensagem de API e exit 2, `--id 1 --revision 3530` com revisão não encontrada e exit 2; `validate` e `diag draft` da 22 e da 999999 com a mesma mensagem e exit 1, sem escrita; `diag draft` da 1 com exit 0
+  - [x] 9.4 Achado do 9.3: no `validate` e no `diag draft`, o `404` da API inexistente respondia erro interno, diferente da invisível. Corrigido com `api_visivel` (design D5) e testes do 404 nos dois

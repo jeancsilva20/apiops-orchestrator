@@ -1,0 +1,20 @@
+apiVersion: api-management.sensedia.com/v1
+kind: ApiBasicInfo
+spec:
+  # id da API no Manager; gravado pelo sen sync, não edite
+  id: 400
+  name: Orchestrator Auth API
+  version: 1.0.1
+  # basePath não muda depois que a API é criada; divergência aborta a publicação
+  basePath: /orq-auth/v1
+  description: Auth API.
+  # id da API-template que define o padrão de interceptors conferido pelo sen validate
+  template: ''
+  apiResponsible:
+    username: paulo.silva
+    groupName: ""
+  # apiTags: lista completa; ausente preserva o que está no Manager, [] remove todas
+  apiTags:
+    - attributeName: My new
+      tags:
+        - Tag1

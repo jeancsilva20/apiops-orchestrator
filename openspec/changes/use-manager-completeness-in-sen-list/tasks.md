@@ -1,0 +1,17 @@
+- [x] 1. Frame do catálogo sem completeness
+  - [x] 1.1 `adapters/outbound/http/manager_api/manager_api_adapter.py`: remover a correlação do bloco `completeness[]` em `_merge_wire_blocks`
+  - [x] 1.2 `domain/models/catalog_revision_model.py`: remover `CatalogRevision.completeness` (manter `CatalogRevisionCompleteness`)
+  - [x] 1.3 `tests/unit/adapters/outbound/http/manager_api/test_catalog_translator.py` e `tests/unit/domain/models/test_api_catalog_model.py`: retirar os testes de first-match do score; cobrir que um frame com `completeness[]` é aceito e o bloco ignorado
+- [x] 2. Service do drill-down
+  - [x] 2.1 `application/services/api_listing_service.py`: após frame e stages, ler `get_revision_completeness` de cada revisão exibida com `ThreadPoolExecutor(max_workers=8)` (D2)
+  - [x] 2.2 Erros de transporte por revisão viram `completeness_score=None`, com log `info` (D3); erros inesperados sobem
+  - [x] 2.3 `tests/unit/application/services/test_api_listing_service.py`: score vem da rota (não do frame); uma chamada por revisão exibida; falha numa revisão vira `None` sem derrubar as outras; ordem por `revision_number`
+- [x] 3. CLI da grade
+  - [x] 3.1 `adapters/inbound/cli/cli_adapter.py`: nota de rodapé no texto quando houver células `-` por falha (D3); nada extra em `json`/`yaml`
+  - [x] 3.2 Feedback de espera com a regra de `_authenticate_with_feedback` (D5) — extraído para `_run_with_feedback`, que o login passa a usar
+  - [x] 3.3 Testes de CLI: rodapé presente/ausente; `-o json` sem ruído e com `completeness_score: null`
+  - [x] 3.4 COMPLETE com uma casa decimal (`_format_score` com `.1f`), igual aos demais comandos
+- [x] 4. Verificação
+  - [x] 4.1 Suíte unitária: 778 passam; 7 falhas e 2 erros de coleta pré-existentes (reproduzidos no `HEAD` limpo, fora do escopo)
+  - [x] 4.2 Smoke read-only: `sen list api --id 68 -r` mostra 74/74/74/76/89/76, igual ao `sen completeness` de cada revisão
+  - [x] 4.3 Smoke de tempo na API 341 (55 revisões): 29 s de ponta a ponta (login + catálogo + stages + 55 leituras), 0 revisões sem score
