@@ -284,7 +284,9 @@ def _scope_flow(
     return lines + ["inherit: true"] + _flow(own), effective
 
 
-def _basic_info(api: Api, template: Any, root_contract: Dict[str, Any]) -> List[str]:
+def _basic_info(
+    api: Api, template: Any, root_contract: Dict[str, Any], include_api_tags: bool = True
+) -> List[str]:
     """
     Campos de fundo (visibility, apiType, creationDate, revisions, lastRevision,
     flags e contadores) NÃO entram no YAML — são hidratados por GET no publish.
@@ -310,7 +312,7 @@ def _basic_info(api: Api, template: Any, root_contract: Dict[str, Any]) -> List[
     lines.append("  apiResponsible:")
     lines.append(f"    username: {scalar((responsible.username if responsible else None) or '')}")
     lines.append(f"    groupName: {scalar((responsible.group_name if responsible else None) or '')}")
-    if api.api_tags is not None:
+    if include_api_tags and api.api_tags is not None:
         lines.append(f"  {COMMENTS['api_tags']}")
         lines.append("  apiTags: []" if not api.api_tags else "  apiTags:")
         for tag in api.api_tags:
@@ -366,12 +368,14 @@ def materialize(
     *,
     template: Any = "",
     swagger: Optional[Dict[str, Any]] = None,
+    include_api_tags: bool = True,
 ) -> MaterializationResult:
     """Produz a árvore canônica inteira a partir do estado remoto.
 
     `template` é o valor de `spec.template` a gravar: vem do arquivo que já
     existe no repositório, nunca do Manager. Com `swagger`, o contrato OpenAPI
-    entra na árvore; sem ele, a árvore sai só com o fluxo.
+    entra na árvore; sem ele, a árvore sai só com o fluxo. Sem Adaptive
+    Governance (`include_api_tags=False`), `apiTags` fica fora do manifesto.
     """
     warnings: List[str] = []
     files: List[MaterializedFile] = []
@@ -381,7 +385,9 @@ def materialize(
         contract.swagger_operations_contract(swagger, warnings) if swagger is not None else None
     )
 
-    files.append(_file(layout.BASIC_INFO_FILE, _basic_info(api, template, root_contract)))
+    files.append(
+        _file(layout.BASIC_INFO_FILE, _basic_info(api, template, root_contract, include_api_tags))
+    )
     if swagger is not None:
         files.append(
             _file(

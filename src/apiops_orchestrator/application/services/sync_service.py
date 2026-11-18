@@ -55,6 +55,7 @@ from apiops_orchestrator.domain.models.sync_view import (
     SyncView,
 )
 from apiops_orchestrator.domain.models.validate_view import ValidateApi, ValidateRevision
+from apiops_orchestrator.domain.ports.governance_api_port import GovernanceApiPort
 from apiops_orchestrator.domain.ports.local_file_importer_port import (
     LocalFileImporterPort,
 )
@@ -118,14 +119,20 @@ class SyncService:
     def __init__(
         self,
         manager_api: ManagerApiPort,
+        governance_api: GovernanceApiPort,
         importer: LocalFileImporterPort,
         writer: RepoWriterPort,
         session: Optional[LoginSession] = None,
     ):
         self._manager_api = manager_api
+        self._governance_api = governance_api
         self._importer = importer
         self._writer = writer
         self._access = ApiAccessGuard(session)
+
+    def governance_available(self) -> bool:
+        """Whether the Manager may have the Adaptive Governance; only a confirmed absence is False."""
+        return not self._governance_api.availability().absent
 
     # --- casos de uso ---------------------------------------------------------
 
@@ -155,6 +162,8 @@ class SyncService:
             remote.revision,
             template=template if template is not None else target.spec.get("template", ""),
             swagger=remote.swagger,
+            # Without Adaptive Governance the `apiTags` are not the repository's to govern.
+            include_api_tags=self.governance_available(),
         )
 
         step("Gravando os arquivos")
@@ -193,8 +202,14 @@ class SyncService:
 
         step("Comparando com o Manager")
         template = target.spec.get("template", "")
+        # Without Adaptive Governance `apiTags` is left out of both sides.
+        with_api_tags = self.governance_available()
         manager_side = materialize(
-            remote.api, remote.revision, template=template, swagger=remote.swagger
+            remote.api,
+            remote.revision,
+            template=template,
+            swagger=remote.swagger,
+            include_api_tags=with_api_tags,
         )
         # `assemble` still speaks the raw payload (it moves to the models with the
         # publish); the wire of the remote revision feeds it and its body comes back
@@ -204,6 +219,7 @@ class SyncService:
             basic_info=loaded.basic_info,
             root=loaded.root,
             resources=loaded.resources,
+            include_api_tags=with_api_tags,
         )
         declared = openapi_contract.extract_contract(
             basic_info=loaded.basic_info,
@@ -219,6 +235,7 @@ class SyncService:
             Revision.model_validate(assembled.body),
             template=template,
             swagger=local_swagger,
+            include_api_tags=with_api_tags,
         )
         differences = revision_diff.compare(repository_side.files, manager_side.files)
         logger.info(

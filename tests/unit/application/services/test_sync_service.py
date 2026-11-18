@@ -28,6 +28,7 @@ from apiops_orchestrator.application.exceptions.sync_exceptions import (
 )
 from apiops_orchestrator.application.services.sync_service import SyncService
 from apiops_orchestrator.domain.models.api_model import Api, Revision
+from apiops_orchestrator.domain.models.governance_model import GovernanceAvailability
 from apiops_orchestrator.domain.models.interceptor_model import CustomInterceptor
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
 from apiops_orchestrator.domain.models.sync_view import MODE_CHECK, MODE_LOAD, SCHEMA_SEN_SYNC_V1
@@ -146,9 +147,25 @@ def _basic_info(tmp_path, spec):
     )
 
 
-def _service(manager=None, writer=None, session=None):
+class GovernanceFake:
+    """Governance port fake: only `availability`, counted."""
+
+    def __init__(self, availability=GovernanceAvailability.ENABLED):
+        self._availability = availability
+        self.calls = 0
+
+    def availability(self):
+        self.calls += 1
+        return self._availability
+
+    def __getattr__(self, name):  # pragma: no cover - any other call is a defect
+        raise AssertionError(f"o sync só consulta a disponibilidade do AG; chamou {name}")
+
+
+def _service(manager=None, writer=None, session=None, governance=None):
     return SyncService(
         manager_api=manager or ManagerFake(),
+        governance_api=governance or GovernanceFake(),
         importer=LocalFileImporterAdapter(),
         writer=writer or WriterSpy(),
         session=session,
@@ -590,3 +607,47 @@ def test_check_sem_custom_nas_diferencas_nao_le_o_catalogo(tmp_path):
 
     assert not view.in_sync and view.custom_interceptors == []
     assert "list_custom_interceptors" not in manager.calls
+
+
+# --- sem Adaptive Governance ---------------------------------------------------------
+
+def test_carga_sem_ag_nao_grava_apitags(tmp_path):
+    _basic_info(tmp_path, {"template": 414})
+    writer, governance = WriterSpy(), GovernanceFake(GovernanceAvailability.DISABLED)
+
+    _service(writer=writer, governance=governance).sync(tmp_path, api_id=417, revision_number=2)
+
+    spec = yaml.safe_load(writer.written[layout.BASIC_INFO_FILE])["spec"]
+    assert "apiTags" not in spec and spec["id"] == 417
+    assert governance.calls == 1
+
+
+@pytest.mark.parametrize(
+    "availability", [GovernanceAvailability.ENABLED, GovernanceAvailability.UNKNOWN]
+)
+def test_carga_com_ag_ou_sem_resposta_grava_apitags(tmp_path, availability):
+    _basic_info(tmp_path, {"template": 414})
+    writer = WriterSpy()
+
+    _service(writer=writer, governance=GovernanceFake(availability)).sync(
+        tmp_path, api_id=417, revision_number=2
+    )
+
+    assert yaml.safe_load(writer.written[layout.BASIC_INFO_FILE])["spec"]["apiTags"]
+
+
+def test_check_sem_ag_ignora_apitags_dos_dois_lados(tmp_path):
+    """The repository keeps an old `apiTags` and the Manager answers another one: no difference."""
+    _loaded_repo(tmp_path)
+    other = copy.deepcopy(_fixture()["api"])
+    other["visibility"] = {"visibilityType": "ORGANIZATION"}
+    other["revisions"] = _api(_fixture()["revision"])["revisions"]
+    other["apiTags"] = [{"attributeName": "Outro", "tags": ["x"]}]
+
+    with_ag = _service(ManagerFake(api=other)).check(tmp_path, api_id=417, revision_number=2)
+    without_ag = _service(
+        ManagerFake(api=other), governance=GovernanceFake(GovernanceAvailability.DISABLED)
+    ).check(tmp_path, api_id=417, revision_number=2)
+
+    assert not with_ag.in_sync and all(d.field.startswith("spec.apiTags") for d in with_ag.differences)
+    assert without_ag.in_sync, without_ag.differences

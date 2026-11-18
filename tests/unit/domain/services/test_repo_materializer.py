@@ -462,3 +462,16 @@ def test_content_nulo_do_manager_nao_declara_a_chave():
             "content": None}
     data, _ = _mock_file(item)
     assert {"type": "XML threat protection"} in data["interceptors_request"]
+
+
+# --- sem Adaptive Governance ---------------------------------------------------------
+
+def test_sem_adaptive_governance_o_manifesto_sai_sem_apitags():
+    r = materialize(
+        Api.model_validate(API),
+        _revision([{"method": "GET", "path": "/tarefas", "interceptors": []}]),
+        include_api_tags=False,
+    )
+    data, text = _read(r, layout.BASIC_INFO_FILE)
+    assert "apiTags" not in data["spec"] and "apiTags" not in text
+    assert data["spec"]["apiResponsible"]["username"] == "paulo.silva"

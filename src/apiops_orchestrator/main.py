@@ -270,14 +270,10 @@ def build_sync_service_factory():
     def factory() -> SyncService:
         settings = _load_settings()
         session = _build_session_store(settings).load()
-        manager_adapter = ManagerApiAdapter(
-            token=_build_admin_token(settings),
-            base_path="/api-manager/api/v3/",
-            max_retries=3,
-            settings=settings,
-        )
+        manager_adapter, governance_adapter = _build_platform_adapters(settings)
         return SyncService(
             manager_api=manager_adapter,
+            governance_api=governance_adapter,
             importer=LocalFileImporterAdapter(),
             writer=RepoWriterAdapter(),
             session=session,
