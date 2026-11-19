@@ -117,10 +117,20 @@ São cerca de 9 mil linhas em 31 arquivos, com testes. A branch parte de um pont
 
 Pendências:
 
-- revisar o código e decidir se entra na versão estável, inteiro ou em partes;
-- conferir se os comandos respeitam as regras de visibilidade e de acesso da sessão, que entraram na estável
+- **Estrutura do repositório:** a branch cria um conceito de "navegação" que não existe na estrutura do projeto,
+  com um módulo de CLI à parte (`navigation_cli.py`) e um serviço único (`ApiNavigationService`) para todos os
+  comandos. Os comandos devem ficar no adapter de CLI, como os demais, e a lógica deve ser dividida em serviços por
+  assunto, em vez de um serviço para tudo. A divisão dos serviços fica a definir.
+- **Controle de acesso:** As listagens do
+  tenant (apps, planos, tokens, usuários, times, papéis, variáveis), as chamadas e o `sen reveal variable` não possuem verificações de acesso do usuário, com isso qualquer usuário conseguiria acessar a qualquer uma dessas listagens sem mesmo ter acesso a elas no manager. Necessária a checagem de permissionamento do usuário para executar esses passos, bem como a verificação da viabilidade de nem exibir esses comandos no help caso o usuário não tenha acesso a ele.
+- **Modelos tipados:** os métodos novos do port devolvem o JSON do Manager como dicionário, e o serviço e o domínio
+  leem as chaves da API direto. Adequar aos modelos tipados que nasceram na `feat/sen-sync`, na mesma linha do
+  [`backlog/001`](backlog/001-comandos-nos-modelos-do-manager.md).
+- **Padrões do projeto:** docstrings em inglês, commits sem escopo, e `COMMANDS.md` e `PLANO-NAVEGACAO.md` dentro
+  de `docs/`.
+- atualizar a branch com a `feat/executable` e aplicar a checagem de acesso da sessão, que entrou na estável
   depois;
-- atualizar a branch com a `feat/executable` antes de qualquer merge.
+- decidir se entra na versão estável, inteira ou em partes.
 
 A `feat/claude-plugin` em si tem três commits próprios, todos de 2026-11-01: um ajuste que remove aspas das
 variáveis de autenticação vindas do ambiente e dois de documentação. Entram na mesma revisão.
