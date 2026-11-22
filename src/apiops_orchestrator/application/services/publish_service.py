@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from apiops_orchestrator.domain.models.api_model import as_wire
 from apiops_orchestrator.application.exceptions.validate_exceptions import (
     GovernanceBlockedError,
     InvalidApiTagsError,
@@ -52,6 +53,7 @@ from apiops_orchestrator.domain.models.validate_view import (
 from apiops_orchestrator.domain.ports.local_file_importer_port import (
     LocalFileImporterPort,
 )
+from apiops_orchestrator.domain.ports.governance_api_port import GovernanceApiPort
 from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
 from apiops_orchestrator.domain.services import deployments, revision_payload
 
@@ -59,8 +61,8 @@ logger = logging.getLogger(__name__)
 
 PUBLISH_PIPELINE_ONLY = (
     "A publicação é feita só pela esteira: o comando não roda na sua máquina. "
-    "Para conferir o repositório contra a governança, use `sen validate`, que "
-    "grava na revisão Draft.\n\nNada foi publicado."
+    "Para validar o repositório, use `sen validate`, que faz a subida no manager "
+    "na revisão de rascunho.\n\nNada foi publicado."
 )
 
 
@@ -97,6 +99,7 @@ class PublishService:
     def __init__(
         self,
         manager_api: ManagerApiPort,
+        governance_api: GovernanceApiPort,
         importer: LocalFileImporterPort,
         settings: Settings,
     ):
@@ -104,7 +107,7 @@ class PublishService:
         self._settings = settings
         self._writer = RevisionWriter(manager_api, importer, command="publish")
         self._contract = ContractWriter(manager_api, command="publish")
-        self._governance = GovernancePrecheckService(manager_api)
+        self._governance = GovernancePrecheckService(governance_api)
         # Só a verificação de `Custom`: a régua em si não é lida pelo publish.
         self._customs = RulerService(manager_api, settings)
 
@@ -130,25 +133,29 @@ class PublishService:
         spec = loaded.basic_info.get("spec") or {}
 
         step("Consultando a API no Manager")
-        api = self._manager_api.get_api_by_id(spec.get("id")) or {}
+        api = as_wire(self._manager_api.get_api_by_id(spec.get("id"))) or {}
         self._writer.guard_identity(spec, api)
         revision = self._writer.revision_by_number(api, number)
-        target = self._manager_api.get_revision(revision["id"]) or {}
+        target = as_wire(self._manager_api.get_revision(revision["id"])) or {}
 
         # Antes da montagem: o `content` de um `Custom` novo vem do catálogo, e
         # um `Custom` ausente precisa abortar com o escopo que o declara.
         step("Verificando os interceptors Custom")
         self._customs.check_customs(self._writer.referenced_customs(loaded))
 
+        governance_available = self._governance.governance_available()
+        # Without Adaptive Governance the repository `apiTags` are ignored.
         assembled = revision_payload.assemble(
             draft=target,
             basic_info=loaded.basic_info,
             root=loaded.root,
             resources=loaded.resources,
             resolver_custom=self._writer.resolver_custom,
+            include_api_tags=governance_available,
         )
 
-        step("Verificando a governança")
+        if governance_available:
+            step("Verificando a governança")
         precheck = self._governance.evaluate(target, spec.get("apiTags"))
         warnings = self._writer.unread_files_warnings(loaded) + list(assembled.warnings)
         warnings += [f"Governança: {warning}" for warning in precheck.warnings]

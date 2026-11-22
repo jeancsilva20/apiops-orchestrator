@@ -9,6 +9,7 @@ from apiops_orchestrator.application.exceptions.completeness_exceptions import (
     CompletenessApiNotFound,
     CompletenessDenied,
     CompletenessError,
+    CompletenessGovernanceUnavailable,
     CompletenessNotFound,
     CompletenessPlatformError,
     CompletenessUnauthorized,
@@ -25,6 +26,8 @@ from apiops_orchestrator.domain.models.catalog_revision_model import (
     CatalogRevisionCompleteness,
 )
 from apiops_orchestrator.domain.models.completeness_view import CompletenessView
+from apiops_orchestrator.domain.models.governance_model import GovernanceAvailability
+from apiops_orchestrator.domain.ports.governance_api_port import GovernanceApiPort
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ManagerApiPort,
     ManagerApiTransportRejectedError,
@@ -50,6 +53,12 @@ def port() -> MagicMock:
     return MagicMock(spec=ManagerApiPort)
 
 
+def _governance(availability=GovernanceAvailability.ENABLED) -> MagicMock:
+    governance = MagicMock(spec=GovernanceApiPort)
+    governance.availability.return_value = availability
+    return governance
+
+
 def _entry():
     entry = _translate_row(IDENTITY_ROW)
     assert entry is not None
@@ -59,7 +68,7 @@ def _entry():
 def _sample_view(port: MagicMock) -> CompletenessView:
     port.get_revision_completeness.return_value = READING
     port.list_api_detail.return_value = _entry()
-    return CompletenessService(port).get_completeness(375, 5513)
+    return CompletenessService(port, _governance()).get_completeness(375, 5513)
 
 
 class TestHappyPath:
@@ -101,7 +110,7 @@ class TestHappyPath:
         port.get_revision_completeness.return_value = READING
         port.list_api_detail.return_value = _entry()
 
-        view = CompletenessService(port).get_completeness(375, 9100)
+        view = CompletenessService(port, _governance()).get_completeness(375, 9100)
 
         assert view.revision_id == 9100
         assert view.revision_number is None
@@ -145,7 +154,7 @@ class TestDegradableIdentity:
         port.get_revision_completeness.return_value = READING
         port.list_api_detail.side_effect = RuntimeError("finder down")
 
-        view = CompletenessService(port).get_completeness(375, 5513)
+        view = CompletenessService(port, _governance()).get_completeness(375, 5513)
 
         assert view.api.manager_id == 375
         assert view.api.name is None
@@ -157,7 +166,7 @@ class TestDegradableIdentity:
         port.get_revision_completeness.return_value = READING
         port.list_api_detail.side_effect = RuntimeError("finder down")
 
-        document = CompletenessService(port).get_completeness(375, 5513).to_document()
+        document = CompletenessService(port, _governance()).get_completeness(375, 5513).to_document()
 
         assert document["api"] == {
             "managerId": 375, "name": None, "version": None, "context": None
@@ -192,7 +201,7 @@ class TestVisibilityMatrix:
     ) -> CompletenessView:
         port.get_revision_completeness.return_value = READING
         port.list_api_detail.return_value = _translate_row({**IDENTITY_ROW, **identity_override})
-        service = CompletenessService(port, session=cls._session(profile=profile))
+        service = CompletenessService(port, _governance(), session=cls._session(profile=profile))
         return service.get_completeness(375, revision_id)
 
     def test_dev_reads_the_api_before_the_completeness(self, port):
@@ -213,7 +222,7 @@ class TestVisibilityMatrix:
 
     def test_invisible_api_answers_like_a_missing_one(self, port):
         port.list_api_detail.return_value = None
-        service = CompletenessService(port, session=self._session())
+        service = CompletenessService(port, _governance(), session=self._session())
 
         with pytest.raises(CompletenessApiNotFound) as missing:
             service.get_completeness(375, 5513)
@@ -266,7 +275,7 @@ class TestVisibilityMatrix:
     )
     def test_lookup_failure_stops_dev_without_completeness(self, port, failure, expected):
         port.list_api_detail.side_effect = failure
-        service = CompletenessService(port, session=self._session())
+        service = CompletenessService(port, _governance(), session=self._session())
 
         with pytest.raises(expected) as excinfo:
             service.get_completeness(375, 5513)
@@ -276,7 +285,7 @@ class TestVisibilityMatrix:
 
     def test_lookup_unavailable_shows_the_family_message(self, port):
         port.list_api_detail.side_effect = ManagerApiTransportUnavailableError("timeout")
-        service = CompletenessService(port, session=self._session())
+        service = CompletenessService(port, _governance(), session=self._session())
 
         with pytest.raises(CompletenessPlatformError) as excinfo:
             service.get_completeness(375, 5513)
@@ -291,7 +300,7 @@ class TestRefusalMapping:
         )
 
         with pytest.raises(CompletenessNotFound) as excinfo:
-            CompletenessService(port).get_completeness(375, 5501)
+            CompletenessService(port, _governance()).get_completeness(375, 5501)
         assert "5501" in str(excinfo.value)
 
     def test_401_maps_to_unauthorized(self, port):
@@ -300,7 +309,7 @@ class TestRefusalMapping:
         )
 
         with pytest.raises(CompletenessUnauthorized):
-            CompletenessService(port).get_completeness(375, 5513)
+            CompletenessService(port, _governance()).get_completeness(375, 5513)
 
     def test_403_maps_to_denied_same_facade_as_not_found(self, port):
         port.get_revision_completeness.side_effect = ManagerApiTransportRejectedError(
@@ -308,7 +317,7 @@ class TestRefusalMapping:
         )
 
         with pytest.raises(CompletenessDenied) as excinfo:
-            CompletenessService(port).get_completeness(375, 5513)
+            CompletenessService(port, _governance()).get_completeness(375, 5513)
         assert str(excinfo.value) == str(CompletenessNotFound(5513))
 
     def test_409_wraps_into_platform_error(self, port):
@@ -317,7 +326,7 @@ class TestRefusalMapping:
         )
 
         with pytest.raises(CompletenessPlatformError):
-            CompletenessService(port).get_completeness(375, 5513)
+            CompletenessService(port, _governance()).get_completeness(375, 5513)
 
     def test_unavailable_maps_to_platform_error(self, port):
         port.get_revision_completeness.side_effect = (
@@ -325,7 +334,7 @@ class TestRefusalMapping:
         )
 
         with pytest.raises(CompletenessPlatformError) as excinfo:
-            CompletenessService(port).get_completeness(375, 5513)
+            CompletenessService(port, _governance()).get_completeness(375, 5513)
         assert excinfo.value.message == UNAVAILABLE_MESSAGE
 
     @pytest.mark.parametrize("status", [409, 413, 422, 429])
@@ -335,7 +344,7 @@ class TestRefusalMapping:
         )
 
         with pytest.raises(CompletenessPlatformError) as excinfo:
-            CompletenessService(port).get_completeness(375, 5513)
+            CompletenessService(port, _governance()).get_completeness(375, 5513)
 
         message = excinfo.value.message
         assert message == INTERNAL_ERROR_MESSAGE
@@ -351,3 +360,44 @@ def test_all_errors_share_exit_code_two_bucket():
     assert CompletenessUnauthorized().exit_code == 2
     assert CompletenessDenied(1).exit_code == 2
     assert CompletenessPlatformError("boom").exit_code == 2
+
+
+class TestTenantWithoutGovernance:
+    def test_without_governance_exits_3_before_any_manager_call(self, port):
+        with pytest.raises(CompletenessGovernanceUnavailable) as excinfo:
+            CompletenessService(
+                port, _governance(GovernanceAvailability.DISABLED)
+            ).get_completeness(375, 5513)
+
+        assert excinfo.value.exit_code == 3
+        assert excinfo.value.message == (
+            "A checagem de completude não está disponível: cliente não possui "
+            "o Adaptive Governance contratado."
+        )
+        assert isinstance(excinfo.value, CompletenessError)
+        port.get_revision_completeness.assert_not_called()
+        port.list_api_detail.assert_not_called()
+
+    def test_inconclusive_detection_reads_as_today(self, port):
+        port.get_revision_completeness.return_value = READING
+        port.list_api_detail.return_value = _entry()
+
+        view = CompletenessService(
+            port, _governance(GovernanceAvailability.UNKNOWN)
+        ).get_completeness(375, 5513)
+
+        assert view.score == 85.0
+
+    @pytest.mark.parametrize(
+        ("availability", "expected"),
+        [
+            (GovernanceAvailability.ENABLED, True),
+            (GovernanceAvailability.UNKNOWN, True),
+            (GovernanceAvailability.DISABLED, False),
+        ],
+    )
+    def test_only_a_confirmed_absence_turns_the_governance_off(
+        self, port, availability, expected
+    ):
+        service = CompletenessService(port, _governance(availability))
+        assert service.governance_available() is expected

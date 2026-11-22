@@ -88,6 +88,29 @@ def _mock_content(content: Any) -> Any:
     return mock
 
 
+def repository_mock_content(content: Any) -> Any:
+    """Inverse of `_mock_content`: a JSON-text `body` becomes an object and a numeric-text `status` a number.
+
+    The Manager answers either form, depending on who wrote the Mock; the
+    repository always declares the object and the number.
+    """
+    if not isinstance(content, dict):
+        return content
+    mock = dict(content)
+    body = mock.get("body")
+    if isinstance(body, str):
+        try:
+            parsed = json.loads(body)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, (dict, list)):
+            mock["body"] = parsed
+    status = mock.get("status")
+    if isinstance(status, str) and status.strip().isdigit():
+        mock["status"] = int(status.strip())
+    return mock
+
+
 def _live(remote: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Itens governados que o escopo tem de fato na plataforma, sem tombstones."""
     own = partition((remote or {}).get("interceptors"))[0]
@@ -295,12 +318,14 @@ def assemble(
     root: Dict[str, Any],
     resources: Sequence[Any],
     resolver_custom: Optional[Callable[[int], Optional[Dict[str, Any]]]] = None,
+    include_api_tags: bool = True,
 ) -> AssembledPayload:
     """Monta o corpo do `PUT` a partir do estado remoto e do repositório.
 
     `resolver_custom` é injetado pela camada de aplicação: um `Custom` novo
     precisa do `{id, name, script}` do catálogo no `content`, e buscá-lo é rede —
     que não entra aqui. Sem o resolvedor, um `Custom` novo vai sem conteúdo.
+    With `include_api_tags` False, the repository `apiTags` are left out.
     """
     body = copy.deepcopy(draft)
     warnings: List[str] = []
@@ -337,7 +362,7 @@ def assemble(
         for field_name in ("name", "description"):
             if spec.get(field_name) is not None:
                 body["api"][field_name] = spec[field_name]
-        if spec.get("apiTags") is not None:
+        if include_api_tags and spec.get("apiTags") is not None:
             body["api"]["apiTags"] = spec["apiTags"]
 
     # --- escopo raiz ---------------------------------------------------------

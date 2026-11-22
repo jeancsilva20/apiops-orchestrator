@@ -1,14 +1,17 @@
 import importlib.metadata
 import logging
 import platform
+import re
 import sys
+from collections import Counter
 from contextlib import contextmanager
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import yaml
 import typer
-from typing import Any, Callable, Dict, List, NoReturn, Optional, cast
+from typing import Any, Callable, Dict, List, NoReturn, Optional, Tuple, cast
 from rich import print as rprint
 from rich import box
 from rich import get_console
@@ -19,6 +22,7 @@ from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from apiops_orchestrator.domain.models.api_model import as_wire
 from apiops_orchestrator.application.services.api_listing_service import (
     ApiListingService,
 )
@@ -40,6 +44,17 @@ from apiops_orchestrator.application.exceptions.deploy_exceptions import (
 )
 from apiops_orchestrator.domain.models.completeness_view import CompletenessView
 from apiops_orchestrator.domain.models.deploy_model import DeployState, DeployView
+from apiops_orchestrator.application.exceptions.sync_exceptions import (
+    EXIT_DIFFERENCES,
+    SyncError,
+)
+from apiops_orchestrator.domain.models.sync_view import MODE_CHECK, SyncView
+from apiops_orchestrator.domain.services.revision_diff import (
+    ABSENT,
+    CUSTOM_TYPE,
+    Difference,
+    equivalent,
+)
 from apiops_orchestrator.domain.models.publish_view import PublishView
 from apiops_orchestrator.domain.models.validate_view import (
     DOCUMENTATION_SCOPE,
@@ -757,6 +772,15 @@ REVISIONS_HEADER = (
     "ENVS",
     "COMPLETE",
 )
+# STAGE and COMPLETE come from the Adaptive Governance.
+_GOVERNANCE_COLUMNS = frozenset({2, 4})
+
+
+def _revision_columns(values: tuple, with_governance: bool) -> tuple:
+    """The values of the columns shown: without Adaptive Governance, STAGE and COMPLETE leave."""
+    if with_governance:
+        return values
+    return tuple(v for i, v in enumerate(values) if i not in _GOVERNANCE_COLUMNS)
 
 
 def _format_score(score):
@@ -788,9 +812,14 @@ def _missing_completeness_note(api_id: int, rows: List[CatalogRevisionInfo]) -> 
 def _render_revisions_grade(
     service: ApiListingService, api_id: int, output: OutputFormat
 ) -> None:
+    with_governance = service.governance_available()
     rows = _run_with_feedback(
         lambda: service.api_revisions(api_id),
-        label="Consultando completeness das revisões...",
+        label=(
+            "Consultando completeness das revisões..."
+            if with_governance
+            else "Consultando as revisões..."
+        ),
         narrate=output is OutputFormat.TEXT,
     )
     if not rows:
@@ -799,18 +828,24 @@ def _render_revisions_grade(
 
     def print_text():
         _render_grade(
-            [_revision_cells(row) for row in rows],
-            header=REVISIONS_HEADER,
-            column_justify=(None, None, None, None, "right"),
-            column_decorators=(
-                (lambda v: Text(str(v), style="bold white")),
-                None,
-                None,
-                None,
-                _score_cell,
+            [_revision_columns(_revision_cells(row), with_governance) for row in rows],
+            header=_revision_columns(REVISIONS_HEADER, with_governance),
+            column_justify=_revision_columns(
+                (None, None, None, None, "right"), with_governance
+            ),
+            column_decorators=_revision_columns(
+                (
+                    (lambda v: Text(str(v), style="bold white")),
+                    None,
+                    None,
+                    None,
+                    _score_cell,
+                ),
+                with_governance,
             ),
         )
-        _missing_completeness_note(api_id, rows)
+        if with_governance:
+            _missing_completeness_note(api_id, rows)
 
     display_output(
         [row.to_dict() for row in rows], output_format=output, text_callback=print_text
@@ -1406,7 +1441,7 @@ def validate(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Aumenta o detalhamento da saída."),
 ):
     """
-    Valida o repositório da API e grava na Draft para obter o veredito da governança.
+    Valida o repositório da API realizando a subida no manager na revisão de rascunho.
     """
     try:
         service_factory = (ctx.obj or {}).get("validate_service_factory")
@@ -1691,6 +1726,299 @@ def deploy(
         _exit_on_unexpected(e, command="deploy")
 
 
+# `interceptors_request`, `interceptors_request[2]` or `interceptors_request[2].content.quota`.
+_INTERCEPTOR_FIELD = re.compile(r"^(interceptors_(?:request|response))(?:\[(\d+)\])?(?:\.(.+))?$")
+_SAME_STYLE = "grey53"
+_CHANGED_STYLE = "yellow"
+
+_Row = Tuple[Text, Text, Text]
+
+
+def _difference_text(value: Any) -> Text:
+    """One side of a difference as the YAML reader sees it."""
+    if isinstance(value, str) and value == ABSENT:
+        return Text(ABSENT, style=_SAME_STYLE)
+    if value is None:
+        return Text("null")
+    if isinstance(value, bool):
+        return Text("true" if value else "false")
+    if isinstance(value, str) and value == "":
+        return Text('""')
+    if isinstance(value, (dict, list)):
+        dumped = yaml.safe_dump(value, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        return Text(dumped.rstrip())
+    return Text(str(value))
+
+
+def _interceptor_label(item: Any, view: SyncView) -> str:
+    """The type of the interceptor; a Custom also shows its id, name and absence from the catalog."""
+    if not isinstance(item, dict):
+        return _difference_text(item).plain
+    kind = str(item.get("type"))
+    if kind != CUSTOM_TYPE or item.get("id") is None:
+        return kind
+    try:
+        custom_id = int(item["id"])
+    except (TypeError, ValueError):
+        return f"{CUSTOM_TYPE} {item['id']}"
+    custom = next((c for c in view.custom_interceptors if c.id == custom_id), None)
+    notes = [custom.name] if custom is not None and custom.name else []
+    if view.in_catalog(custom_id) is False:
+        notes.append("fora do catálogo")
+    return f"{CUSTOM_TYPE} {custom_id}" + (f" ({', '.join(notes)})" if notes else "")
+
+
+def _interceptor_list_text(items: Any, other: Any, view: SyncView) -> Text:
+    """Numbered list of interceptors; the positions that differ from the other side stand out."""
+    if not isinstance(items, list) or not items:
+        return _difference_text(items)
+    others = other if isinstance(other, list) else []
+    text = Text()
+    for index, item in enumerate(items):
+        same = index < len(others) and equivalent(item, others[index])
+        if index:
+            text.append("\n")
+        text.append(
+            f"{index + 1}. {_interceptor_label(item, view)}",
+            style=_SAME_STYLE if same else _CHANGED_STYLE,
+        )
+    return text
+
+
+def _exclusive_lines(text: str, other: str) -> List[str]:
+    """Lines of `text` that `other` does not have, counting repeated lines."""
+    remaining = Counter(other.split("\n"))
+    lines: List[str] = []
+    for line in text.split("\n"):
+        if remaining[line] > 0:
+            remaining[line] -= 1
+        else:
+            lines.append(line)
+    return lines
+
+
+def _lines_text(lines: List[str]) -> Text:
+    if not lines:
+        return Text("-", style=_SAME_STYLE)
+    text = Text()
+    for index, line in enumerate(lines):
+        if index:
+            text.append("\n")
+        if line:
+            text.append(line)
+        else:
+            text.append("(linha vazia)", style=_SAME_STYLE)
+    return text
+
+
+def _value_cells(repository: Any, manager: Any) -> Tuple[Text, Text, Optional[str]]:
+    """Both sides of a field; text with several lines shows only the lines each side has alone."""
+    if isinstance(repository, str) and isinstance(manager, str) and (
+        "\n" in repository or "\n" in manager
+    ):
+        only_repository = _exclusive_lines(repository, manager)
+        only_manager = _exclusive_lines(manager, repository)
+        if not only_repository and not only_manager:
+            return _lines_text([]), _lines_text([]), "mesmas linhas, em outra ordem"
+        return _lines_text(only_repository), _lines_text(only_manager), "só as linhas que diferem"
+    return _difference_text(repository), _difference_text(manager), None
+
+
+def _field_text(name: str, note: Optional[str]) -> Text:
+    text = Text(name)
+    if note:
+        indent = " " * (len(name) - len(name.lstrip()) + 2)
+        text.append(f"\n{indent}({note})", style=_SAME_STYLE)
+    return text
+
+
+def _difference_rows(differences: List[Difference], view: SyncView) -> List[List[_Row]]:
+    """Table rows of one file, in groups: a field changed inside an interceptor joins its title row."""
+    groups: List[List[_Row]] = []
+    open_item: Optional[Tuple[str, str]] = None
+    for d in differences:
+        match = _INTERCEPTOR_FIELD.match(d.field or "")
+        if match and match.group(2) is None:
+            groups.append([(
+                Text(match.group(1)),
+                _interceptor_list_text(d.repository, d.manager, view),
+                _interceptor_list_text(d.manager, d.repository, view),
+            )])
+            open_item = None
+        elif match and match.group(3) is None:
+            number = int(match.group(2)) + 1
+
+            def side(value: Any) -> Text:
+                if isinstance(value, str) and value == ABSENT:
+                    return _difference_text(value)
+                return Text(f"{number}. {_interceptor_label(value, view)}", style=_CHANGED_STYLE)
+
+            groups.append([(Text(match.group(1)), side(d.repository), side(d.manager))])
+            open_item = None
+        elif match and d.interceptor is not None:
+            item = (match.group(1), match.group(2))
+            if item != open_item:
+                title = f"{int(match.group(2)) + 1}. {d.interceptor}"
+                groups.append([(
+                    Text(match.group(1)),
+                    Text(title, style=_SAME_STYLE),
+                    Text(title, style=_SAME_STYLE),
+                )])
+                open_item = item
+            name = match.group(3)
+            if name.startswith("content."):
+                name = name[len("content."):]
+            repository, manager, note = _value_cells(d.repository, d.manager)
+            groups[-1].append((_field_text(f"  {name}", note), repository, manager))
+        else:
+            repository, manager, note = _value_cells(d.repository, d.manager)
+            groups.append([(_field_text(d.field or "", note), repository, manager)])
+            open_item = None
+    return groups
+
+
+def _render_differences(view: SyncView, width: int) -> None:
+    """One table per file (Campo | Repositório | Manager); a file on one side only is a line."""
+    by_file: Dict[str, List[Difference]] = {}
+    for d in view.differences:
+        by_file.setdefault(d.file, []).append(d)
+    for file, items in by_file.items():
+        rprint()
+        if items[0].field is None:
+            where = "só no Manager" if items[0].repository == ABSENT else "só no repositório"
+            rprint(Text.assemble((file, "bold white"), "  ", (where, _CHANGED_STYLE)))
+            continue
+        rprint(Text(file, style="bold white", overflow="fold"))
+        table = Table(
+            box=_GRADE_BOX,
+            header_style="bold cyan",
+            border_style="grey53",
+            padding=(0, 1),
+            expand=True,
+        )
+        table.add_column("Campo", overflow="fold", max_width=max(12, width * 2 // 5))
+        table.add_column("Repositório", overflow="fold", ratio=1)
+        table.add_column("Manager", overflow="fold", ratio=1)
+        groups = _difference_rows(items, view)
+        for group_index, group in enumerate(groups):
+            for row_index, row in enumerate(group):
+                last = row_index == len(group) - 1 and group_index < len(groups) - 1
+                table.add_row(*row, end_section=last)
+        get_console().print(table, width=width)
+
+
+def _render_sync_text(view: SyncView) -> None:
+    """Renderiza a resposta do `sync` — mesma árvore de `json`/`yaml`."""
+    width = _validate_width()
+    identity = [("API", f"[bold white]{_literal(view.api.name or '-')}[/bold white]")]
+    detail = f"id {view.api.manager_id}"
+    if view.api.version:
+        detail += f"  ·  v{_literal(view.api.version)}"
+    if view.api.base_path:
+        detail += f"  ·  {_literal(view.api.base_path)}"
+    identity.append(("", f"[grey53]{detail}[/grey53]"))
+    identity.append(
+        (
+            "Revisão",
+            f"[white]#{view.revision.revision_number}[/white] "
+            f"[grey53](id {view.revision.manager_id})[/grey53]",
+        )
+    )
+    title = "Verificação" if view.mode == MODE_CHECK else "API Importada"
+    rprint()
+    rprint(_validate_panel(title, _field_grid(identity), width=width))
+    rprint()
+
+    if view.mode == MODE_CHECK:
+        if view.in_sync:
+            rprint("[bold green]Repositório e Manager iguais.[/bold green]")
+        else:
+            rprint(f"[bold]Diferenças[/bold]  [red]{len(view.differences)}[/red]")
+            _render_differences(view, width)
+        rprint()
+    else:
+        rprint(f"[bold]Pasta[/bold]  {_literal(view.repository or '.')}")
+        rprint(
+            f"[grey53]{len(view.files)} arquivos · {view.resources} recursos · "
+            f"{view.operations} operações[/grey53]"
+        )
+        rprint()
+
+    if view.warnings:
+        rprint(f"[bold]Avisos[/bold]  [yellow]{len(view.warnings)}[/yellow]")
+        _render_repo_warnings(
+            [
+                Finding(severity=SEVERITY_WARNING, scope=REPOSITORY_SCOPE, message=a)
+                for a in view.warnings
+            ]
+        )
+        rprint()
+
+
+
+@sen_app.command("sync")
+def sync(
+    ctx: typer.Context,
+    api_id: Optional[int] = typer.Option(..., "--id", help="Id da API no Manager."),
+    revision: int = typer.Option(..., "--revision", "-r", help="Número da revisão."),
+    repo: Optional[Path] = typer.Option(
+        None, "--repo", help="Repositório local de destino da API (default: diretório atual)."
+    ),
+    template: Optional[int] = typer.Option(
+        None, "--template", help="Id da API template, gravado em spec.template."
+    ),
+    check: bool = typer.Option(
+        False, "--check", help="Só compara o repositório com a revisão; não grava nada."
+    ),
+    output: OutputFormat = typer.Option(
+        OutputFormat.TEXT, "--output", "-o", help="Formato da saída (text, json, yaml)."
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Aumenta o detalhamento da saída."),
+):
+    """
+    Traz uma API do Manager para o repositório (carga) ou confere se os dois são iguais (--check).
+    """
+    if check and template is not None:
+        raise typer.BadParameter("--template não se aplica ao --check.", param_hint="--template")
+    try:
+        service_factory = (ctx.obj or {}).get("sync_service_factory")
+        if not callable(service_factory):
+            rprint("[bold red]Erro:[/bold red] Serviço de sync indisponível no contexto.")
+            raise typer.Exit(code=1)
+
+        service = cast(Callable[[], Any], service_factory)()
+        progress = _ValidateProgress(
+            initial_label="Verificando" if check else "Carregando",
+            narrate=output is OutputFormat.TEXT,
+        )
+        with progress:
+            common = dict(repo_path=repo or Path.cwd(), api_id=api_id, revision_number=revision)
+            if check:
+                view = service.check(**common, progress=progress.step)
+            else:
+                view = service.sync(**common, template=template, progress=progress.step)
+
+        display_output(
+            view.to_document(),
+            output_format=output,
+            text_callback=lambda: _render_sync_text(view),
+        )
+        if check and not view.in_sync:
+            raise typer.Exit(code=EXIT_DIFFERENCES)
+
+    except typer.Exit:
+        raise
+    except SyncError as e:
+        _print_error(e.message)
+        raise typer.Exit(code=e.exit_code)
+    except LoginError as e:
+        # Sem sessão, token expirado ou fora do time APIOps: exit 2 da tabela do sync.
+        _print_error(e.message)
+        raise typer.Exit(code=2)
+    except Exception as e:
+        _exit_on_unexpected(e, command="sync")
+
+
 # ---------------------------------------------------------------------------
 # sen diag — subcomandos de diagnóstico, ocultos (D-19)
 #
@@ -1904,7 +2232,7 @@ def diag_draft(
             )
             raise typer.Exit(code=1)
 
-        draft = manager.get_revision(revision["id"]) or {}
+        draft = as_wire(manager.get_revision(revision["id"])) or {}
         governed, preserved = partition(draft.get("interceptors"))
 
         document = {
@@ -1931,11 +2259,16 @@ def diag_draft(
 
         def _text() -> None:
             rev = document["revision"]
+            # Without Adaptive Governance the revision has no workflow to show.
+            workflow = (
+                f"[grey53]workflow {rev['workflowId']} · stage {rev['workflowStageId']} "
+                "— lidos da revisão, reenviados intactos[/grey53]"
+                if rev["workflowId"] is not None
+                else ""
+            )
             rprint(
                 f"[bold]{_literal(api.get('name'))}[/bold]  [grey53]API {api.get('id')}[/grey53]\n"
-                f"revisão {rev['managerId']} (#{rev['revisionNumber']})  "
-                f"[grey53]workflow {rev['workflowId']} · stage {rev['workflowStageId']} "
-                "— lidos da revisão, reenviados intactos[/grey53]\n"
+                f"revisão {rev['managerId']} (#{rev['revisionNumber']})  {workflow}\n"
             )
             rprint(
                 f"  raiz: {len(governed)} governado(s), "

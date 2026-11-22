@@ -40,6 +40,21 @@ class CompletenessDenied(CompletenessError):
         super().__init__(_NOT_FOUND_TEMPLATE.format(revision_id=revision_id))
 
 
+GOVERNANCE_UNAVAILABLE_MESSAGE = (
+    "A checagem de completude não está disponível: cliente não possui o "
+    "Adaptive Governance contratado."
+)
+
+
+class CompletenessGovernanceUnavailable(CompletenessError):
+    """The Manager has no Adaptive Governance, so there is no completeness."""
+
+    exit_code = 3
+
+    def __init__(self):
+        super().__init__(GOVERNANCE_UNAVAILABLE_MESSAGE)
+
+
 class CompletenessPlatformError(CompletenessError):
     """Falha da plataforma sem leitura de negócio (erro interno ou indisponível).
 

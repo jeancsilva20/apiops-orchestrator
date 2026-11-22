@@ -23,12 +23,15 @@ from apiops_orchestrator.adapters.inbound.local_files_importer.local_file_import
 from apiops_orchestrator.application.services.repo_importer_service import (
     RepoCanonicalReader,
 )
+from apiops_orchestrator.domain.models.api_model import Api, Revision
 from apiops_orchestrator.domain.services.repo_materializer import materialize
 
 RAIZ = pathlib.Path(__file__).parents[3]
 FIXTURES = RAIZ / "fixtures" / "manager"
+# Os docs vivem fora do repositório desde 2026-10-22 (`../apiops-docs`).
 EXEMPLOS = (
-    RAIZ.parent
+    RAIZ.parent.parent
+    / "apiops-docs"
     / "docs"
     / "feat-api-estructure"
     / "decisoes-refino-409"
@@ -55,7 +58,7 @@ def _arvore_commitada(name):
 @pytest.mark.skipif(not FIXTURES.is_dir(), reason="fixtures do Manager ausentes")
 def test_materializacao_reproduz_a_arvore_commitada(name, resources, operations, files):
     data = _carregar_fixture(name)
-    resultado = materialize(data["api"], data["revision"])
+    resultado = materialize(Api.model_validate(data["api"]), Revision.model_validate(data["revision"]))
 
     gerado = {a.file_path: a.text for a in resultado.files}
     assert len(gerado) == files
@@ -68,8 +71,9 @@ def test_materializacao_reproduz_a_arvore_commitada(name, resources, operations,
 @pytest.mark.skipif(not FIXTURES.is_dir(), reason="fixtures do Manager ausentes")
 def test_materializacao_e_deterministica(name, resources, operations, files):
     data = _carregar_fixture(name)
-    a = materialize(data["api"], data["revision"])
-    b = materialize(data["api"], data["revision"])
+    api, revision = Api.model_validate(data["api"]), Revision.model_validate(data["revision"])
+    a = materialize(api, revision)
+    b = materialize(api, revision)
     assert [(x.file_path, x.text) for x in a.files] == [
         (x.file_path, x.text) for x in b.files
     ]

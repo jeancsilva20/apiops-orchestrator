@@ -31,6 +31,12 @@ OPERATION_FIELDS = (
 HTTP_METHODS = ("get", "put", "post", "delete", "options", "head", "patch", "trace")
 # Extensions that carry the runtime flow, not the documentation.
 FLOW_EXTENSIONS = frozenset({"x-interceptors", "x-destination", "x-timeout"})
+# Maps whose keys are names, not fields: an `x-` key there is not an extension.
+NAME_MAPS = frozenset({
+    "properties", "patternProperties", "headers", "content", "responses", "examples",
+    "schemas", "requestBodies", "securitySchemes", "encoding", "mapping", "scopes",
+})
+FREE_VALUES = frozenset({"example", "default", "enum", "value", "const"})
 
 Route = Tuple[str, Optional[str]]
 
@@ -109,6 +115,108 @@ def extract_contract(
             operations[(str(operation.method or "").upper(), data.get("path"))] = fields
 
     return RepositoryContract(root=root, components=governed, operations=operations)
+
+
+# --- swagger -> repository (the direction `sen sync` takes) --------------------
+
+
+def without_extensions(node: Any, name_map: bool = False) -> Any:
+    """Copy without the `x-*` keys, read the same way as the validator."""
+    if isinstance(node, dict):
+        cleaned: Dict[Any, Any] = {}
+        for key, value in node.items():
+            if not name_map and isinstance(key, str) and key.startswith("x-"):
+                continue
+            if not name_map and key in FREE_VALUES:
+                cleaned[key] = copy.deepcopy(value)
+            else:
+                cleaned[key] = without_extensions(value, not name_map and key in NAME_MAPS)
+        return cleaned
+    if isinstance(node, list):
+        return [without_extensions(item) for item in node]
+    return node
+
+
+def is_openapi_3(document: Dict[str, Any]) -> bool:
+    return str((document or {}).get("openapi") or "").startswith("3")
+
+
+def document_format(document: Dict[str, Any]) -> str:
+    """Human label of a document that is not OpenAPI 3."""
+    if (document or {}).get("swagger"):
+        return f"Swagger {document['swagger']}"
+    return "formato sem `openapi`"
+
+
+def swagger_root_contract(document: Dict[str, Any]) -> Dict[str, Any]:
+    """`info.contact`, `tags` and `security` of the document root, without extensions."""
+    values = {
+        "contact": (document.get("info") or {}).get("contact"),
+        "tags": document.get("tags"),
+        "security": document.get("security"),
+    }
+    return {k: without_extensions(v) for k, v in values.items() if v is not None}
+
+
+def swagger_components(document: Dict[str, Any]) -> Dict[str, Any]:
+    """The governed component sections of the document, without extensions."""
+    components = document.get("components") or {}
+    return without_extensions(
+        {s: v for s, v in components.items() if s in GOVERNED_SECTIONS and v is not None}
+    )
+
+
+def expand_parameter(parameter: Any, reusable: Dict[str, Any], where: str, warnings: List[str]) -> Any:
+    """Replaces a `$ref` to `components.parameters` by the parameter itself."""
+    ref = parameter.get("$ref") if isinstance(parameter, dict) else None
+    if isinstance(ref, str) and ref.startswith("#/components/parameters/"):
+        target = reusable.get(ref.rsplit("/", 1)[-1])
+        if isinstance(target, dict):
+            return copy.deepcopy(target)
+        warnings.append(f"{where}: {ref} não existe em components.parameters — escrito como está")
+    return parameter
+
+
+def _valid_parameters(items: Any, reusable: Dict[str, Any], where: str, warnings: List[str]) -> List[Any]:
+    """Expanded parameters; an item that is not an object (the Manager's `null`) is dropped."""
+    valid: List[Any] = []
+    for parameter in items or []:
+        if not isinstance(parameter, dict):
+            warnings.append(f"{where}: parâmetro {parameter!r} no swagger não é objeto — descartado")
+            continue
+        valid.append(expand_parameter(parameter, reusable, where, warnings))
+    return valid
+
+
+def swagger_operations_contract(
+    document: Dict[str, Any], warnings: List[str]
+) -> Dict[Route, Dict[str, Any]]:
+    """Contract fields of each operation, by `(METHOD, path)`.
+
+    Path-item parameters are merged into every method; on the same `name`+`in`
+    the operation's own wins. Parameter `$ref` is expanded and `x-*` keys leave.
+    """
+    reusable = (document.get("components") or {}).get("parameters") or {}
+    operations: Dict[Route, Dict[str, Any]] = {}
+    for path, item in (document.get("paths") or {}).items():
+        if not isinstance(item, dict):
+            continue
+        shared = _valid_parameters(item.get("parameters"), reusable, path, warnings)
+        for method in HTTP_METHODS:
+            operation = item.get(method)
+            if not isinstance(operation, dict):
+                continue
+            where = f"{method.upper()} {path}"
+            own = _valid_parameters(operation.get("parameters"), reusable, where, warnings)
+            parameters = merge_parameters(shared, own)
+            fields: Dict[str, Any] = {}
+            for name in ("summary", "operationId", "tags", "security", "parameters", "requestBody", "responses"):
+                value = parameters if name == "parameters" else operation.get(name)
+                if value is None or (name in ("parameters", "responses") and not value):
+                    continue
+                fields[name] = without_extensions(value)
+            operations[(method.upper(), path)] = fields
+    return operations
 
 
 def is_swagger_2(document: Dict[str, Any]) -> bool:
