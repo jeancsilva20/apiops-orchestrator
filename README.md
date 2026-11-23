@@ -34,11 +34,35 @@ Run `sen --help` or `sen <command> --help` for the authoritative option list. Al
 | Command | What it does | Notes |
 |---|---|---|
 | `sen login` | Authenticates and saves the session locally | Required before every other command |
-| `sen list api` | Lists APIs in the Manager | `--id`, `--query`, `--limit`, `--offset`, `--all`, `--revisions/-r` |
+| `sen list api` | Lists APIs in the Manager | `--id`, `--query`, `--limit`, `--offset`, `--all`, `--revisions/-r`, `--owner`, `--team`, `--context`, `--workflow`, `--stage`, `--wide/-w` |
 | `sen completeness` | Completeness of an API revision | `--id`, `--revision`, `--score-only` |
 | `sen validate` | Validates the repository and writes to Draft | `--repo` (default: current directory) |
 | `sen publish` | Publishes to the environment revision | Pipeline only (`EXECUTION_MODE=pipeline`) |
 | `sen deploy` | Deploys the revision to the environment | Pipeline only (`EXECUTION_MODE=pipeline`) |
+| `sen get api` | Identity, visibility, environments and revisions of one API | `--id` |
+| `sen get resources` | Root → resources → operations of a revision, with destination and interceptor counts | `--id`, `--revision`, `--revision-id` |
+| `sen get interceptors` | Interceptor flow per scope; `--item` zooms into one interceptor | `--resource`, `--operation`, `--effective`, `--content`, `--item` |
+| `sen get custom` | Name and script of a Custom interceptor from the catalog | `--custom-id`, `--script-only` |
+| `sen get swagger` | OpenAPI contract of a revision, as stored in the Manager | `--id`, `--revision`, `--revision-id` |
+| `sen export api` | Materializes the canonical repository tree of a revision | `--dir`, `--force` |
+| `sen list environments` | Environments of the tenant (ids, names, inbound URLs) | |
+| `sen list workflows` | Adaptive Governance workflows and their stages | |
+| `sen list attributes` | Governance attributes (the `apiTags` names) and their valid tags | |
+| `sen list interceptors` | Catalog of interceptor types (the `type` accepted in YAML) and custom ids | `--custom`, `--tag` |
+| `sen get workflow` | Stages of a workflow and what each one requires | `--id` |
+| `sen get governance` | A revision against its current stage and the next one: maturity, mandatory interceptors, attributes, environments | `--id`, `--revision`, `--revision-id` |
+| `sen get impact` | Impact graph: routes with destinations, plans and apps consuming the API | `--id`, `--env` |
+| `sen list variables` / `sen get environment` | Environment variables by map (always masked) and everything deployed in an environment | `--env`, `--key` |
+| `sen reveal variable` | Unmasks one environment variable on purpose | `--env`, `--key`, `--map`, `--raw` |
+| `sen list apps` / `sen get app` | Consumer apps and their API → plan subscriptions (no credentials) | `--api`, `--query` |
+| `sen list plans` / `sen get plan` | Plans, their API and the interceptors a plan adds | `--api`, `--query` |
+| `sen list tokens` | Issued access tokens (owner, app, status, expiry; never the code) | `--app`, `--api` |
+| `sen list users` / `sen list teams` | Access Control users and teams | `--query` |
+| `sen get user` / `sen get team` / `sen list roles` / `sen get role` / `sen list permissions` | Access Control in depth: a user's teams and roles, a team's members, roles and their permissions | `--username`, `--name`, `--id`, `--product` |
+| `sen list owners` | APIs grouped by owner, with context and teams | |
+| `sen list calls` / `sen get trace` / `sen get analytics` | Gateway calls of the last 7 days, one call by trace id (pipeline steps, masked headers), and ready-made analytics (volume, errors, latency, rankings) | `--api`, `--env`, `--since`, `--until`, `--errors`, `--id`, `--sample` |
+| `sen get interceptor-type` | Reference of each interceptor type's `content` fields (doc 06 + tenant) | `--type` |
+| `sen list inbounds` / `sen list gateway-pools` | Gateway inbound addresses and pools | |
 
 ### `sen login`
 
@@ -67,6 +91,46 @@ The session is written to `.sen_session` in the **package directory** (`src/apio
 > metadata do pacote não esteja disponível. Em ambos os ambientes, a
 > alternativa `python src/apiops_orchestrator/main.py sen <comando>`
 > (ou `poetry run python ...`) continua funcionando e aceita os mesmos comandos.
+
+### Exploring an environment without the source (`sen get`, `sen export`)
+
+> The complete, per-command reference (every option, what each level shows, what is masked and what is not reachable) is in [COMMANDS.md](COMMANDS.md). The coverage plan by area (API data, owners, access control, governance, apps, plans, environments, interceptors in FIRST/SECOND/THIRD, interceptor content), with what was validated against the APIM/AG mapping and what is out of reach, is in [PLANO-NAVEGACAO.md](PLANO-NAVEGACAO.md).
+
+The `get` and `export` groups read an API straight from the Manager, so a person — or a coding agent such as Claude Code that only has the CLI — can inspect APIs **without a local copy of the repository**. Every command is read-only, accepts `-o json`/`-o yaml`, and each level of detail points to the next:
+
+```bash
+sen list api                                            # 0. which APIs exist (ids)
+sen get api --id 400                                    # 1. identity, visibility, environments, revisions
+sen get resources --id 400 --revision 4                 # 2. root → resources → operations, counts per scope
+sen get interceptors --id 400 --revision 4              # 3. interceptors each scope declares (own)
+sen get interceptors --id 400 --resource Token --effective   #    what a scope actually runs (inherited − removed + own)
+sen get interceptors --id 400 --operation "POST /oauth2/token" --content   #    with each interceptor's configuration
+sen get interceptors --id 400 --item 19220              # 4. one interceptor, full content (script included)
+sen get custom --custom-id 31 --script-only > my.js     #    script of a Custom from the catalog
+sen get swagger --id 400 --revision 4                   #    OpenAPI contract of the revision
+sen export api --id 400 --revision 4 --dir ./repo       # 5. canonical tree (what `sen validate` reads)
+```
+
+The catalogs and the governance view come from the routes mapped in the APIM/Adaptive Governance documentation (`/environments`, `/api-governance/.../workflows`, `/attributes`, `/interceptors`, `/apis/{id}/tree-analysis/{env}`):
+
+```bash
+sen list environments                                   # env ids for TARGET_ENVIRONMENT_ID and for stage rules
+sen list workflows                                      # workflows → stages, with a one-line summary of each stage's rules
+sen get workflow --id 327                               # what each stage requires (maturity, interceptors, attributes, deploy envs)
+sen list attributes                                     # apiTags names and the tags the catalog accepts
+sen list interceptors [--custom] [--tag Oauth]          # valid `type` names; custom ids for `sen get custom`
+sen get governance --id 400 --revision 4                # does the revision meet its stage? what is missing for the next one?
+sen get impact --id 400 [--env 1]                       # routes → destinations, plans → apps (who breaks if this API changes)
+```
+
+Notes:
+
+- `sen get governance` evaluates the stage requirements against the revision as the Manager holds it: maturity against `/completeness`, mandatory interceptors against the effective flow of each scope (root, every resource or every operation, honouring `positionType` FIRST/LAST), attributes against `apiTags` with the same rule the publish pre-check uses, and deployments against the stage's allowed environments. Attribute bindings made in the UI side panel travel on a signed route the CLI cannot read, so only `apiTags` count.
+- `--revision` is the revision **number** shown in the UI (REV #). Use `--revision-id` for the Manager id (REV ID, the value `sen completeness --revision` expects). Without either, the current revision (`lastRevision`) is used.
+- `--resource` accepts the resource name, its slug (the folder name in the canonical tree) or its id; `--operation` accepts `"<METHOD> <path>"`, just the path, or the operation id.
+- Interceptor ids (`[19220]`) are the Manager ids inside the revision; `customInterceptorId` is the catalog id used by `sen get custom`.
+- `sen export api` without `--dir` prints every file to stdout, with a `# ==> <path>` header per file; with `--dir` it writes the tree and refuses to overwrite unless `--force` is given.
+- Only `FIRST`/`SECOND` execution points are governed by the repository; interceptors outside them are counted as *preserved* and never appear in the exported YAML.
 
 ## Configuration
 

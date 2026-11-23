@@ -150,6 +150,18 @@ class GovernancePrecheckService:
             workflow_id, stage_id, required, missing_names, warnings, invalid, stage=stage
         )
 
+    def invalid_tags(
+        self, api_tags: Optional[Sequence[Dict[str, Any]]]
+    ) -> List[InvalidTag]:
+        """Tags declaradas que o catálogo não cadastra para o atributo."""
+        return self._invalid_tags(api_tags)
+
+    def present_attribute_ids(
+        self, api_tags: Optional[Sequence[Dict[str, Any]]]
+    ) -> set:
+        """Ids dos atributos que `apiTags` declara de forma válida (mesma regra do publish)."""
+        return self._present(api_tags)
+
     # --- apoio ---------------------------------------------------------------
 
     @staticmethod

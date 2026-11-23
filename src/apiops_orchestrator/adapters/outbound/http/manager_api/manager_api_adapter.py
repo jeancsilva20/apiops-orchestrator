@@ -7,6 +7,7 @@ from requests.exceptions import RequestException
 
 from apiops_orchestrator.domain.ports.manager_api_port import (
     ApiCatalogPage,
+    CallsPage,
     ManagerApiGovernanceBlockedError,
     ManagerApiPort,
     ManagerApiResponseTooLargeError,
@@ -32,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 GOVERNANCE_BASE_PATH = "/api-governance/api/v3/"
 FINDER_BASE_PATH = "/api-finder/api/v3/"
+USER_MANAGEMENT_BASE_PATH = "/user-management/v1/"
 
 
 def _wire_int(value: Any) -> Optional[int]:
@@ -494,10 +496,215 @@ class ManagerApiAdapter(ManagerApiPort):
 
     def list_attributes(self) -> List[Dict[str, Any]]:
         payload = self._request("GET", "attributes", base_path=GOVERNANCE_BASE_PATH)
+        return _unwrap_list(payload, ("content", "data", "attributes"))
+
+    # --- catálogos do tenant -------------------------------------------------
+
+    def list_environments(self) -> List[Dict[str, Any]]:
+        payload = self._request("GET", "environments", params={"simple": "true"})
+        return _unwrap_list(payload, ("content", "data", "environments"))
+
+    def list_workflows(self) -> List[Dict[str, Any]]:
+        # A UI pagina em 8; o teto abaixo cobre o tenant inteiro numa leitura.
+        payload = self._request(
+            "GET",
+            "workflows",
+            base_path=GOVERNANCE_BASE_PATH,
+            params={"_limit": "100", "_offset": "0"},
+        )
+        return _unwrap_list(payload, ("content", "data", "workflows"))
+
+    def list_interceptor_catalog(self) -> List[Dict[str, Any]]:
+        payload = self._request("GET", "interceptors")
+        return _unwrap_list(payload, ("content", "data", "interceptors"))
+
+    def get_impact_tree(self, api_id: int, environment_id: int) -> Dict[str, Any]:
+        payload = self._request(
+            "GET",
+            f"apis/{api_id}/tree-analysis/{environment_id}",
+            base_path=GOVERNANCE_BASE_PATH,
+        )
+        return payload if isinstance(payload, dict) else {}
+
+    # --- consumo e infraestrutura ---------------------------------------------
+
+    # Páginas grandes: a plataforma devolve no máximo o que tem (plans: 50 de 50;
+    # apps ignora a paginação e devolve tudo). O laço pára quando a página vem
+    # menor que o pedido ou quando não traz id novo — evita o loop infinito de
+    # uma rota que não avança.
+    _PAGE_SIZE = 100
+
+    def _paged(self, endpoint: str, page_param: str, size_param: str, **extra: str) -> List[Dict[str, Any]]:
+        rows: List[Dict[str, Any]] = []
+        seen: set = set()
+        page = 1
+        while True:
+            params = {page_param: str(page), size_param: str(self._PAGE_SIZE), **extra}
+            payload = self._request("GET", endpoint, params=params)
+            chunk = _unwrap_list(payload, ("content", "data", "items"))
+            fresh = [r for r in chunk if _row_identity(r) not in seen]
+            if not fresh:
+                break
+            seen.update(_row_identity(r) for r in fresh)
+            rows.extend(fresh)
+            if len(chunk) < self._PAGE_SIZE:
+                break
+            page += 1
+        return rows
+
+    def _optional(self, endpoint: str) -> Optional[Dict[str, Any]]:
+        """GET de um item; 404 é ausência (informação), não falha de transporte."""
+        try:
+            payload = self._request("GET", endpoint)
+        except ManagerApiTransportRejectedError as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+        return payload if isinstance(payload, dict) else None
+
+    def get_environment(self, environment_id: int) -> Dict[str, Any]:
+        payload = self._request("GET", f"environments/{environment_id}")
+        return payload if isinstance(payload, dict) else {}
+
+    def list_apps(self) -> List[Dict[str, Any]]:
+        return self._paged("apps", "actualPage", "pageSize")
+
+    def get_app(self, app_id: int) -> Optional[Dict[str, Any]]:
+        return self._optional(f"apps/{app_id}")
+
+    def list_plans(self) -> List[Dict[str, Any]]:
+        return self._paged("plans", "page", "pageSize", filter="BASIC")
+
+    def get_plan(self, plan_id: int) -> Optional[Dict[str, Any]]:
+        return self._optional(f"plans/{plan_id}")
+
+    def list_access_tokens(self) -> List[Dict[str, Any]]:
+        return self._paged("access-tokens", "actualPage", "pageSize")
+
+    def _user_management(self, endpoint: str, keyword: Optional[str]) -> List[Dict[str, Any]]:
+        params: Dict[str, str] = {"_limit": "200", "_offset": "0"}
+        if keyword:
+            params["_keyword"] = keyword
+        payload = self._request(
+            "GET", endpoint, base_path=USER_MANAGEMENT_BASE_PATH, params=params
+        )
+        return _unwrap_list(payload, ("content", "data", "items"))
+
+    def list_users(self, keyword: Optional[str] = None) -> List[Dict[str, Any]]:
+        return self._user_management("users", keyword)
+
+    def list_groups(self, keyword: Optional[str] = None) -> List[Dict[str, Any]]:
+        return self._user_management("groups", keyword)
+
+    # --- access control -------------------------------------------------------
+
+    def _um_optional(self, endpoint: str) -> Optional[Dict[str, Any]]:
+        try:
+            payload = self._request("GET", endpoint, base_path=USER_MANAGEMENT_BASE_PATH)
+        except ManagerApiTransportRejectedError as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+        return payload if isinstance(payload, dict) else None
+
+    def _um_list(self, endpoint: str) -> List[Dict[str, Any]]:
+        payload = self._request("GET", endpoint, base_path=USER_MANAGEMENT_BASE_PATH)
+        return _unwrap_list(payload, ("pageContent", "content", "data", "items"))
+
+    def get_user(self, username: str) -> Optional[Dict[str, Any]]:
+        return self._um_optional(f"users/{username}")
+
+    def get_user_groups(self, username: str) -> List[Dict[str, Any]]:
+        return self._um_list(f"users/{username}/groups")
+
+    def get_user_policies(self, username: str) -> List[Dict[str, Any]]:
+        return self._um_list(f"users/{username}/policies")
+
+    def get_group(self, name: str) -> Optional[Dict[str, Any]]:
+        return self._um_optional(f"groups/{name}")
+
+    def get_group_users(self, name: str) -> List[Dict[str, Any]]:
+        return self._um_list(f"groups/{name}/users")
+
+    def list_policies(self, keyword: Optional[str] = None) -> List[Dict[str, Any]]:
+        return self._user_management("policies", keyword)
+
+    def get_policy(self, policy_id: str) -> Optional[Dict[str, Any]]:
+        return self._um_optional(f"policies/{policy_id}")
+
+    def get_policy_permissions(self, policy_id: str) -> List[Dict[str, Any]]:
+        return self._um_list(f"policies/{policy_id}/permissions")
+
+    def get_policy_users(self, policy_id: str) -> List[Dict[str, Any]]:
+        return self._um_list(f"policies/{policy_id}/users")
+
+    def list_permissions(self, product_name: str) -> List[str]:
+        payload = self._request(
+            "GET",
+            "account-settings/permissions",
+            base_path=USER_MANAGEMENT_BASE_PATH,
+            params={"productName": product_name},
+        )
         if isinstance(payload, list):
-            return payload
-        if isinstance(payload, dict):
-            for key in ("content", "data", "attributes"):
-                if isinstance(payload.get(key), list):
-                    return payload[key]
+            return [str(p) for p in payload if isinstance(p, (str, int))] or [
+                str(p.get("code") or p.get("name")) for p in payload if isinstance(p, dict)
+            ]
         return []
+
+    # --- trace de chamadas ---------------------------------------------------
+
+    def list_calls(
+        self,
+        begin: str,
+        end: str,
+        page: int = 1,
+        page_size: int = 20,
+        filters: Optional[Dict[str, str]] = None,
+    ) -> CallsPage:
+        params: Dict[str, str] = {
+            "actualPage": str(page),
+            "pageSize": str(page_size),
+            "beginDate": begin,
+            "endDate": end,
+        }
+        for key, value in (filters or {}).items():
+            if value is not None and str(value) != "":
+                params[key] = str(value)
+        payload = self._request("GET", "calls", params=params)
+        if not isinstance(payload, dict):
+            return CallsPage(rows=[], total=0)
+        rows = [r for r in (payload.get("calls") or []) if isinstance(r, dict)]
+        return CallsPage(rows=rows, total=_wire_int(payload.get("callsSize")) or 0)
+
+    def get_call(self, call_id: str) -> Optional[Dict[str, Any]]:
+        return self._optional(f"calls/{call_id}")
+
+    def list_inbounds(self) -> List[Dict[str, Any]]:
+        payload = self._request(
+            "GET", "inbounds", params={"actualPage": "1", "pageSize": "100", "size": "0"}
+        )
+        return _unwrap_list(payload, ("content", "data", "items"))
+
+    def list_gateway_pools(self) -> List[Dict[str, Any]]:
+        payload = self._request(
+            "GET", "gateway-pools", params={"actualPage": "1", "pageSize": "100"}
+        )
+        return _unwrap_list(payload, ("content", "data", "items"))
+
+
+def _row_identity(row: Dict[str, Any]) -> Any:
+    for key in ("id", "_id", "username", "name"):
+        if row.get(key) is not None:
+            return (key, row[key])
+    return ("repr", json.dumps(row, sort_keys=True, default=str))
+
+
+def _unwrap_list(payload: Any, keys: tuple) -> List[Dict[str, Any]]:
+    """Lista crua, ou a lista embrulhada numa das chaves conhecidas; senão vazia."""
+    if isinstance(payload, list):
+        return [row for row in payload if isinstance(row, dict)]
+    if isinstance(payload, dict):
+        for key in keys:
+            if isinstance(payload.get(key), list):
+                return [row for row in payload[key] if isinstance(row, dict)]
+    return []

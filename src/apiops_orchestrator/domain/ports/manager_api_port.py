@@ -85,6 +85,14 @@ class ApiCatalogPage:
     total: int
 
 
+@dataclass(frozen=True)
+class CallsPage:
+    """Uma página do trace de chamadas (`/calls`) e o total da janela (`callsSize`)."""
+
+    rows: List[Dict[str, Any]]
+    total: int
+
+
 class ManagerApiPort(ABC):
     @abstractmethod
     def get_apis(self) -> list[Dict[str, Any]]:
@@ -179,3 +187,129 @@ class ManagerApiPort(ABC):
     ) -> Dict[str, str] | None:
         """Get the content of a custom interceptor"""
         pass
+
+    # --- catálogos do tenant (leitura; mapeamento APIM/AG) -----------------
+
+    @abstractmethod
+    def list_environments(self) -> List[Dict[str, Any]]:
+        """`GET /environments?simple=true`: id, name, inboundUrl, isDeployable."""
+
+    @abstractmethod
+    def list_workflows(self) -> List[Dict[str, Any]]:
+        """`GET /api-governance/.../workflows`: workflows com os stages e requisitos inline."""
+
+    @abstractmethod
+    def list_interceptor_catalog(self) -> List[Dict[str, Any]]:
+        """`GET /interceptors`: tipos nativos (`DEFAULT`) e customs (`JAVASCRIPT`/`JAVA`).
+
+        O `name` de cada item é o `type` que os interceptors das revisões carregam.
+        """
+
+    @abstractmethod
+    def get_impact_tree(self, api_id: int, environment_id: int) -> Dict[str, Any]:
+        """`GET /api-governance/.../apis/{id}/tree-analysis/{env}`: API → rotas → planos → apps."""
+
+    # --- consumo e infraestrutura (leitura; mapeamento APIM 07/08/14) -------
+
+    @abstractmethod
+    def get_environment(self, environment_id: int) -> Dict[str, Any]:
+        """`GET /environments/{id}`: inbound, `mapVars` (variáveis) e `revisionsDeployed`."""
+
+    @abstractmethod
+    def list_apps(self) -> List[Dict[str, Any]]:
+        """`GET /apps`: apps com `apis[].plans[]` (assinaturas) e `accessTokens`."""
+
+    @abstractmethod
+    def get_app(self, app_id: int) -> Optional[Dict[str, Any]]:
+        """`GET /apps/{id}`; `None` quando não existe."""
+
+    @abstractmethod
+    def list_plans(self) -> List[Dict[str, Any]]:
+        """`GET /plans?filter=BASIC` paginado até o fim."""
+
+    @abstractmethod
+    def get_plan(self, plan_id: int) -> Optional[Dict[str, Any]]:
+        """`GET /plans/{id}` com os interceptors do plano; `None` quando não existe."""
+
+    @abstractmethod
+    def list_access_tokens(self) -> List[Dict[str, Any]]:
+        """`GET /access-tokens`: tokens com app, owner, status e APIs."""
+
+    @abstractmethod
+    def list_users(self, keyword: Optional[str] = None) -> List[Dict[str, Any]]:
+        """`GET /user-management/v1/users` (username, status, e-mail)."""
+
+    @abstractmethod
+    def list_groups(self, keyword: Optional[str] = None) -> List[Dict[str, Any]]:
+        """`GET /user-management/v1/groups`: os *Teams* da UI (name, description)."""
+
+    # --- access control (leitura; mapeamento APIM 14: Team = groups, Role = policies)
+
+    @abstractmethod
+    def get_user(self, username: str) -> Optional[Dict[str, Any]]:
+        """`GET /user-management/v1/users/{username}`; `None` quando não existe."""
+
+    @abstractmethod
+    def get_user_groups(self, username: str) -> List[Dict[str, Any]]:
+        """`GET /user-management/v1/users/{username}/groups`: os times do usuário."""
+
+    @abstractmethod
+    def get_user_policies(self, username: str) -> List[Dict[str, Any]]:
+        """`GET /user-management/v1/users/{username}/policies`: as roles do usuário."""
+
+    @abstractmethod
+    def get_group(self, name: str) -> Optional[Dict[str, Any]]:
+        """`GET /user-management/v1/groups/{name}`; `None` quando não existe."""
+
+    @abstractmethod
+    def get_group_users(self, name: str) -> List[Dict[str, Any]]:
+        """`GET /user-management/v1/groups/{name}/users`: membros (`pageContent`)."""
+
+    @abstractmethod
+    def list_policies(self, keyword: Optional[str] = None) -> List[Dict[str, Any]]:
+        """`GET /user-management/v1/policies`: as *Roles* da UI, com os produtos."""
+
+    @abstractmethod
+    def get_policy(self, policy_id: str) -> Optional[Dict[str, Any]]:
+        """`GET /user-management/v1/policies/{id}`; `None` quando não existe."""
+
+    @abstractmethod
+    def get_policy_permissions(self, policy_id: str) -> List[Dict[str, Any]]:
+        """`GET /user-management/v1/policies/{id}/permissions`: por produto, as permissões."""
+
+    @abstractmethod
+    def get_policy_users(self, policy_id: str) -> List[Dict[str, Any]]:
+        """`GET /user-management/v1/policies/{id}/users`: quem tem a role."""
+
+    @abstractmethod
+    def list_permissions(self, product_name: str) -> List[str]:
+        """`GET /user-management/v1/account-settings/permissions?productName=…`: catálogo de códigos."""
+
+    # --- trace de chamadas (leitura; mapeamento APIM 10) ---------------------
+
+    @abstractmethod
+    def list_calls(
+        self,
+        begin: str,
+        end: str,
+        page: int = 1,
+        page_size: int = 20,
+        filters: Optional[Dict[str, str]] = None,
+    ) -> "CallsPage":
+        """`GET /calls`: janela de no máximo 7 dias, datas `yyyy-MM-dd'T'HH:mm:ss` (UTC).
+
+        `filters` são os parâmetros da rota (`apiId`, `environmentId`, `httpStatusFrom`,
+        `httpStatusTo`, `uri`, `regex`, `operationId`, `resourceId`, `revisionId`).
+        """
+
+    @abstractmethod
+    def get_call(self, call_id: str) -> Optional[Dict[str, Any]]:
+        """`GET /calls/{id}`: a chamada com headers e o `trace` do pipeline; `None` se não existe."""
+
+    @abstractmethod
+    def list_inbounds(self) -> List[Dict[str, Any]]:
+        """`GET /inbounds`: endereços de entrada (host, TLS, data plane)."""
+
+    @abstractmethod
+    def list_gateway_pools(self) -> List[Dict[str, Any]]:
+        """`GET /gateway-pools`: pools de gateway e rotas em uso."""
