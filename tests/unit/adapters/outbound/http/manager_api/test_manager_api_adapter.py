@@ -69,10 +69,11 @@ def test_get_api_re_raises_exception(mock_settings):
             status_code=401, title="Unauthorized", detail="Authentication required"
         )
 
-        with pytest.raises(HttpClient4xxError) as excinfo:
+        with pytest.raises(ManagerApiTransportRejectedError) as excinfo:
             adapter.get_api_by_id()
 
         assert excinfo.value.status_code == 401
+        assert isinstance(excinfo.value.__cause__, HttpClient4xxError)
 
 def test_get_custom_interceptor_by_id_success(mock_settings):
     adapter = ManagerApiAdapter(token="password123", base_path="/api-manager/api/v3/", max_retries=3, api_id=123,

@@ -217,6 +217,11 @@ def _clean_env() -> dict:
     }
     if os.name == "nt":
         env["SYSTEMROOT"] = os.environ.get("SYSTEMROOT", "")
+        # Sem SYSTEMDRIVE o Windows nao expande `%SystemDrive%` e o filho escreve
+        # o seu cache num diretorio literalmente chamado `%SystemDrive%` dentro
+        # do repositorio. A variavel nao tem nada a ver com a configuracao do
+        # `sen`, entao mante-la nao enfraquece a prova deste arnês.
+        env["SYSTEMDRIVE"] = os.environ.get("SYSTEMDRIVE", "")
     for var in ("AUTH_HOST", "AUTH_LOGIN_PATH", "SEN_CREDENTIALS", "HOST"):
         env.pop(var, None)
     return env
@@ -226,7 +231,8 @@ def test_module_import_is_side_effect_free():
     proc = subprocess.run(
         [sys.executable, "-c", IMPORT_PURITY_SNIPPET],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         cwd=str(REPO_ROOT),
         env=_clean_env(),
         timeout=60,
@@ -242,7 +248,8 @@ def test_sen_help_booms_if_settings_are_touched():
     proc = subprocess.run(
         [sys.executable, "-c", snippet],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         cwd=str(REPO_ROOT),
         env=_clean_env(),
         timeout=60,
@@ -258,7 +265,8 @@ def test_sen_list_api_help_booms_if_settings_are_touched():
     proc = subprocess.run(
         [sys.executable, "-c", snippet],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         cwd=str(REPO_ROOT),
         env=_clean_env(),
         timeout=60,
@@ -275,7 +283,8 @@ def test_no_args_shows_sen_help_without_touching_settings():
     proc = subprocess.run(
         [sys.executable, "-c", snippet],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         cwd=str(REPO_ROOT),
         env=_clean_env(),
         timeout=60,
@@ -285,3 +294,78 @@ def test_no_args_shows_sen_help_without_touching_settings():
     assert "Usage" in proc.stdout or "usage" in proc.stdout
     assert "login" in proc.stdout
     assert "BOOM" not in proc.stderr and "BOOM" not in proc.stdout
+
+
+# --- encoding da saida -------------------------------------------------------
+# `typer.testing.CliRunner` NAO serve a estes casos: o buffer dele e utf-8 e o
+# invoke nem passa por `main()`, que e onde `harden_stdio()` age. So o arnês de
+# subprocess reproduz o stdout real (pipe, cp1252 no Windows) que derrubava o help.
+
+HELP_ARGS_QUE_QUEBRAVAM = [
+    ["sen", "--help"],
+    ["sen", "get", "--help"],
+    ["sen", "get", "interceptors", "--help"],
+]
+
+
+def _roda_help(args, env_extra=None):
+    env = _clean_env()
+    env.update(env_extra or {})
+    return subprocess.run(
+        [sys.executable, "-m", "apiops_orchestrator.main", *args],
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        cwd=str(REPO_ROOT),
+        env=env,
+        timeout=60,
+    )
+
+
+@pytest.mark.parametrize("args", HELP_ARGS_QUE_QUEBRAVAM, ids=lambda a: " ".join(a))
+def test_help_sobrevive_a_stdout_cp1252(args):
+    """Camada 1 (`errors="replace"`): o caractere impossivel vira `?`, nao exit 1.
+
+    Antes de `harden_stdio()` estes tres helps saiam com codigo 1 e a mensagem
+    "erro interno na consulta", porque `→`/`−` nas proprias strings de ajuda
+    levantavam UnicodeEncodeError no meio da renderizacao do Rich.
+    """
+    proc = _roda_help(args, {"PYTHONIOENCODING": "cp1252"})
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "Usage" in proc.stdout
+    assert "erro interno" not in proc.stdout.lower()
+    assert "erro interno" not in proc.stderr.lower()
+
+
+def test_help_em_pipe_preserva_os_glifos():
+    """Camada 2: sem terminal, o encoding sobe para utf-8 e nada se perde."""
+    proc = _roda_help(["sen", "get", "--help"])
+
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "api -> resources" in " ".join(proc.stdout.split())
+    assert "?" not in proc.stdout.replace("?)", "")
+
+
+def test_main_traduz_unicode_encode_error(monkeypatch, capsys):
+    """Camada 3, a rede de diagnostico: mensagem honesta, em stderr, sem Rich.
+
+    Com as camadas 1 e 2 este caminho e inalcancavel na pratica; o teste existe
+    para garantir que, se voltar a ser alcancado, a saida nao volte a dizer
+    "erro interno na consulta" para um comando que nao faz consulta nenhuma.
+    """
+
+    def explode(*_args, **_kwargs):
+        raise UnicodeEncodeError("cp1252", "→", 0, 1, "character maps to <undefined>")
+
+    monkeypatch.setattr(main_mod, "app", explode)
+    monkeypatch.setattr(sys, "argv", ["sen", "--help"])
+
+    with pytest.raises(SystemExit) as excinfo:
+        main_mod.main()
+
+    assert excinfo.value.code == 1
+    capturado = capsys.readouterr()
+    assert "cp1252" in capturado.err
+    assert "PYTHONIOENCODING" in capturado.err
+    assert "na consulta" not in capturado.err

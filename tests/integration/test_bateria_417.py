@@ -269,8 +269,8 @@ def test_T04_destination_de_operacao_replica(repo, validate, manager, draft_id):
     new = "https://dev-backend.ecad.org.br/EDITADO-PELA-BATERIA/tarefas"
     conteudo = file.read_text(encoding="utf-8")
     lines = [
-        f"  url: {new}" if l.strip().startswith("url:") else l
-        for l in conteudo.split("\n")
+        f"  url: {new}" if linha.strip().startswith("url:") else linha
+        for linha in conteudo.split("\n")
     ]
     _write(file, "\n".join(lines))
 

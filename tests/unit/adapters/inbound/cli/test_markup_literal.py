@@ -7,7 +7,6 @@
 from unittest.mock import MagicMock
 
 from rich.text import Text
-from typer.testing import CliRunner
 
 from apiops_orchestrator.adapters.inbound.cli.cli_adapter import _literal, app
 from apiops_orchestrator.adapters.outbound.http.manager_api.manager_api_adapter import (
@@ -47,9 +46,8 @@ from apiops_orchestrator.domain.models.validate_view import (
     ValidateRevision,
     ValidateView,
 )
+from sen_support.cli_invoke import LARGO, runner
 
-runner = CliRunner()
-LARGO = {"COLUMNS": "200"}
 
 
 def _plano(resultado) -> str:

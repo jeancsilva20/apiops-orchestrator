@@ -18,6 +18,7 @@ Legenda: ✅ coberto e testado · 🔶 coberto com limite · ⛔ indisponível p
 | Catálogo com janela, busca, todas | `sen list api [--query] [--limit/--offset] [--all]` | ✅ | catálogo `api-finder` (doc 01), visibilidade por sessão |
 | Colunas de dono, contexto, time e stage | `sen list api --wide` | ✅ | campos `owner/contextType/contextGroupName/wokflow` do finder (doc 01) |
 | Recorte por dono, time, contexto, workflow, stage | `sen list api --all --owner u` / `--team t` / `--context organization|group|me` / `--workflow W` / `--stage S` | ✅ | filtros antes da janela, contam só linhas visíveis |
+| Recorte por atributo de governança | `sen list api --all --attribute "CLI"` | ✅ | `apiTags` de `/apis/{id}` (o `api-finder` não os traz): uma leitura por linha visível, 16 em paralelo e sobrepostas à paginação do catálogo |
 | Identidade, visibilidade, responsável, tags, planos, ambientes e revisões (com stage) | `sen get api --id N` | ✅ | `GET /apis/{id}` (doc 03 §superfícies: as revisões inline são completas) |
 | Revisões com completeness | `sen list api --id N --revisions` | ✅ | `/revisions/{id}/completeness` (doc 05) |
 | Forma da revisão: recursos, operações, destino/timeout, herança | `sen get resources --id N [--revision R]` | ✅ | shadow-copy por revisão (doc 03), `destination/timeout` por operação |

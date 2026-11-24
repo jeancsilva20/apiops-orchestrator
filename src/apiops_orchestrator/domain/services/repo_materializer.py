@@ -317,5 +317,5 @@ def _declare_inheritance(
 
 
 def _file(file_path: str, lines: Sequence[Optional[str]]) -> MaterializedFile:
-    text = "\n".join(l for l in lines if l is not None).rstrip() + "\n"
+    text = "\n".join(linha for linha in lines if linha is not None).rstrip() + "\n"
     return MaterializedFile(file_path=file_path, text=text)

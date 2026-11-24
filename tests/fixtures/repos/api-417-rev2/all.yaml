@@ -1,0 +1,51 @@
+# escopo `all` — raiz da revision 9175 (revisionNumber 2)
+# API 417 · Serviço de Letras 2.0.0 · /letras/v2
+destination:
+  url: "https://teste.com"
+  timeout: "30"
+
+interceptors_request:
+  - type: Custom
+    id: 32
+  - type: Log
+    content:
+      acceptedTerms: true
+      encryptContent: false
+      encryptPathAndParameters: false
+  - type: Custom
+    id: 178
+  - type: Rate limit
+    content:
+      quota: "1000"
+      interval: SECOND
+      limitBy: IP
+      soft: false
+      softvalue: ""
+      ignoreBodyValidationMultiPartFormData: false
+      noHeaderBehavior: null
+      headerKey: null
+      rateLimitHeader: true
+  - type: Payload size
+    content:
+      maxSize: "2048"
+  - type: XSS threat protection
+    content:
+      regexList:
+        - URI_PATH: ((\%3C)|<)[^\n]+((\%3E)|>)
+        - QUERY_PARAM: ((\%3C)|<)[^\n]+((\%3E)|>)
+        - HEADER: ((\%3C)|<)[^\n]+((\%3E)|>)
+        - BODY: ((\%3C)|<)[^\n]+((\%3E)|>)
+  - type: Log
+    content:
+      acceptedTerms: true
+      encryptContent: false
+      encryptPathAndParameters: false
+
+interceptors_response:
+  - type: Log
+    content:
+      acceptedTerms: true
+      encryptContent: false
+      encryptPathAndParameters: false
+
+# 1 interceptor(es) fora de FIRST/SECOND — estado não governado, preservado por GET no publish

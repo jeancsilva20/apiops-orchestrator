@@ -3,6 +3,7 @@ import logging
 import platform
 import sys
 from contextlib import contextmanager
+from functools import partial
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -69,6 +70,9 @@ from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiError
 logger = logging.getLogger(__name__)
 
 main_app = typer.Typer(
+    # Unico no da arvore sem `help=`: `python -m apiops_orchestrator.main --help`
+    # saia como um Usage pelado, sem dizer o que a ferramenta faz.
+    help="CLI do APIOps (`sen`). Use `sen --help` para a lista de comandos.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -588,6 +592,11 @@ def list_apis(
     ),
     workflow_id: Optional[int] = typer.Option(None, "--workflow", help="Só APIs cuja revisão corrente está neste workflow (id)."),
     stage_id: Optional[int] = typer.Option(None, "--stage", help="Só APIs cuja revisão corrente está neste stage (id)."),
+    attribute: Optional[str] = typer.Option(
+        None,
+        "--attribute",
+        help="Só APIs que declaram este atributo de governança (nome como em `sen list attributes`).",
+    ),
     wide: bool = typer.Option(
         False, "--wide", "-w", help="Acrescenta as colunas OWNER, CONTEXT, TEAM e STAGE."
     ),
@@ -596,16 +605,30 @@ def list_apis(
     ),
 ):
     """
-    Lista as APIs do Sensedia Manager (com filtros por dono, time, contexto, workflow e stage).
+    Lista as APIs do Sensedia Manager (com filtros por dono, time, contexto, workflow, stage e atributo).
     """
     from apiops_orchestrator.application.services.api_listing_service import CatalogFilters
 
-    filters = CatalogFilters(owner=owner, team=team, context=context, workflow_id=workflow_id, stage_id=stage_id)
+    if attribute is not None and not attribute.strip():
+        _print_error("--attribute exige o nome do atributo. Consulte: sen list attributes.")
+        raise typer.Exit(code=1)
+
+    filters = CatalogFilters(
+        owner=owner,
+        team=team,
+        context=context,
+        workflow_id=workflow_id,
+        stage_id=stage_id,
+        attribute=attribute.strip() if attribute is not None else None,
+    )
     if context is not None and context.lower() not in ("organization", "group", "me"):
         _print_error("--context aceita organization, group ou me.")
         raise typer.Exit(code=1)
     if filters.active and api_id is not None:
-        _print_error("Os filtros --owner/--team/--context/--workflow/--stage não combinam com --id.")
+        _print_error(
+            "Os filtros --owner/--team/--context/--workflow/--stage/--attribute "
+            "não combinam com --id."
+        )
         raise typer.Exit(code=1)
     try:
         service_factory = (ctx.obj or {}).get("api_listing_service_factory")
@@ -653,19 +676,28 @@ def list_apis(
             if revisions:
                 _render_revisions_grade(service, api_id, output)
                 return
-            apis = service.list_apis(api_id=api_id)
+            work = partial(service.list_apis, api_id=api_id)
         elif all_apis:
             # Sem janela: o service lê o catálogo em páginas até o fim.
-            apis = service.list_apis(query=query, offset=0, limit=None, **_filters_kw(filters))
+            work = partial(
+                service.list_apis, query=query, offset=0, limit=None, **_filters_kw(filters)
+            )
         else:
             # Caso desnudo envia os defaults AO PIPELINE (A3-2): a janela
             # client-side so eh real se os valores alcancarem o window().
-            apis = service.list_apis(
+            work = partial(
+                service.list_apis,
                 query=query,
                 offset=offset if offset is not None else DEFAULT_WINDOW_OFFSET,
                 limit=limit if limit is not None else DEFAULT_WINDOW_LIMIT,
                 **_filters_kw(filters),
             )
+
+        # Catálogo paginado (e, com `--attribute`, uma leitura por API): sem
+        # feedback o console fica mudo e parece travado.
+        apis = _run_with_feedback(
+            work, label=_listing_label(filters), narrate=output is OutputFormat.TEXT
+        )
 
         if not apis:
             rprint("[yellow]Nenhuma API encontrada.[/yellow]")
@@ -717,23 +749,36 @@ def list_apis(
 WIDE_HEADER = ("OWNER", "CONTEXT", "TEAM", "STAGE")
 
 
+def _listing_label(filters) -> str:
+    """O rótulo nomeia o que demora: com `--attribute`, é uma leitura por API."""
+    if filters.attribute is not None:
+        return "Lendo o catálogo e os apiTags de cada API..."
+    return "Consultando o catálogo de APIs..."
+
+
 def _filters_kw(filters) -> dict:
     return {"filters": filters} if filters.active else {}
 
 
 def _filters_footer(filters) -> str:
     parts = [
-        f"--{name} {value}"
+        f'--{name} "{value}"' if " " in str(value) else f"--{name} {value}"
         for name, value in (
             ("owner", filters.owner),
             ("team", filters.team),
             ("context", filters.context),
             ("workflow", filters.workflow_id),
             ("stage", filters.stage_id),
+            ("attribute", filters.attribute),
         )
         if value is not None
     ]
-    return f"[dim]filtros: {escape(' '.join(parts))}[/dim]"
+    line = f"[dim]filtros: {escape(' '.join(parts))}[/dim]"
+    if filters.attribute is not None:
+        # O custo não é óbvio: o catálogo não traz os `apiTags`, então cada
+        # linha lida vira uma consulta à API.
+        line += "\n[dim]--attribute lê os apiTags de cada API: uma consulta por API[/dim]"
+    return line
 
 
 def _last_revision(entry: ApiCatalogEntry):
@@ -845,7 +890,14 @@ def version_callback(value: bool):
 @sen_app.callback()
 def main_callback(
     verbose: bool = typer.Option(
-        False, "--verbose", "-v", help="Aumenta o detalhamento dos logs."
+        False,
+        "--verbose",
+        "-v",
+        # A verdade, nao a intencao: a flag e aceita e nao faz nada. Dizer que
+        # "aumenta o detalhamento" e a doc gerada repetir isso seria mentir em
+        # dois lugares de uma vez. Continua aceita porque remover quebraria
+        # script de esteira que ja a passa (`No such option`).
+        help="Reservado: hoje nao altera a saida (sem integracao de logging).",
     ),
     version: bool = typer.Option(
         None,
@@ -859,7 +911,9 @@ def main_callback(
     APIOps CLI Sensedia.
     """
     if verbose:
-        # TODO: Ajustar nível de log quando houver integração com logging
+        # Backlog aberto em 2026-11-23: ligar o nivel de log do pacote aqui.
+        # Enquanto nao liga, o `help=` desta flag diz que ela nao faz nada —
+        # ver a nota em `main_callback`.
         pass
 
 
@@ -999,7 +1053,13 @@ def completeness(
     output: OutputFormat = typer.Option(
         OutputFormat.TEXT, "--output", "-o", help="Formato da saída (text, json, yaml)."
     ),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Aumenta o detalhamento da saída."),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        hidden=True,
+        help="Reservado: hoje nao altera a saida (use `sen --verbose`).",
+    ),
 ):
     """
     Mostra o completeness de uma revisão de API (Sensedia Manager).
@@ -1416,7 +1476,13 @@ def validate(
     output: OutputFormat = typer.Option(
         OutputFormat.TEXT, "--output", "-o", help="Formato da saída (text, json, yaml)."
     ),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Aumenta o detalhamento da saída."),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        hidden=True,
+        help="Reservado: hoje nao altera a saida (use `sen --verbose`).",
+    ),
 ):
     """
     Valida o repositório da API e grava na Draft para obter o veredito da governança.
@@ -1539,7 +1605,13 @@ def publish(
     output: OutputFormat = typer.Option(
         OutputFormat.TEXT, "--output", "-o", help="Formato da saída (text, json, yaml)."
     ),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Aumenta o detalhamento da saída."),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        hidden=True,
+        help="Reservado: hoje nao altera a saida (use `sen --verbose`).",
+    ),
 ):
     """
     Publica o repositório da API na revisão do ambiente. Roda só na esteira.
@@ -1665,7 +1737,13 @@ def deploy(
     output: OutputFormat = typer.Option(
         OutputFormat.TEXT, "--output", "-o", help="Formato da saída (text, json, yaml)."
     ),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Aumenta o detalhamento da saída."),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        hidden=True,
+        help="Reservado: hoje nao altera a saida (use `sen --verbose`).",
+    ),
 ):
     """
     Faz o deploy da revisão da API no ambiente. Roda só na esteira.

@@ -1,6 +1,12 @@
+import threading
+
 import pytest
 from unittest.mock import MagicMock, call
-from apiops_orchestrator.application.services.api_listing_service import ApiListingService
+from apiops_orchestrator.application.services.api_listing_service import (
+    _CATALOG_PAGE_SIZE,
+    ApiListingService,
+    CatalogFilters,
+)
 from apiops_orchestrator.domain.ports.manager_api_port import ManagerApiPort
 from apiops_orchestrator.domain.ports.manager_api_port import ApiCatalogPage
 from apiops_orchestrator.domain.ports.manager_api_port import (
@@ -536,6 +542,18 @@ def _catalog_row(api_id: int, visible: bool) -> ApiCatalogEntry:
     })
 
 
+class _Counter:
+    """Contagem de chamadas feitas de várias threads (Mock.call_count não serve)."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.total = 0
+
+    def bump(self) -> None:
+        with self._lock:
+            self.total += 1
+
+
 class _PagedCatalog:
     """Fake do api-finder que honra `_offset`/`_limit` e registra as chamadas."""
 
@@ -695,3 +713,166 @@ class TestPagedCatalogScan:
 
         assert [e.id for e in result] == [i for i in range(1, 128) if i % 3 == 0]
         assert [c["offset"] for c in catalog.calls] == [0, 25, 50, 75, 100, 125]
+
+
+class TestAttributeFilter:
+    """`sen list api --attribute`: recorte pelos `apiTags`, lidos API a API."""
+
+    ATTRIBUTES = [{"id": 96, "name": "CLI"}, {"id": 231, "name": "My new"}]
+
+    def _service(self, rows, declared, tags_error=None, profile="developer"):
+        """Serviço com o catálogo paginado, o catálogo de atributos e os `apiTags`.
+
+        `declared` mapeia id da API → nomes declarados; `tags_error` é o id cuja
+        leitura de `/apis/{id}` falha. As leituras são concorrentes, então os
+        contadores vivem num lock — `Mock.call_count` não é atômico.
+        """
+        port = MagicMock(spec=ManagerApiPort)
+        port.list_catalog_apis.side_effect = _PagedCatalog(rows)
+        port.list_attributes.return_value = list(self.ATTRIBUTES)
+        port.reads = _Counter()
+
+        def _api(api_id):
+            port.reads.bump()
+            if tags_error is not None and api_id == tags_error:
+                raise ManagerApiTransportUnavailableError("manager fora do ar")
+            return {
+                "id": api_id,
+                "apiTags": [
+                    {"attributeName": name, "tags": ["Tag1"]}
+                    for name in declared.get(api_id, [])
+                ],
+            }
+
+        port.get_api_by_id.side_effect = _api
+        session = _make_session(profile=profile, groups=["APIOps"])
+        return ApiListingService(manager_api=port, session=session), port
+
+    def test_lists_only_the_apis_that_declare_the_attribute(self):
+        rows = [_catalog_row(i, True) for i in range(1, 6)]
+        service, port = self._service(rows, {2: ["CLI"], 4: ["My new", "CLI"], 5: ["My new"]})
+
+        result = service.list_apis(
+            offset=0, limit=10, filters=CatalogFilters(attribute="CLI")
+        )
+
+        assert [e.id for e in result] == [2, 4]
+        assert port.reads.total == 5  # uma leitura por linha visível
+
+    def test_name_is_matched_regardless_of_case_and_spaces(self):
+        rows = [_catalog_row(i, True) for i in range(1, 4)]
+        service, _ = self._service(rows, {3: ["My new"]})
+
+        result = service.list_apis(
+            offset=0, limit=10, filters=CatalogFilters(attribute="  my NEW ")
+        )
+
+        assert [e.id for e in result] == [3]
+
+    def test_unknown_attribute_is_refused_before_reading_the_catalog(self):
+        rows = [_catalog_row(i, True) for i in range(1, 4)]
+        service, port = self._service(rows, {})
+
+        with pytest.raises(ApiCollectionError) as excinfo:
+            service.list_apis(offset=0, limit=10, filters=CatalogFilters(attribute="Clie"))
+
+        message = str(excinfo.value)
+        assert "'Clie' não existe" in message and "CLI, My new" in message
+        assert "sen list attributes" in message
+        port.list_catalog_apis.assert_not_called()
+
+    def test_api_whose_tags_cannot_be_read_stays_out(self):
+        rows = [_catalog_row(i, True) for i in range(1, 4)]
+        service, _ = self._service(
+            rows, {1: ["CLI"], 2: ["CLI"], 3: ["CLI"]}, tags_error=2
+        )
+
+        result = service.list_apis(
+            offset=0, limit=10, filters=CatalogFilters(attribute="CLI")
+        )
+
+        assert [e.id for e in result] == [1, 3]
+
+    def test_window_counts_only_rows_that_declare_the_attribute(self):
+        rows = [_catalog_row(i, True) for i in range(1, 41)]
+        declared = {i: ["CLI"] for i in range(1, 41) if i % 7 == 0}
+        service, _ = self._service(rows, declared)
+
+        result = service.list_apis(
+            offset=0, limit=3, filters=CatalogFilters(attribute="CLI")
+        )
+
+        assert [e.id for e in result] == [7, 14, 21]
+
+    def test_tags_are_not_read_when_no_attribute_is_asked(self):
+        rows = [_catalog_row(i, True) for i in range(1, 4)]
+        service, port = self._service(rows, {1: ["CLI"]})
+
+        result = service.list_apis(
+            offset=0, limit=10, filters=CatalogFilters(owner="alguem")
+        )
+
+        assert [e.id for e in result] == [1, 2, 3]
+        assert port.reads.total == 0  # nenhuma API foi lida
+        port.list_attributes.assert_not_called()
+
+    def test_tags_of_one_page_are_read_while_the_next_page_is_fetched(self):
+        """A varredura despacha e segue: a página seguinte não espera os `apiTags`.
+
+        Era o gargalo da primeira versão — cada página só era buscada depois
+        de as leituras da anterior terminarem. O teste prende as leituras e
+        exige que a 2ª página seja pedida mesmo assim.
+        """
+        rows = [_catalog_row(i, True) for i in range(1, 60)]
+        release = threading.Event()
+        second_page = threading.Event()
+
+        port = MagicMock(spec=ManagerApiPort)
+        port.list_attributes.return_value = list(self.ATTRIBUTES)
+
+        def _catalog(limit, offset=0, query=None):
+            if offset > 0:
+                second_page.set()
+            return ApiCatalogPage(rows=rows[offset : offset + limit], total=len(rows))
+
+        def _api(api_id):
+            release.wait(timeout=10)
+            return {"id": api_id, "apiTags": [{"attributeName": "CLI", "tags": ["Tag1"]}]}
+
+        port.list_catalog_apis.side_effect = _catalog
+        port.get_api_by_id.side_effect = _api
+        service = ApiListingService(
+            manager_api=port, session=_make_session(groups=["APIOps"])
+        )
+
+        listed = {}
+        worker = threading.Thread(
+            target=lambda: listed.update(
+                rows=service.list_apis(
+                    offset=0, limit=None, filters=CatalogFilters(attribute="CLI")
+                )
+            )
+        )
+        worker.start()
+        try:
+            overlapped = second_page.wait(timeout=5)
+        finally:
+            release.set()
+            worker.join(timeout=15)
+
+        assert overlapped, "a 2ª página esperou os apiTags da 1ª (leitura serializada)"
+        assert [r.id for r in listed["rows"]] == list(range(1, 60))
+
+    def test_window_stops_reading_before_the_end_of_the_catalog(self):
+        """A janela corta a varredura: o catálogo inteiro não é lido por nada."""
+        rows = [_catalog_row(i, True) for i in range(1, 128)]
+        declared = {i: ["CLI"] for i in range(1, 128)}
+        service, port = self._service(rows, declared)
+
+        result = service.list_apis(
+            offset=0, limit=5, filters=CatalogFilters(attribute="CLI")
+        )
+
+        assert [e.id for e in result] == [1, 2, 3, 4, 5]
+        # uma página de candidatos basta: nada perto das 127 APIs do catálogo
+        assert port.reads.total <= _CATALOG_PAGE_SIZE

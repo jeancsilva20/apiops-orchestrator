@@ -1,7 +1,8 @@
 import logging
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set
+from typing import Dict, Iterator, List, Optional, Sequence, Set, Tuple
 
 from apiops_orchestrator.application.enums.manager_failure_kind_enum import (
     ManagerFailureKind,
@@ -9,6 +10,7 @@ from apiops_orchestrator.application.enums.manager_failure_kind_enum import (
 from apiops_orchestrator.application.exceptions.listing_exceptions import (
     ApiCollectionError,
     ApiNotFound,
+    AttributeNotFound,
     InsufficientSessionError,
     InvalidWindow,
 )
@@ -39,6 +41,11 @@ _CATALOG_PAGE_SIZE = 25
 
 # Leituras simultâneas de `/revisions/{id}/completeness` no drill-down.
 _COMPLETENESS_WORKERS = 8
+
+# Leituras simultâneas de `/apis/{id}` quando `--attribute` precisa dos
+# `apiTags` de cada linha (o catálogo do api-finder não os traz). O dobro
+# do completeness: aqui são centenas de leituras, não as revisões de uma API.
+_ATTRIBUTE_WORKERS = 16
 
 
 def _catalog_access_error(
@@ -77,9 +84,13 @@ class ApiListingService:
         filters: Optional["CatalogFilters"] = None,
     ) -> List[ApiCatalogEntry]:
         """`filters` recorta o catálogo (dono, time, contexto, workflow/stage da
-        revisão corrente) ANTES da janela: a janela conta linhas que passaram."""
+        revisão corrente, atributo de governança) ANTES da janela: a janela
+        conta linhas que passaram."""
         self._filters = filters
+        self._attribute = None
         try:
+            if filters is not None and filters.attribute is not None:
+                self._attribute = self._resolve_attribute(filters.attribute)
             return self._list_apis_internal(
                 api_id=api_id, query=query, offset=offset, limit=limit
             )
@@ -230,41 +241,84 @@ class ApiListingService:
         seen: Set[int] = set()
         visible: List[ApiCatalogEntry] = []
 
-        while True:
-            try:
-                page = self.manager_api.list_catalog_apis(
-                    limit=page_size, offset=position, query=query
-                )
-            except ManagerApiResponseTooLargeError:
-                if page_size == 1:
-                    logger.info("catalog.scan.too_large_single_row offset=%s", position)
-                    raise
-                page_size = max(1, page_size // 2)
-                logger.info(
-                    "catalog.scan.page_shrunk offset=%s page_size=%s", position, page_size
-                )
-                continue
+        with self._attribute_pool() as pool:
+            pending: List[Tuple[ApiCatalogEntry, "Future[bool]"]] = []
 
-            rows = list(page.rows)
-            fresh = [row for row in rows if row.id not in seen]
-            if rows and not fresh:
-                # Página só com ids já vistos: a plataforma não avançou. Seguir
-                # lendo seria loop infinito.
-                logger.info("catalog.scan.no_progress offset=%s", position)
-                raise ApiCollectionError(INTERNAL_ERROR_MESSAGE)
+            while True:
+                try:
+                    page = self.manager_api.list_catalog_apis(
+                        limit=page_size, offset=position, query=query
+                    )
+                except ManagerApiResponseTooLargeError:
+                    if page_size == 1:
+                        logger.info("catalog.scan.too_large_single_row offset=%s", position)
+                        raise
+                    page_size = max(1, page_size // 2)
+                    logger.info(
+                        "catalog.scan.page_shrunk offset=%s page_size=%s", position, page_size
+                    )
+                    continue
 
-            seen.update(row.id for row in fresh)
-            visible.extend(self._filter_visibility(fresh))
-            position += len(rows)
+                rows = list(page.rows)
+                fresh = [row for row in rows if row.id not in seen]
+                if rows and not fresh:
+                    # Página só com ids já vistos: a plataforma não avançou. Seguir
+                    # lendo seria loop infinito.
+                    logger.info("catalog.scan.no_progress offset=%s", position)
+                    raise ApiCollectionError(INTERNAL_ERROR_MESSAGE)
 
-            if needed is not None and len(visible) >= needed:
-                break
-            if len(rows) < page_size:
-                break
-            if 0 <= page.total <= position:
-                break
+                seen.update(row.id for row in fresh)
+                candidates = self._filter_visibility(fresh)
+                position += len(rows)
+
+                if pool is None:
+                    visible.extend(candidates)
+                else:
+                    # Despacha e NÃO espera: estas leituras correm enquanto a
+                    # próxima página está sendo buscada.
+                    pending.extend(
+                        (row, pool.submit(self._declares_attribute, row.id))
+                        for row in candidates
+                    )
+
+                exhausted = len(rows) < page_size or 0 <= page.total <= position
+
+                # `pending` é um teto (toda linha despachada pode passar): só
+                # vale esperar quando essas linhas decidem o fim da janela.
+                if needed is not None and len(visible) + len(pending) >= needed:
+                    visible.extend(self._collect(pending))
+                    pending = []
+                    if len(visible) >= needed:
+                        break
+                if exhausted:
+                    break
+
+            visible.extend(self._collect(pending))
 
         return visible
+
+    @contextmanager
+    def _attribute_pool(self) -> Iterator[Optional[ThreadPoolExecutor]]:
+        """Pool único para os `apiTags` da varredura inteira; `None` sem o filtro.
+
+        Compartilhado entre as páginas de propósito: um pool por página
+        serializaria cada lote com a busca da página seguinte.
+        """
+        if getattr(self, "_attribute", None) is None:
+            yield None
+            return
+        pool = ThreadPoolExecutor(max_workers=_ATTRIBUTE_WORKERS)
+        try:
+            yield pool
+        finally:
+            pool.shutdown(wait=True)
+
+    @staticmethod
+    def _collect(
+        pending: Sequence[Tuple[ApiCatalogEntry, "Future[bool]"]]
+    ) -> List[ApiCatalogEntry]:
+        """Resolve as leituras despachadas, preservando a ordem do catálogo."""
+        return [row for row, declares in pending if declares.result()]
 
     def _resolve_stage_names(self, workflow_ids: List[int]) -> Dict[int, Optional[str]]:
         resolved: Dict[int, Optional[str]] = {}
@@ -276,27 +330,91 @@ class ApiListingService:
     def _filter_visibility(
         self, rows: List[ApiCatalogEntry]
     ) -> List[ApiCatalogEntry]:
+        """Visibilidade e os filtros que o próprio catálogo decide (sem rede).
+
+        `--attribute` fica de fora: depende de `/apis/{id}`, e o `_scan_catalog`
+        o despacha em paralelo para não travar a leitura das páginas.
+        """
         visible = [row for row in rows if self._guard.can_see(row.visibility())]
         filters = getattr(self, "_filters", None)
         if filters is None:
             return visible
         return [row for row in visible if filters.matches(row)]
 
+    def _resolve_attribute(self, name: str) -> str:
+        """Confere o nome contra o catálogo do AG e devolve-o normalizado.
+
+        O catálogo é lido a cada execução: os atributos são configuração
+        mutável do tenant (D-020 §3.4). Nome que não existe vira recusa, nunca
+        lista vazia — as duas respostas são indistinguíveis para quem leu.
+        """
+        catalog = [
+            str(attribute.get("name")).strip()
+            for attribute in (self.manager_api.list_attributes() or [])
+            if isinstance(attribute, dict) and attribute.get("name")
+        ]
+        wanted = name.strip().lower()
+        if wanted not in {known.lower() for known in catalog}:
+            raise AttributeNotFound(name.strip(), sorted(catalog))
+        return wanted
+
+    def _declares_attribute(self, api_id: Optional[int]) -> bool:
+        """Lê os `apiTags` da API; o que o Manager não entregar fica de fora.
+
+        Degradar para `False` é deliberado: afirmar que a API declara o
+        atributo sem ter lido seria inventar o dado (o log registra a falha).
+        """
+        if api_id is None:
+            return False
+        try:
+            api = self.manager_api.get_api_by_id(api_id)
+        except (
+            ManagerApiTransportRejectedError,
+            ManagerApiTransportUnavailableError,
+        ) as exc:
+            logger.info(
+                "catalog.attribute.tags_unavailable api_id=%s type=%s",
+                api_id,
+                type(exc).__name__,
+            )
+            return False
+        tags = api.get("apiTags") if isinstance(api, dict) else None
+        declared = {
+            str(tag.get("attributeName") or "").strip().lower()
+            for tag in (tags or [])
+            if isinstance(tag, dict)
+        }
+        return self._attribute in declared
+
 
 @dataclass(frozen=True)
 class CatalogFilters:
-    """Recorte do catálogo pelo que o `api-finder` já traz em cada linha."""
+    """Recorte do catálogo pelo que o `api-finder` já traz em cada linha.
+
+    `attribute` é a exceção: os `apiTags` não vêm no catálogo, então o
+    `ApiListingService` resolve esse filtro lendo cada API — por isso ele não
+    aparece em `matches`.
+    """
 
     owner: Optional[str] = None
     team: Optional[str] = None
     context: Optional[str] = None
     workflow_id: Optional[int] = None
     stage_id: Optional[int] = None
+    attribute: Optional[str] = None
 
     @property
     def active(self) -> bool:
         return any(
-            v is not None for v in (self.owner, self.team, self.context, self.workflow_id, self.stage_id)
+            v is not None
+            for v in (
+                self.owner,
+                self.team,
+                self.context,
+                self.workflow_id,
+                self.stage_id,
+                self.attribute,
+            )
         )
 
     def matches(self, row: ApiCatalogEntry) -> bool:

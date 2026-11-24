@@ -7,6 +7,10 @@ from apiops_orchestrator.adapters.outbound.http.orchestrator_auth_api.orchestrat
     build_login_url,
 )
 from apiops_orchestrator.config.settings import Settings
+from apiops_orchestrator.domain.ports.orchestrator_auth_port import (
+    AuthEndpointNotConfiguredError,
+    AuthTransportRejectedError,
+)
 from apiops_orchestrator.infrastructure.exceptions.http_client_exceptions import (
     HttpClient4xxError,
 )
@@ -37,8 +41,10 @@ def test_build_login_url_uses_auth_host_exclusively():
 
 
 def test_build_login_url_never_falls_back_to_platform_host():
-    with pytest.raises(RuntimeError):
+    with pytest.raises(AuthEndpointNotConfiguredError) as excinfo:
         build_login_url(_fake_settings(auth_host=None, host="https://plat.example.com"))
+
+    assert excinfo.value.missing_keys == ["AUTH_HOST"]
 
 
 def test_build_login_url_prefers_auth_host_override():
@@ -56,8 +62,10 @@ def test_build_login_url_accepts_full_path_override():
 
 
 def test_build_login_url_raises_without_any_host():
-    with pytest.raises(RuntimeError):
+    with pytest.raises(AuthEndpointNotConfiguredError) as excinfo:
         build_login_url(_fake_settings(host=None))
+
+    assert "AUTH_HOST" in excinfo.value.missing_keys
 
 
 @patch(MOCK_PATH)
@@ -75,12 +83,15 @@ def test_login_posts_basic_header_and_payload_intact(mock_request, adapter):
 
 
 @patch(MOCK_PATH)
-def test_login_propagates_typed_4xx_from_http_client(mock_request, adapter):
+def test_login_traduz_4xx_do_http_client_em_sinal_do_port(mock_request, adapter):
+    """O port declara que HttpClient* NAO atravessa: 4xx sai como sinal tipado."""
     mock_request.side_effect = HttpClient4xxError(
         status_code=401, title="Unauthorized", detail="Authentication required"
     )
-    with pytest.raises(HttpClient4xxError):
+    with pytest.raises(AuthTransportRejectedError) as excinfo:
         adapter.login("cred")
+
+    assert isinstance(excinfo.value.__cause__, HttpClient4xxError)
 
 
 @patch(MOCK_PATH)

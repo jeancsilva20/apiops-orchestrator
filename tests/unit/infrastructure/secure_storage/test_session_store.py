@@ -8,7 +8,7 @@ from apiops_orchestrator.domain.models.login_session_model import LoginSession
 from apiops_orchestrator.infrastructure.secure_storage.session_store import (
     SESSION_FILE_NAME,
     SessionStore,
-    SessionStorageError,
+    SessionStoreError,
 )
 
 ACCESS_TOKEN = "QUJDREVG"
@@ -195,7 +195,7 @@ def test_io_failure_maps_to_sanitized_categorized_error(tmp_path, monkeypatch):
         raise PermissionError(13, "Permission denied")
 
     monkeypatch.setattr(os, "replace", boom)
-    with pytest.raises(SessionStorageError) as excinfo:
+    with pytest.raises(SessionStoreError) as excinfo:
         store.save(developer_session())
     assert ACCESS_TOKEN not in str(excinfo.value)
     assert "não foi possível gravar" in str(excinfo.value).lower()

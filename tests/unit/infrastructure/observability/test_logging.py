@@ -119,3 +119,39 @@ def test_log_duration_context_manager():
         mock_logger.info.assert_called_once()
         args, _ = mock_logger.info.call_args
         assert "Execution of test_operation finished" in args[0]
+
+def test_clear_operation_context_limpa_a_operacao_e_preserva_a_api():
+    """`clear_operation_context` e usada em producao (login_service.py:91,95 e
+    http_client.py:78,102,116) e, por desenho, limpa SO `span_id` e `status` —
+    `api_id`/`customer` sao do `clear_context`.
+
+    O unico teste dela vivia em `tests/unit/infrastructure/utils/http_client.py`,
+    que o pytest nunca coletou (nome sem prefixo `test_`), e afirmava o oposto
+    (`api_id is None` apos a limpeza). Como nunca rodou, ninguem viu. Aqui vai a
+    assercao que corresponde ao contrato.
+    """
+    log_lib.clear_context()
+    log_lib.set_api_info(api_id=555, customer="cliente")
+    log_lib.set_span_id()
+    log_lib.set_status("FAILURE")
+
+    log_lib.clear_operation_context()
+
+    record = logging.LogRecord(
+        name="test_logger",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=10,
+        msg="test",
+        args=(),
+        exc_info=None,
+    )
+    log_lib.ContextFilter().filter(record)
+
+    assert record.span_id is None
+    # O filtro repoe o default quando o status sai do contexto (logging.py:85).
+    assert record.status == "IN PROGRESS"
+    assert record.api_id == 555
+    assert record.customer == "cliente"
+
+    log_lib.clear_context()

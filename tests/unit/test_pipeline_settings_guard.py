@@ -29,6 +29,8 @@ from apiops_orchestrator.domain.models.validate_view import (
     ValidateView,
 )
 
+from sen_support import cli_tree
+
 runner = CliRunner()
 
 PROIBIDOS_FORA_DA_ESTEIRA = (
@@ -53,22 +55,18 @@ def _sem_proibidos(text: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "argv",
-    [
-        ["sen", "--help"],
-        ["sen", "list", "--help"],
-        ["sen", "list", "api", "--help"],
-        ["sen", "login", "--help"],
-        ["sen", "completeness", "--help"],
-        ["sen", "validate", "--help"],
-        ["sen", "publish", "--help"],
-        ["sen", "deploy", "--help"],
-    ],
+    "no", cli_tree.superficies_de_help(), ids=lambda no: no.ident
 )
-def test_help_nao_nomeia_a_configuracao_da_esteira(argv):
-    resultado = runner.invoke(app, argv)
+def test_help_nao_nomeia_a_configuracao_da_esteira(no):
+    """Varre as 50 superficies de ajuda, nao uma lista digitada a mao.
 
-    assert resultado.exit_code == 0
+    A versao anterior parametrizava 8 caminhos fixos e nao incluia nenhum
+    `get`, `export`, `reveal` ou `diag` — 36 comandos nunca tiveram a ajuda
+    conferida contra o vazamento, e comando novo nao entrava na lista sozinho.
+    """
+    resultado = runner.invoke(app, [*no.argv, "--help"])
+
+    assert resultado.exit_code == 0, resultado.output
     _sem_proibidos(resultado.output)
 
 

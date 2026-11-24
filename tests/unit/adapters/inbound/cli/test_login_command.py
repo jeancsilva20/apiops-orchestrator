@@ -3,7 +3,6 @@ import re
 
 import pytest
 import yaml
-from typer.testing import CliRunner
 
 from apiops_orchestrator.adapters.inbound.cli.cli_adapter import app
 from apiops_orchestrator.application.exceptions.login_exceptions import (
@@ -14,8 +13,8 @@ from apiops_orchestrator.application.exceptions.login_exceptions import (
     SessionPersistenceError,
 )
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
+from sen_support.cli_invoke import runner
 
-runner = CliRunner()
 
 CREDENTIAL = "dXNlcm5hbWU6cGFzc3dvcmQ="
 TOKEN_DEV = "QUJDREVG"

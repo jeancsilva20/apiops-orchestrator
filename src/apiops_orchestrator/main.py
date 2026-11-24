@@ -49,6 +49,7 @@ from apiops_orchestrator.application.services.completeness_service import (
 from apiops_orchestrator.application.services.login_service import LoginService
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.infrastructure.secure_storage.session_store import SessionStore
+from apiops_orchestrator.infrastructure.utils.stdio import harden_stdio
 
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,12 @@ _PIPELINE_KEYS = frozenset(
 _MODE_KEY = "EXECUTION_MODE"
 
 INVALID_CONFIGURATION = "A configuração do sen é inválida. Fale com o time da plataforma."
+# ASCII puro de proposito: esta mensagem existe justamente para o caso em que o
+# terminal nao da conta de um caractere fora do ASCII.
+OUTPUT_ENCODING_MESSAGE = (
+    "A saida nao coube no encoding do terminal (%s). "
+    "Rode com PYTHONIOENCODING=utf-8 ou 'chcp 65001'."
+)
 OTHER_INVALID_CONFIGURATION = (
     "Há outra configuração inválida. Fale com o time da plataforma."
 )
@@ -288,6 +295,25 @@ def build_ruler_service_factory():
     return factory
 
 
+def build_context() -> dict:
+    """As 9 fabricas preguicosas que a arvore Typer recebe em `ctx.obj`.
+
+    Todas preguicosas: nenhuma instancia `Settings` na montagem, e e isso que
+    mantem `--help`/`--version` respondendo sem `.env`/`.sen` (D1-a).
+    """
+    return {
+        "login_service_factory": build_login_service_factory(),
+        "api_listing_service_factory": build_listing_service_factory(),
+        "api_navigation_service_factory": build_navigation_service_factory(),
+        "completeness_service_factory": build_completeness_service_factory(),
+        "validate_service_factory": build_validate_service_factory(),
+        "publish_service_factory": build_publish_service_factory(),
+        "deploy_service_factory": build_deploy_service_factory(),
+        "regua_service_factory": build_ruler_service_factory(),
+        "manager_api_factory": build_manager_api_factory(),
+    }
+
+
 def main():
     """
     Composition Root lazy (ADR 0006): monta factories preguiçosas de serviços;
@@ -295,6 +321,8 @@ def main():
     configuração — `--help`/`--version` respondem sem nenhum `.env`/`.sen`
     (D1-a). Sem argumentos, mostra o help do `sen`.
     """
+    # Antes de qualquer escrita, inclusive a do `logging.lastResort` em stderr.
+    harden_stdio()
     _mute_unconfigured_logging()
     try:
         is_console_script = (
@@ -309,18 +337,7 @@ def main():
             sys.argv.insert(1, "sen")
         # Sem prog_name vazio, o Usage do console-script sairia "sen sen ...".
         prog_name = "" if is_console_script else None
-        ctx_obj = {
-            "login_service_factory": build_login_service_factory(),
-            "api_listing_service_factory": build_listing_service_factory(),
-            "api_navigation_service_factory": build_navigation_service_factory(),
-            "completeness_service_factory": build_completeness_service_factory(),
-            "validate_service_factory": build_validate_service_factory(),
-            "publish_service_factory": build_publish_service_factory(),
-            "deploy_service_factory": build_deploy_service_factory(),
-            "regua_service_factory": build_ruler_service_factory(),
-            "manager_api_factory": build_manager_api_factory(),
-        }
-        app(obj=ctx_obj, prog_name=prog_name)
+        app(obj=build_context(), prog_name=prog_name)
 
     except CliError as e:
         rprint(f"[bold red]Erro:[/bold red] {escape(e.message)}")
@@ -337,6 +354,17 @@ def main():
         sys.exit(e.exit_code)
     except typer.Abort:
         rprint("[bold red]Operação abortada.[/bold red]")
+        sys.exit(1)
+    except UnicodeEncodeError as e:
+        # Rede de diagnostico, nao a correcao: com `harden_stdio()` (camada
+        # `errors="replace"`) este branch e inalcancavel na pratica. Ele existe
+        # para que, se algum dia voltar a ser alcancado, a mensagem diga a
+        # verdade. O `except Exception` abaixo dizia "erro interno NA CONSULTA"
+        # para um `sen --help`, que nao faz consulta nenhuma, e mandava o
+        # stacktrace para o NullHandler — foi assim que o defeito ficou invisivel.
+        # Escreve em stderr com `print`, nao `rprint`: stdout acabou de falhar no
+        # meio da escrita e o Rich tentaria o mesmo stream de novo.
+        print(OUTPUT_ENCODING_MESSAGE % e.encoding, file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         # Same rule as the commands' fallback: raw exception text never reaches

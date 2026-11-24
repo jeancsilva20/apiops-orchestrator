@@ -27,14 +27,12 @@ from apiops_orchestrator.domain.services.repo_materializer import materialize
 
 RAIZ = pathlib.Path(__file__).parents[3]
 FIXTURES = RAIZ / "fixtures" / "manager"
-EXEMPLOS = (
-    RAIZ.parent
-    / "docs"
-    / "feat-api-estructure"
-    / "decisoes-refino-409"
-    / "exemplos-gerados"
-    / "saida"
-)
+# A arvore de referencia e versionada aqui, ao lado das fixtures que a geram.
+# Antes apontava para `docs/feat-api-estructure/.../saida`, que o .gitignore
+# exclui por politica (a documentacao mora em ../apiops-docs): num clone limpo
+# a comparacao era contra um dict vazio. Regenerar: `--write` em
+# scripts/gerar-arvore-de-referencia.py, com o diff revisado no commit.
+EXEMPLOS = RAIZ / "fixtures" / "repos"
 
 CASOS = [("api-417-rev2", 4, 7, 13), ("api-400-rev4", 2, 4, 8)]
 
@@ -52,7 +50,6 @@ def _arvore_commitada(name):
 
 
 @pytest.mark.parametrize("name,resources,operations,files", CASOS)
-@pytest.mark.skipif(not FIXTURES.is_dir(), reason="fixtures do Manager ausentes")
 def test_materializacao_reproduz_a_arvore_commitada(name, resources, operations, files):
     data = _carregar_fixture(name)
     resultado = materialize(data["api"], data["revision"])
@@ -65,7 +62,6 @@ def test_materializacao_reproduz_a_arvore_commitada(name, resources, operations,
 
 
 @pytest.mark.parametrize("name,resources,operations,files", CASOS)
-@pytest.mark.skipif(not FIXTURES.is_dir(), reason="fixtures do Manager ausentes")
 def test_materializacao_e_deterministica(name, resources, operations, files):
     data = _carregar_fixture(name)
     a = materialize(data["api"], data["revision"])
@@ -76,7 +72,6 @@ def test_materializacao_e_deterministica(name, resources, operations, files):
 
 
 @pytest.mark.parametrize("name,resources,operations,files", CASOS)
-@pytest.mark.skipif(not EXEMPLOS.is_dir(), reason="exemplos gerados ausentes")
 def test_todo_arquivo_commitado_parseia(name, resources, operations, files):
     """O README afirmava isso e estava errado: dois arquivos de `api-400-rev4`
     emitiam `replaceChar: *****` sem aspas e não eram parseáveis."""
@@ -88,7 +83,6 @@ def test_todo_arquivo_commitado_parseia(name, resources, operations, files):
 
 
 @pytest.mark.parametrize("name,resources,operations,files", CASOS)
-@pytest.mark.skipif(not EXEMPLOS.is_dir(), reason="exemplos gerados ausentes")
 def test_round_trip_materializar_e_reler(name, resources, operations, files):
     """A árvore materializada é lida de volta pela E1 sem perda."""
     loaded = RepoCanonicalReader(LocalFileImporterAdapter()).load(
@@ -99,7 +93,6 @@ def test_round_trip_materializar_e_reler(name, resources, operations, files):
     assert loaded.total_operations == operations
 
 
-@pytest.mark.skipif(not FIXTURES.is_dir(), reason="fixtures do Manager ausentes")
 def test_fixtures_nao_carregam_script_de_custom():
     """Guarda de privacidade: o script de um `Custom` é código interno do tenant."""
     for name, *_ in CASOS:
@@ -107,7 +100,6 @@ def test_fixtures_nao_carregam_script_de_custom():
         assert '"script"' not in raw
 
 
-@pytest.mark.skipif(not EXEMPLOS.is_dir(), reason="exemplos gerados ausentes")
 def test_supressao_sobrevive_ao_round_trip():
     """V-25 ponta a ponta: a raiz mantém o item, a operação que o suprime não."""
     loaded = RepoCanonicalReader(LocalFileImporterAdapter()).load(

@@ -21,10 +21,12 @@ from apiops_orchestrator.config import settings as settings_module
 from apiops_orchestrator.config.settings import Settings
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
 from apiops_orchestrator.infrastructure.secure_storage.session_store import (
-    SessionStorageError,
+    SessionStoreError,
 )
-from apiops_orchestrator.infrastructure.exceptions.http_client_exceptions import (
-    HttpClient4xxError,
+from apiops_orchestrator.domain.ports.orchestrator_auth_port import (
+    AuthEndpointNotConfiguredError,
+    AuthTransportRejectedError,
+    AuthTransportUnavailableError,
 )
 
 CREDENTIAL = "dXNlcm5hbWU6cGFzc3dvcmQ="
@@ -185,40 +187,52 @@ def test_login_credential_missing_fails_before_network(deps, caplog):
     assert "auth.login.failure" in caplog.text
 
 
-def test_login_missing_auth_host_fails_before_network(deps):
-    service, auth_adapter, _ = deps
-    object.__setattr__(service.settings, "AUTH_HOST", None)
-    object.__setattr__(service.settings, "HOST", None)
+# O guard de endpoint vive no adapter, que valida a URL ANTES da rede e sinaliza
+# pelo port (AuthEndpointNotConfiguredError). Aqui se prova a TRADUCAO do sinal em
+# categoria; que o adapter recusa antes do request esta em
+# tests/unit/adapters/outbound/http/test_orchestrator_auth_adapter.py.
+@pytest.mark.parametrize(
+    "chaves, trecho",
+    [
+        (["AUTH_HOST"], "AUTH_HOST"),
+        (["AUTH_LOGIN_PATH"], "AUTH_LOGIN_PATH"),
+    ],
+)
+def test_login_traduz_endpoint_nao_configurado_em_login_error(deps, chaves, trecho):
+    service, auth_adapter, store = deps
+    auth_adapter.login.side_effect = AuthEndpointNotConfiguredError(
+        chaves, f"Endpoint de autenticacao nao configurado: defina {trecho}."
+    )
 
     with pytest.raises(LoginError) as excinfo:
         service.login()
 
     assert excinfo.value.exit_code == 1
-    auth_adapter.login.assert_not_called()
+    assert trecho in excinfo.value.message
+    store.save.assert_not_called()
 
 
-def test_login_blank_auth_login_path_fails_before_network(deps):
+def test_login_recusa_do_port_mapeia_para_categoria_rejected(deps):
+    """4xx vira AuthTransportRejectedError no adapter; o service so categoriza."""
     service, auth_adapter, _ = deps
-    object.__setattr__(service.settings, "AUTH_LOGIN_PATH", "   ")
-
-    with pytest.raises(LoginError) as excinfo:
-        service.login()
-
-    assert excinfo.value.exit_code == 1
-    assert "AUTH_LOGIN_PATH" in excinfo.value.message
-    auth_adapter.login.assert_not_called()
-
-
-def test_login_4xx_maps_to_rejected_category(deps):
-    service, auth_adapter, _ = deps
-    auth_adapter.login.side_effect = HttpClient4xxError(
-        status_code=401, title="Unauthorized", detail="Authentication required"
+    auth_adapter.login.side_effect = AuthTransportRejectedError(
+        "Auth API rejected the request (HTTP 401)"
     )
 
     with pytest.raises(AuthenticationRejectedError) as excinfo:
         service.login()
 
     assert excinfo.value.exit_code == 3
+
+
+def test_login_indisponibilidade_do_port_mapeia_para_categoria_unavailable(deps):
+    service, auth_adapter, _ = deps
+    auth_adapter.login.side_effect = AuthTransportUnavailableError("sem resposta")
+
+    with pytest.raises(AuthenticationUnavailableError) as excinfo:
+        service.login()
+
+    assert excinfo.value.exit_code == 1
 
 
 def test_login_unreachable_maps_to_unavailable_category(deps):
@@ -321,7 +335,7 @@ def test_login_protocol_details_logged_but_never_returned(deps, caplog):
 
 def test_login_persistence_failure_maps_to_category_5(deps):
     service, _, store = deps
-    store.save.side_effect = SessionStorageError(
+    store.save.side_effect = SessionStoreError(
         "Não foi possível gravar a sessão local."
     )
 

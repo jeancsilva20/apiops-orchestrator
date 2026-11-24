@@ -13,14 +13,7 @@ import yaml
 
 from apiops_orchestrator.domain.services import repo_layout as rl
 
-RAIZ_EXEMPLOS = (
-    pathlib.Path(__file__).parents[4]
-    / "docs"
-    / "feat-api-estructure"
-    / "decisoes-refino-409"
-    / "exemplos-gerados"
-    / "saida"
-)
+RAIZ_EXEMPLOS = pathlib.Path(__file__).parents[3] / "fixtures" / "repos"
 
 
 # --- slug ------------------------------------------------------------------
@@ -158,7 +151,6 @@ def test_particao_do_estado_governado(point, governado):
 # --- oracle: os repositórios reais -----------------------------------------
 
 
-@pytest.mark.skipif(not RAIZ_EXEMPLOS.is_dir(), reason="exemplos gerados ausentes")
 def test_round_trip_dos_nomes_contra_os_repositorios_reais():
     """Para cada operação materializada, (método do nome + path do conteúdo)
     tem de reproduzir exatamente o nome do arquivo."""
@@ -264,7 +256,6 @@ def test_separador_do_windows_e_aceito():
     assert d.resources[0].slug == "tarefas"
 
 
-@pytest.mark.skipif(not RAIZ_EXEMPLOS.is_dir(), reason="exemplos gerados ausentes")
 def test_descoberta_contra_os_repositorios_reais():
     expected = {"api-417-rev2": (4, 7), "api-400-rev4": (2, 4)}
     for repo in sorted(RAIZ_EXEMPLOS.iterdir()):

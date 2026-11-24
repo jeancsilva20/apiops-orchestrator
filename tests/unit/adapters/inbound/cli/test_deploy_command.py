@@ -3,7 +3,6 @@
 import json
 
 import pytest
-from typer.testing import CliRunner
 
 from apiops_orchestrator.adapters.inbound.cli.cli_adapter import app
 from apiops_orchestrator.application.exceptions.deploy_exceptions import (
@@ -20,8 +19,8 @@ from apiops_orchestrator.domain.models.deploy_model import (
     DeployView,
 )
 from apiops_orchestrator.domain.models.validate_view import ValidateApi, ValidateRevision
+from sen_support.cli_invoke import runner
 
-runner = CliRunner()
 
 
 def _view(**overrides) -> DeployView:
@@ -80,8 +79,24 @@ def _failure():
 def test_comando_registrado_com_as_flags_do_contrato():
     resultado = runner.invoke(app, ["sen", "deploy", "--help"])
     assert resultado.exit_code == 0
-    for flag in ("--repo", "--output", "--verbose"):
+    for flag in ("--repo", "--output"):
         assert flag in resultado.output
+
+
+def test_verbose_e_aceito_mas_nao_anunciado():
+    """`--verbose` nao faz nada neste comando e nao e anunciado — mas nao some.
+
+    Era aceito e ignorado, com um `help=` dizendo que aumentava o detalhamento:
+    o `--help` prometia comportamento inexistente, em quatro comandos. Passou a
+    `hidden=True` com o texto honesto. Remover seria quebra — um script de
+    esteira que ja o passa falharia com `No such option` —, entao continua
+    aceito, e e isso que este teste trava.
+    """
+    assert "--verbose" not in runner.invoke(app, ["sen", "deploy", "--help"]).output
+
+    resultado = runner.invoke(app, ["sen", "deploy", "--verbose"], obj={})
+    assert resultado.exit_code == 1
+    assert "No such option" not in resultado.output
 
 
 def test_comando_aparece_no_help_do_sen():

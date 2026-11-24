@@ -62,8 +62,17 @@ class SchemaValidator:
 # arquivo sem schema é arquivo sem validação, e ninguém saberia.
 # ---------------------------------------------------------------------------
 
-import fnmatch as _fnmatch
-from typing import Any as _Any, Dict as _Dict, List as _List, Optional as _Optional, Tuple as _Tuple
+# Imports da secao, de proposito aqui e nao no topo: mantem o despacho por
+# caminho legivel como uma unidade. `noqa` e o aviso ao linter, nao uma excecao
+# arbitraria.
+import fnmatch as _fnmatch  # noqa: E402
+from typing import (  # noqa: E402
+    Any as _Any,
+    Dict as _Dict,
+    List as _List,
+    Optional as _Optional,
+    Tuple as _Tuple,
+)
 
 
 def select_schema(

@@ -30,6 +30,26 @@ class InvalidWindow(ApiCollectionError):
     def __init__(self, param: str, rule: str):
         super().__init__(self._TEMPLATES[rule].format(param=param))
 
+class AttributeNotFound(ApiCollectionError):
+    """Nome pedido em `--attribute` que o catálogo de governança não cadastra.
+
+    Sem esta recusa o comando devolveria uma lista vazia, indistinguível de
+    "nenhuma API declara o atributo".
+    """
+
+    _SHOWN = 8
+
+    def __init__(self, name: str, known: list[str]):
+        shown = ", ".join(known[: self._SHOWN]) or "nenhum atributo cadastrado"
+        rest = len(known) - self._SHOWN
+        if rest > 0:
+            shown += f" (+{rest})"
+        super().__init__(
+            f"O atributo '{name}' não existe no catálogo de governança. "
+            f"Atributos: {shown}. Consulte: sen list attributes."
+        )
+
+
 class InsufficientSessionError(ApiCollectionError):
     def __init__(self):
         super().__init__(

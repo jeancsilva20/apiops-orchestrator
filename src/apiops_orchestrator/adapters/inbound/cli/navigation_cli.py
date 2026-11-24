@@ -39,8 +39,8 @@ SERVICE_KEY = "api_navigation_service_factory"
 get_app = typer.Typer(
     name="get",
     help=(
-        "Lê o Manager em níveis de detalhe crescentes, sem repositório local: api → resources → "
-        "interceptors → custom/swagger; governance e impact; workflow, environment, app, plan; "
+        "Lê o Manager em níveis de detalhe crescentes, sem repositório local: api -> resources -> "
+        "interceptors -> custom/swagger; governance e impact; workflow, environment, app, plan; "
         "user, team, role; interceptor-type (referência de content); trace e analytics de chamadas."
     ),
     no_args_is_help=True,
@@ -292,7 +292,7 @@ def get_resources(
     revision_id: Optional[int] = _revision_id_option(),
     output: OutputFormat = _output_option(),
 ):
-    """Raiz → recursos → operações de uma revisão, com destino e contagens (nível 2)."""
+    """Raiz -> recursos -> operações de uma revisão, com destino e contagens (nível 2)."""
     _check_revision_options(revision, revision_id)
     document = _run(
         ctx,
@@ -431,7 +431,7 @@ def get_interceptors(
     effective: bool = typer.Option(
         False,
         "--effective",
-        help="Mostra o fluxo que cada escopo EXECUTA (herdado − removido + próprio), não só o próprio.",
+        help="Mostra o fluxo que cada escopo EXECUTA (herdado - removido + próprio), não só o próprio.",
     ),
     content: bool = typer.Option(
         False, "--content", help="Inclui o conteúdo (configuração) de cada interceptor."
@@ -533,7 +533,7 @@ def get_interceptors(
     def _text() -> None:
         rprint(_header_line(document["api"], document["revision"]))
         mode = (
-            "fluxo que cada escopo EXECUTA (herdado − removido + próprio)"
+            "fluxo que cada escopo EXECUTA (herdado - removido + próprio)"
             if effective
             else "interceptors PRÓPRIOS de cada escopo"
         )
@@ -1112,7 +1112,7 @@ def get_app_command(
     app_id: int = typer.Option(..., "--id", help="Id do app (sen list apps)."),
     output: OutputFormat = _output_option(),
 ):
-    """Um app: status, desenvolvedor e as assinaturas API → planos. Sem credenciais."""
+    """Um app: status, desenvolvedor e as assinaturas API -> planos. Sem credenciais."""
     document = _run(ctx, "get app", output, lambda: _service(ctx).app(app_id))
 
     def _text() -> None:
@@ -1737,7 +1737,7 @@ def get_trace_command(
     no_headers: bool = typer.Option(False, "--no-headers", help="Omite os headers de request/response."),
     output: OutputFormat = _output_option(),
 ):
-    """Uma chamada pelo trace id: identificação, tempos, passos do pipeline e headers (mascarados)."""
+    """Uma chamada pelo trace id: identificação, tempos, passos do fluxo no gateway e headers (mascarados)."""
     document = _run(ctx, "get trace", output, lambda: _service(ctx).trace(trace_id, include_headers=not no_headers))
 
     def _text() -> None:

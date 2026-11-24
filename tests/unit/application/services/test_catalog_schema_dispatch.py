@@ -31,13 +31,7 @@ PASTA_SCHEMAS = (
     / "schemas"
 )
 EXEMPLO_417 = (
-    pathlib.Path(__file__).parents[4]
-    / "docs"
-    / "feat-api-estructure"
-    / "decisoes-refino-409"
-    / "exemplos-gerados"
-    / "saida"
-    / "api-417-rev2"
+    pathlib.Path(__file__).parents[3] / "fixtures" / "repos" / "api-417-rev2"
 )
 
 
@@ -80,27 +74,54 @@ def test_profundidade_extra_nao_casa(catalog):
     assert select_schema("resources/a/b/c.yaml", catalog) is None
 
 
-@pytest.mark.skipif(not EXEMPLO_417.is_dir(), reason="exemplo gerado ausente")
-def test_repositorio_real_passa_inteiro_pelo_catalogo(catalog):
+def _arvore_de_referencia(catalog):
+    """Le a arvore commitada e devolve (validador, arquivos) na ordem do layout."""
     importer = LocalFileImporterAdapter()
     validador = CatalogSchemaValidator(
         SchemaValidator(importer, PASTA_SCHEMAS), catalog
     )
-    leitor = RepoCanonicalReader(importer)
-
-    carregado = leitor.load(str(EXEMPLO_417))
+    carregado = RepoCanonicalReader(importer).load(str(EXEMPLO_417))
 
     files = [
         ("api-basic-info.yaml", carregado.basic_info),
         ("all.yaml", carregado.root),
     ]
+    operacoes = []
     for resource in carregado.resources:
         files.append((resource.file_path, resource.data))
         for operacao in resource.operations:
             files.append((operacao.file_path, operacao.data))
+            operacoes.append(operacao.file_path)
+    return validador, files, operacoes
+
+
+def test_repositorio_real_passa_inteiro_pelo_catalogo(catalog):
+    """Todo arquivo do layout encontra schema e so as operacoes reclamam.
+
+    LACUNA DE PRODUTO, conferida e deliberadamente travada aqui: `materialize()`
+    (o que `sen export api` escreve) emite a operacao com `path`, `destination`,
+    `description` e heranca — e nunca com `responses`
+    (`repo_materializer.py:256-267`), que `api-operations.schema.json:8-11` exige.
+    Logo uma arvore exportada reprova no passo de schema do `sen validate`, uma
+    vez por operacao, embora o README e o help do `export api` digam que ela e
+    "o layout que `sen validate` le".
+
+    O teste afirmava `validate(files) == []` e vivia `skipif`-ado num diretorio
+    fora do repositorio (`/docs/`, excluido pelo .gitignore), entao a lacuna
+    nunca apareceu. Preferiu-se travar a verdade medida a manter o skip: se
+    alguem ligar o contrato ao materializador, este teste falha e e aqui que se
+    le o porque.
+    """
+    validador, files, operacoes = _arvore_de_referencia(catalog)
 
     assert len(files) == 13
-    assert validador.validate(files) == []
+    problemas = validador.validate(files)
+
+    # Nenhum arquivo fora das operacoes reclama: basic-info, all e os 4 resource.
+    assert len(problemas) == len(operacoes) == 7
+    assert {p.split(":")[0] for p in problemas} == set(operacoes)
+    for problema in problemas:
+        assert "'responses' is a required property" in problema
 
 
 def test_problema_de_schema_e_reportado_com_o_caminho(catalog):

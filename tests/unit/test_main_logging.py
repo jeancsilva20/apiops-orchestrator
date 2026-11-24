@@ -44,6 +44,10 @@ def _clean_env() -> dict:
     }
     if os.name == "nt":
         env["SYSTEMROOT"] = os.environ.get("SYSTEMROOT", "")
+        # Sem SYSTEMDRIVE o filho escreve o seu cache num diretorio literalmente
+        # chamado `%SystemDrive%` na raiz do repositorio (mesma correcao em
+        # test_main_gate.py).
+        env["SYSTEMDRIVE"] = os.environ.get("SYSTEMDRIVE", "")
     return env
 
 

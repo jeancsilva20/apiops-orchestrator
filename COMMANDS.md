@@ -30,6 +30,7 @@ Convenções:
 | Quem consome a API (planos, apps)? O que quebra se ela mudar? | `sen get impact --id 400 [--env 1]` |
 | Os arquivos canônicos da revisão (o que `sen validate` lê)? | `sen export api --id 400 --revision 4 [--dir ./repo]` |
 | Quem é dono de cada API? As APIs de um dono, time, contexto ou stage? | `sen list owners` · `sen list api --all --owner u` / `--team t` / `--context me` / `--workflow W --stage S` · `--wide` |
+| Quais APIs declaram um atributo de governança? | `sen list api --all --attribute "CLI"` (nomes em `sen list attributes`) |
 | Só um ponto de execução? E o que está em THIRD? | `sen get interceptors --id 400 --point FIRST|SECOND|THIRD` (THIRD aparece em `outros pontos`) |
 | O que o `content` de um tipo de interceptor carrega? | `sen get interceptor-type --type "Rate limit"` (sem `--type`: todos) |
 | Quem é este usuário, de que times e roles? Quem está num time? O que uma role permite? | `sen get user --username u` · `sen get team --name t` · `sen list roles` · `sen get role --id <uuid ou nome>` · `sen list permissions --product "API Platform"` |
@@ -82,6 +83,7 @@ Catálogo de APIs (`api-finder`), respeitando a visibilidade da sessão.
 | `--all` | todas as visíveis (não combina com janela nem `--id`) |
 | `--revisions/-r` | com `--id`: tabela REV # · REV ID · STAGE · ENVS · COMPLETE (score de cada revisão) |
 | `--owner u` · `--team t` · `--context organization|group|me` · `--workflow W` · `--stage S` | recortam o catálogo **antes** da janela (a janela conta só o que passou); não combinam com `--id`; `--workflow`/`--stage` olham a revisão corrente |
+| `--attribute nome` | só APIs que declaram esse atributo de governança em `apiTags` (nome como em `sen list attributes`, sem diferenciar maiúsculas); recorta **antes** da janela e não combina com `--id`. O catálogo do `api-finder` não traz os `apiTags`: o filtro lê `/apis/{id}` de cada linha visível — 16 leituras simultâneas, despachadas enquanto a próxima página do catálogo é buscada, de modo que o custo fica próximo ao de um `--all` sem filtro. Nome fora do catálogo é recusado, e a API que o Manager não entregar fica de fora |
 | `--wide/-w` | acrescenta OWNER, CONTEXT, TEAM e STAGE (id do stage e do workflow); em `-o json` acrescenta `owner`, `contextType`, `contextGroupName`, `workflowId`, `workflowStageId` |
 
 ### `sen list owners`
@@ -233,8 +235,658 @@ Pools de gateway e quantas rotas cada um serve.
 | Comando | O que faz |
 |---|---|
 | `sen validate [--repo PASTA]` | valida o repositório e grava na Draft para obter o veredito da governança |
-| `sen publish` | publica o repositório na revisão do ambiente (só na esteira, `EXECUTION_MODE=pipeline`) |
-| `sen deploy` | faz o deploy da revisão no ambiente (só na esteira) |
+| `sen publish [--repo PASTA]` | publica o repositório na revisão do ambiente (só na esteira, `EXECUTION_MODE=pipeline`) |
+| `sen deploy [--repo PASTA]` | faz o deploy da revisão no ambiente (só na esteira) |
+
+## Diagnóstico (uso interno)
+
+O grupo `sen diag` é `hidden`: não aparece em `sen --help`, porque não serve ao uso
+diário. Os três comandos são reais, alcançáveis e somente leitura, e o próprio
+plano de navegação usa `sen diag structure` como oráculo de validação do
+`sen export api` (PLANO-NAVEGACAO.md). A regra, uma vez: **o `--help` é para quem
+usa a CLI todo dia; o repositório é para quem a mantém e para um agente.**
+
+| Comando | O que faz |
+|---|---|
+| `sen diag structure [--repo PASTA]` | o que a E1 descobre no repositório (recursos, operações, faltando, ilegíveis, ignorados). Não toca a rede |
+| `sen diag template [--repo PASTA]` | a régua resolvida: template, revisão, `flowHash`, o fluxo que ela exige e os avisos |
+| `sen diag draft [--repo PASTA]` | a Draft como o Manager a guarda, com os escopos governados e os preservados |
+
+Eles **não fazem parte da superfície suportada**: podem mudar ou sair sem aviso.
+
+---
+
+## Referência de opções (gerada)
+
+Esta seção sai do próprio código — a mesma tabela que o README publica, com o
+cabeçalho em português. Não a edite à mão: rode
+`python scripts/gen_cli_docs.py --write`. O texto de cada opção é o `help=` do
+comando, escrito uma vez, no código.
+
+<!-- BEGIN GENERATED: sen cli reference -->
+<!-- Nao edite este bloco a mao: ele e gerado de `sen --help`. Rode `python scripts/gen_cli_docs.py --write`. -->
+
+Ir para: [Sessao e esteira](#sessao-e-esteira) · [`sen list` — catalogos](#sen-list-catalogos) · [`sen get` — niveis de detalhe](#sen-get-niveis-de-detalhe) · [`sen export`](#sen-export) · [`sen reveal`](#sen-reveal) · [Diagnostico interno (oculto no `--help`)](#diagnostico-interno-oculto-no---help)
+
+### Sessao e esteira
+
+#### `sen` (opcoes globais)
+
+```
+sen [--verbose] [--version] <command>
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--verbose`/`-v` | flag | off | Reservado: hoje nao altera a saida (sem integracao de logging). |
+| `--version` | flag | off | Mostra a versão da CLI. |
+
+#### `sen login`
+
+Autentica na Orchestrator Auth API e guarda a sessão local. Requer a variável SEN_CREDENTIALS (Base64 de client_id:secret).
+
+```
+sen login
+```
+
+_Sem opcoes alem de `--output/-o`._
+
+#### `sen completeness`
+
+Mostra o completeness de uma revisão de API (Sensedia Manager).
+
+```
+sen completeness [--id N] [--revision N] [--score-only] [--verbose]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--id` | int | — | ID da API no Manager. |
+| `--revision` | int | — | ID da revisão (REV ID do detalhe de revisões). |
+| `--score-only` | flag | off | Mostra só a nota e a barra com o mínimo exigido. |
+| `--verbose`/`-v` (oculta) | flag | off | Reservado: hoje nao altera a saida (use `sen --verbose`). |
+
+#### `sen validate`
+
+Valida o repositório da API e grava na Draft para obter o veredito da governança.
+
+```
+sen validate [--repo PATH] [--verbose]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--repo` | path | — | Repositório da API (default: diretório atual). |
+| `--verbose`/`-v` (oculta) | flag | off | Reservado: hoje nao altera a saida (use `sen --verbose`). |
+
+#### `sen publish`
+
+Publica o repositório da API na revisão do ambiente. Roda só na esteira.
+
+```
+sen publish [--repo PATH] [--verbose]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--repo` | path | — | Repositório da API (default: diretório atual). |
+| `--verbose`/`-v` (oculta) | flag | off | Reservado: hoje nao altera a saida (use `sen --verbose`). |
+
+#### `sen deploy`
+
+Faz o deploy da revisão da API no ambiente. Roda só na esteira.
+
+```
+sen deploy [--repo PATH] [--verbose]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--repo` | path | — | Repositório da API (default: diretório atual). |
+| `--verbose`/`-v` (oculta) | flag | off | Reservado: hoje nao altera a saida (use `sen --verbose`). |
+
+### `sen list` — catalogos
+
+#### `sen list api`
+
+Lista as APIs do Sensedia Manager (com filtros por dono, time, contexto, workflow, stage e atributo).
+
+```
+sen list api [--id N] [--query TEXT] [--limit N] [--offset N] [--all] [--revisions]
+             [--owner TEXT] [--team TEXT] [--context TEXT] [--workflow N] [--stage N]
+             [--attribute TEXT] [--wide]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--id` | int | — | Filtra pelo ID da API. |
+| `--query` | text | — | Busca por nome ou descrição, feita pelo Manager. |
+| `--limit` | int | — | Quantidade de itens por página. |
+| `--offset` | int | — | A partir de qual item exibir. |
+| `--all` | flag | off | Lista todas as APIs visíveis (não combina com --limit, --offset ou --id). |
+| `--revisions`/`-r` | flag | off | Mostra as revisões da API informada em --id. |
+| `--owner` | text | — | Só APIs deste dono (username). |
+| `--team` | text | — | Só APIs com visibilidade deste time. |
+| `--context` | text | — | Só APIs com este contexto: organization, group ou me. |
+| `--workflow` | int | — | Só APIs cuja revisão corrente está neste workflow (id). |
+| `--stage` | int | — | Só APIs cuja revisão corrente está neste stage (id). |
+| `--attribute` | text | — | Só APIs que declaram este atributo de governança (nome como em `sen list attributes`). |
+| `--wide`/`-w` | flag | off | Acrescenta as colunas OWNER, CONTEXT, TEAM e STAGE. |
+
+#### `sen list apps`
+
+Apps (consumidores) e as APIs/planos que cada um assina. Sem credenciais.
+
+```
+sen list apps [--api N] [--query TEXT]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--api` | int | — | Só apps inscritos num plano desta API (id). |
+| `--query` | text | — | Filtra por nome ou desenvolvedor. |
+
+#### `sen list attributes`
+
+Atributos de governança (os `apiTags` do api-basic-info) e as tags válidas.
+
+```
+sen list attributes
+```
+
+_Sem opcoes alem de `--output/-o`._
+
+#### `sen list calls`
+
+Chamadas recentes no gateway (trace): quando, API, operação, status, latência, app.
+
+```
+sen list calls [--api N] [--env N] [--since TEXT] [--until TEXT] [--errors]
+               [--status-from N] [--status-to N] [--uri TEXT] [--operation-id N]
+               [--revision-id N] [--limit N] [--page N]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--api` | int | — | Só chamadas desta API (id). |
+| `--env` | int | — | Só chamadas deste ambiente (id). |
+| `--since` | text | — | Início da janela: 24h, 7d, 30m, YYYY-MM-DD ou ISO (UTC). Padrão: 24h. |
+| `--until` | text | — | Fim da janela (mesmos formatos). Padrão: agora. |
+| `--errors` | flag | off | Só erros (status 400–599). |
+| `--status-from` | int | — | Status HTTP mínimo. |
+| `--status-to` | int | — | Status HTTP máximo. |
+| `--uri` | text | — | Trecho da URI chamada. |
+| `--operation-id` | int | — | Só esta operação (id do Manager). |
+| `--revision-id` | int | — | Só esta revisão (id do Manager). |
+| `--limit` | int | `20` | Chamadas por página (máx. 500). |
+| `--page` | int | `1` | Página. |
+
+#### `sen list environments`
+
+Ambientes do tenant: id (usado pelo deploy na esteira), nome, inbound URL.
+
+```
+sen list environments
+```
+
+_Sem opcoes alem de `--output/-o`._
+
+#### `sen list gateway-pools`
+
+Pools de gateway e quantas rotas cada um serve.
+
+```
+sen list gateway-pools
+```
+
+_Sem opcoes alem de `--output/-o`._
+
+#### `sen list inbounds`
+
+Endereços de entrada do gateway (host, protocolo, TLS, data plane).
+
+```
+sen list inbounds
+```
+
+_Sem opcoes alem de `--output/-o`._
+
+#### `sen list interceptors`
+
+Catálogo de tipos de interceptor: o `type` aceito nos YAML e o id dos customs.
+
+```
+sen list interceptors [--custom] [--tag TEXT]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--custom` | flag | off | Só os customs (JavaScript/Java). |
+| `--tag` | text | — | Filtra pela tag do catálogo. |
+
+#### `sen list owners`
+
+Quem é dono de cada API: APIs por dono, contexto e time (lê o catálogo inteiro).
+
+```
+sen list owners
+```
+
+_Sem opcoes alem de `--output/-o`._
+
+#### `sen list permissions`
+
+Catálogo de códigos de permissão de um produto, agrupado por domínio.
+
+```
+sen list permissions [--product TEXT]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--product` | text | `API Platform` | Produto: "API Platform", "Access Control", "Adaptive Governance", "Analytics", … |
+
+#### `sen list plans`
+
+Planos de consumo: a que API pertencem, se são default e quantos interceptors têm.
+
+```
+sen list plans [--api N] [--query TEXT]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--api` | int | — | Só os planos desta API (id). |
+| `--query` | text | — | Filtra por nome do plano ou da API. |
+
+#### `sen list roles`
+
+Roles (policies) do Access Control e os produtos que cada uma habilita.
+
+```
+sen list roles [--query TEXT]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--query` | text | — | Filtra por nome ou descrição. |
+
+#### `sen list teams`
+
+Times (groups) do tenant: os nomes usados em visibilidade GROUP e nos workflows.
+
+```
+sen list teams [--query TEXT]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--query` | text | — | Busca pelo nome do time (no Manager). |
+
+#### `sen list tokens`
+
+Access tokens emitidos: dono, app, status e validade. O código nunca é exibido.
+
+```
+sen list tokens [--app N] [--api N]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--app` | int | — | Só os tokens deste app (id). |
+| `--api` | int | — | Só os tokens que alcançam esta API (id). |
+
+#### `sen list users`
+
+Usuários do tenant (Access Control): username, status e provedor.
+
+```
+sen list users [--query TEXT]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--query` | text | — | Busca por nome, username ou e-mail (no Manager). |
+
+#### `sen list variables`
+
+Variáveis de ambiente (mapas e chaves). Valores sensíveis saem sempre mascarados.
+
+```
+sen list variables [--env N] [--key TEXT]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--env` | int | — | Id do ambiente (sen list environments). Ausente: todos. |
+| `--key` | text | — | Filtra pelo nome da variável (substring). |
+
+#### `sen list workflows`
+
+Workflows do Adaptive Governance e os seus stages, em ordem.
+
+```
+sen list workflows
+```
+
+_Sem opcoes alem de `--output/-o`._
+
+### `sen get` — niveis de detalhe
+
+#### `sen get analytics`
+
+Analytics prontos: volumetria, erros, latência e rankings (operações, apps, ambientes, origens).
+
+```
+sen get analytics [--api N] [--env N] [--since TEXT] [--until TEXT] [--errors]
+                  [--uri TEXT] [--sample N] [--top N]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--api` | int | — | Só esta API (id). Ausente: o tenant inteiro. |
+| `--env` | int | — | Só este ambiente (id). |
+| `--since` | text | — | Início da janela: 24h, 7d, 30m, YYYY-MM-DD ou ISO (UTC). Padrão: 24h. |
+| `--until` | text | — | Fim da janela (mesmos formatos). Padrão: agora. |
+| `--errors` | flag | off | Resume só os erros (400–599). |
+| `--uri` | text | — | Trecho da URI chamada. |
+| `--sample` | int | `500` | Chamadas lidas para o resumo (máx. 2000; o total da janela vem de qualquer jeito). |
+| `--top` | int | `5` | Tamanho dos rankings. |
+
+#### `sen get api`
+
+Identidade, visibilidade, ambientes e revisões de UMA API (nível 1).
+
+```
+sen get api --id N
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--id` | int | **obrigatorio** | ID da API no Manager. |
+
+#### `sen get app`
+
+Um app: status, desenvolvedor e as assinaturas API -> planos. Sem credenciais.
+
+```
+sen get app --id N
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--id` | int | **obrigatorio** | Id do app (sen list apps). |
+
+#### `sen get custom`
+
+Nome e script de um Custom interceptor do catálogo do Manager.
+
+```
+sen get custom --custom-id N [--script-only]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--custom-id` | int | **obrigatorio** | Id do custom interceptor no catálogo (customInterceptorId). |
+| `--script-only` | flag | off | Escreve só o script, cru (para redirecionar a um arquivo). |
+
+#### `sen get environment`
+
+Um ambiente: gateway, mapas de variáveis (mascaradas) e todas as APIs/revisões no ar nele.
+
+```
+sen get environment --id N
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--id` | int | **obrigatorio** | Id do ambiente (sen list environments). |
+
+#### `sen get governance`
+
+A revisão contra o Adaptive Governance: stage atual, requisitos atendidos e o que falta para o próximo.
+
+```
+sen get governance --id N [--revision N] [--revision-id N]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--id` | int | **obrigatorio** | ID da API no Manager. |
+| `--revision` | int | — | NÚMERO da revisão (REV #, como na UI). Ausente: a revisão corrente. |
+| `--revision-id` | int | — | Id da revisão no Manager (REV ID), alternativa a --revision. |
+
+#### `sen get impact`
+
+Grafo de impacto da API: rotas com destino, planos e apps que a consomem.
+
+```
+sen get impact --id N [--env N]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--id` | int | **obrigatorio** | ID da API no Manager. |
+| `--env` | int | — | Id do ambiente (sen list environments). Ausente: o primeiro onde a API está no ar. |
+
+#### `sen get interceptor-type`
+
+Referência do `content` de um tipo de interceptor: campos, pontos, exemplo (doc 06 + tenant).
+
+```
+sen get interceptor-type [--type TEXT]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--type` | text | — | Nome do tipo como aparece em `type` (ex.: "Rate limit"). Ausente: todos. |
+
+#### `sen get interceptors`
+
+Fluxo de interceptors por escopo (nível 3) ou um interceptor inteiro (--item).
+
+```
+sen get interceptors --id N [--revision N] [--revision-id N] [--resource TEXT]
+                     [--operation TEXT] [--effective] [--content] [--point TEXT]
+                     [--item N]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--id` | int | **obrigatorio** | ID da API no Manager. |
+| `--revision` | int | — | NÚMERO da revisão (REV #, como na UI). Ausente: a revisão corrente. |
+| `--revision-id` | int | — | Id da revisão no Manager (REV ID), alternativa a --revision. |
+| `--resource` | text | — | Recorta um recurso: nome, slug ou id (e as suas operações). |
+| `--operation` | text | — | Recorta uma operação: "<MÉTODO> <path>" (ex.: "POST /oauth2/token") ou id. |
+| `--effective` | flag | off | Mostra o fluxo que cada escopo EXECUTA (herdado - removido + próprio), não só o próprio. |
+| `--content` | flag | off | Inclui o conteúdo (configuração) de cada interceptor. |
+| `--point` | text | — | Só um ponto de execução: FIRST/request, SECOND/response ou THIRD. |
+| `--item` | int | — | Zoom em UM interceptor pelo id do Manager: conteúdo inteiro. |
+
+#### `sen get plan`
+
+Um plano e os interceptors que ele acrescenta ao fluxo (request/response).
+
+```
+sen get plan --id N
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--id` | int | **obrigatorio** | Id do plano (sen list plans). |
+
+#### `sen get resources`
+
+Raiz -> recursos -> operações de uma revisão, com destino e contagens (nível 2).
+
+```
+sen get resources --id N [--revision N] [--revision-id N]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--id` | int | **obrigatorio** | ID da API no Manager. |
+| `--revision` | int | — | NÚMERO da revisão (REV #, como na UI). Ausente: a revisão corrente. |
+| `--revision-id` | int | — | Id da revisão no Manager (REV ID), alternativa a --revision. |
+
+#### `sen get role`
+
+Uma role: permissões por produto e quem a tem.
+
+```
+sen get role --id TEXT
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--id` | text | **obrigatorio** | Id (UUID) ou nome exato da role. |
+
+#### `sen get swagger`
+
+Contrato OpenAPI (swagger) da revisão, como o Manager o guarda.
+
+```
+sen get swagger --id N [--revision N] [--revision-id N]
+```
+
+O padrao de `-o` aqui e `yaml`, nao `text`.
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--id` | int | **obrigatorio** | ID da API no Manager. |
+| `--revision` | int | — | NÚMERO da revisão (REV #, como na UI). Ausente: a revisão corrente. |
+| `--revision-id` | int | — | Id da revisão no Manager (REV ID), alternativa a --revision. |
+
+#### `sen get team`
+
+Um time: descrição e membros. É o nome usado em visibilidade GROUP e nos workflows.
+
+```
+sen get team --name TEXT
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--name` | text | **obrigatorio** | Nome exato do time (sen list teams). |
+
+#### `sen get trace`
+
+Uma chamada pelo trace id: identificação, tempos, passos do fluxo no gateway e headers (mascarados).
+
+```
+sen get trace --id TEXT [--no-headers]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--id` | text | **obrigatorio** | Trace id (= request id) da chamada, de sen list calls ou do header x-request-id. |
+| `--no-headers` | flag | off | Omite os headers de request/response. |
+
+#### `sen get user`
+
+Um usuário: status, times e roles (e se é Super Admin).
+
+```
+sen get user --username TEXT
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--username` | text | **obrigatorio** | Username exato (sen list users). |
+
+#### `sen get workflow`
+
+Stages de um workflow e o que cada um exige (maturidade, interceptors, atributos, ambientes).
+
+```
+sen get workflow --id N
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--id` | int | **obrigatorio** | Id do workflow (veja sen list workflows). |
+
+### `sen export`
+
+#### `sen export api`
+
+Materializa a árvore canônica da revisão (api-basic-info, all, resources/...).
+
+```
+sen export api --id N [--revision N] [--revision-id N] [--dir PATH] [--force]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--id` | int | **obrigatorio** | ID da API no Manager. |
+| `--revision` | int | — | NÚMERO da revisão (REV #, como na UI). Ausente: a revisão corrente. |
+| `--revision-id` | int | — | Id da revisão no Manager (REV ID), alternativa a --revision. |
+| `--dir` | path | — | Pasta onde escrever a árvore. Ausente: os arquivos saem na tela. |
+| `--force` | flag | off | Sobrescreve arquivos já existentes em --dir. |
+
+### `sen reveal`
+
+#### `sen reveal variable`
+
+Mostra em claro o valor de UMA variável de ambiente, como o Manager o devolve.
+
+```
+sen reveal variable --env N --key TEXT [--map TEXT] [--raw]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--env` | int | **obrigatorio** | Id do ambiente (sen list environments). |
+| `--key` | text | **obrigatorio** | Nome EXATO da variável (sen list variables). |
+| `--map` | text | — | Mapa da variável, quando a chave se repete. |
+| `--raw` | flag | off | Escreve só o valor, cru (para redirecionar ou exportar). |
+
+### Diagnostico interno (oculto no `--help`)
+
+#### `sen diag draft`
+
+_oculto: uso interno, ausente do `sen --help`._
+
+Mostra o estado da revisão alvo — somente leitura, nada é publicado.
+
+```
+sen diag draft [--repo PATH]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--repo` | path | — | Repositório da API (default: diretório atual). |
+
+#### `sen diag structure`
+
+_oculto: uso interno, ausente do `sen --help`._
+
+Mostra a estrutura que a E1 descobre no repositório, sem tocar a rede.
+
+```
+sen diag structure [--repo PATH]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--repo` | path | — | Repositório da API (default: diretório atual). |
+
+#### `sen diag template`
+
+_oculto: uso interno, ausente do `sen --help`._
+
+Mostra a régua resolvida, o fluxo que ela exige e o snapshot.
+
+```
+sen diag template [--repo PATH]
+```
+
+| Opcao | Tipo | Padrao | Efeito |
+|---|---|---|---|
+| `--repo` | path | — | Repositório da API (default: diretório atual). |
+<!-- END GENERATED -->
+
+---
 
 ## O que não está disponível pela CLI (e por quê)
 

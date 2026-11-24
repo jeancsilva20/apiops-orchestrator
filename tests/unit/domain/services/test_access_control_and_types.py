@@ -202,3 +202,7 @@ def test_catalog_filters():
     assert CatalogFilters(workflow_id=139).matches(a) and CatalogFilters(stage_id=753).matches(b)
     assert not CatalogFilters(stage_id=753).matches(a) and not CatalogFilters(workflow_id=139).matches(c)
     assert CatalogFilters(owner="paulo", stage_id=420).matches(a) and not CatalogFilters(owner="paulo", stage_id=420).matches(b)
+    # `attribute` ativa o recorte, mas não é decidido aqui: os `apiTags` não
+    # vêm no catálogo, quem resolve é o ApiListingService lendo cada API.
+    assert CatalogFilters(attribute="CLI").active is True
+    assert CatalogFilters(attribute="CLI").matches(a)

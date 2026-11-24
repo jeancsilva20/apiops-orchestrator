@@ -145,11 +145,28 @@ class TestValidateFlow:
 
 
 class TestCentralization:
-    def test_every_manager_command_goes_through_resolver(self):
-        # Ponto único: o builder deve compor exatamente esta função
+    """Ponto unico: ninguem monta token admin por fora de `_build_admin_token`.
+
+    A guarda e dinamica de proposito. A versao anterior conferia um nome digitado
+    a mao (`resolve_admin_token`) em UM builder; o resolver foi renomeado, o nome
+    sumiu de `src/` inteiro e a guarda ficou vermelha sem que nada tivesse
+    regredido. Enumerando os builders, um builder novo entra no escopo sozinho.
+    """
+
+    def test_todo_builder_que_fala_com_o_manager_passa_pelo_resolver(self):
         import inspect
 
-        from apiops_orchestrator.main import build_listing_service_factory
+        from apiops_orchestrator import main as main_mod
 
-        source = inspect.getsource(build_listing_service_factory)
-        assert "resolve_admin_token" in source
+        builders = sorted(
+            nome
+            for nome in dir(main_mod)
+            if nome.startswith("build_") and nome.endswith("_factory")
+        )
+        assert len(builders) == 9, builders
+
+        for nome in builders:
+            fonte = inspect.getsource(getattr(main_mod, nome))
+            # `login` e o unico que legitimamente nao passa: e ele quem cria a sessao.
+            esperado = nome != "build_login_service_factory"
+            assert ("_build_admin_token(" in fonte) is esperado, nome

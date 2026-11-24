@@ -10,7 +10,6 @@ import json
 from types import SimpleNamespace
 
 import pytest
-from typer.testing import CliRunner
 
 from apiops_orchestrator.adapters.inbound.cli.cli_adapter import app
 from apiops_orchestrator.application.services.api_access_guard import ApiAccessGuard
@@ -45,8 +44,8 @@ from apiops_orchestrator.domain.models.validate_view import (
     ValidateRevision,
     ValidateView,
 )
+from sen_support.cli_invoke import LARGO, runner
 
-runner = CliRunner()
 
 
 def _view(**overrides) -> ValidateView:
@@ -120,8 +119,24 @@ def _ctx(servico):
 def test_comando_registrado_com_as_flags_do_contrato():
     resultado = runner.invoke(app, ["sen", "validate", "--help"])
     assert resultado.exit_code == 0
-    for flag in ("--repo", "--output", "--verbose"):
+    for flag in ("--repo", "--output"):
         assert flag in resultado.output
+
+
+def test_verbose_e_aceito_mas_nao_anunciado():
+    """`--verbose` nao faz nada neste comando e nao e anunciado — mas nao some.
+
+    Era aceito e ignorado, com um `help=` dizendo que aumentava o detalhamento:
+    o `--help` prometia comportamento inexistente, em quatro comandos. Passou a
+    `hidden=True` com o texto honesto. Remover seria quebra — um script de
+    esteira que ja o passa falharia com `No such option` —, entao continua
+    aceito, e e isso que este teste trava.
+    """
+    assert "--verbose" not in runner.invoke(app, ["sen", "validate", "--help"]).output
+
+    resultado = runner.invoke(app, ["sen", "validate", "--verbose"], obj={})
+    assert resultado.exit_code == 1
+    assert "No such option" not in resultado.output
 
 
 def test_servico_ausente_no_contexto_encerra_com_1_sem_rede():
@@ -367,7 +382,7 @@ class _ManagerDoDraft:
         return {"id": revision_id, "revisionNumber": 1, "interceptors": [], "resources": []}
 
 
-def _diag_draft(tmp_path, visibility):
+def _diag_draft(tmp_path, visibility, formato="json"):
     (tmp_path / "api-basic-info.yaml").write_text(
         "apiVersion: api-management.sensedia.com/v1\nkind: ApiBasicInfo\nspec:\n  id: 417\n",
         encoding="utf-8",
@@ -385,7 +400,7 @@ def _diag_draft(tmp_path, visibility):
     )
     resultado = runner.invoke(
         app,
-        ["sen", "diag", "draft", "--repo", str(tmp_path), "-o", "json"],
+        ["sen", "diag", "draft", "--repo", str(tmp_path), "-o", formato],
         obj={"manager_api_factory": factory},
     )
     return resultado, manager
@@ -556,3 +571,66 @@ def test_json_carries_the_documentation_status():
     resultado = runner.invoke(app, ["sen", "validate", "-o", "json"], obj=_ctx(_ServicoFake(resultado=view)))
 
     assert json.loads(resultado.output)["documentation"] == {"status": "unchanged", "reason": None}
+
+
+# --- sen diag structure / draft: o modo texto, que a pessoa de fato le -------
+def _plano(resultado) -> str:
+    return " ".join(resultado.output.split())
+
+
+# Os testes acima consultam sempre em `-o json`, entao os renderizadores de texto
+# dos dois diagnosticos nunca eram executados — eram o maior trecho descoberto de
+# `cli_adapter.py` depois de `diag template`.
+
+
+def test_diag_structure_em_texto_descreve_recursos_e_operacoes(tmp_path):
+    (tmp_path / "api-basic-info.yaml").write_text(
+        "apiVersion: api-management.sensedia.com/v1\nkind: ApiBasicInfo\nspec:\n  id: 1\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "all.yaml").write_text("destination:\n  url: https://x\n", encoding="utf-8")
+    pasta = tmp_path / "resources" / "tarefas"
+    pasta.mkdir(parents=True)
+    (pasta / "resource.yaml").write_text('name: "Tarefas"\n', encoding="utf-8")
+    (pasta / "get_tarefas.yaml").write_text("path: /tarefas\n", encoding="utf-8")
+
+    resultado = runner.invoke(
+        app, ["sen", "diag", "structure", "--repo", str(tmp_path)], env=LARGO
+    )
+
+    assert resultado.exit_code == 0, resultado.output
+    texto = _plano(resultado)
+    assert "completo" in texto
+    assert "1 recurso(s)" in texto and "1 operação(ões)" in texto
+    assert "tarefas" in texto and "Tarefas" in texto
+    assert "GET" in texto and "/tarefas" in texto
+
+
+def test_diag_structure_em_texto_lista_faltando_e_ignorados(tmp_path):
+    """O bloco de problemas so sai quando ha problema — e e o que orienta a correcao."""
+    (tmp_path / "alll.yaml").write_text("destination:\n  url: https://x\n", encoding="utf-8")
+
+    resultado = runner.invoke(
+        app, ["sen", "diag", "structure", "--repo", str(tmp_path)], env=LARGO
+    )
+
+    assert resultado.exit_code == 0, resultado.output
+    texto = _plano(resultado)
+    assert "incompleto" in texto
+    assert "faltando" in texto and "all.yaml" in texto
+    assert "ignorados" in texto and "alll.yaml" in texto
+
+
+def test_diag_draft_em_texto_mostra_a_revisao_e_os_escopos(tmp_path):
+    resultado, _ = _diag_draft(
+        tmp_path,
+        {"visibilityType": "GROUP", "groupVisibility": {"name": "APIOps"}},
+        formato="text",
+    )
+
+    assert resultado.exit_code == 0, resultado.output
+    texto = _plano(resultado)
+    assert "Servico de Letras" in texto
+    assert "API 417" in texto
+    assert "revisão 9161" in texto and "#1" in texto
+    assert "governado(s)" in texto and "preservado(s)" in texto
