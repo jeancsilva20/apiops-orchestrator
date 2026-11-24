@@ -11,6 +11,7 @@ APIOps Orchestrator in Python is built to compose, validate, plan and apply chan
 - [CLI Commands](#cli-commands)
 - [Configuration](#configuration)
 - [How to Run](#how-to-run)
+- [Standalone executable](#standalone-executable)
 - [Folder Structure](#folder-structure)
 - [Tech Stack](#tech-stack)
 - [Contributors](#contributors)
@@ -770,9 +771,19 @@ The two files are gap-filled into the environment (never overriding what is alre
 | `AUTH_VALIDATE_PATH` | no | Session validation path. Default: `{AUTH_LOGIN_PATH}/validation` |
 | `HOST` | no — keep the default | **Sensedia Manager** targeted by `list`, `completeness`, `validate`, `publish`, `deploy` |
 | `EXECUTION_MODE` | no | `local` (default) or `pipeline` |
+| `SEN_READ_ONLY` | no | `1`/`true`/`yes`/`on` turns this installation read-only: `validate`, `publish` and `deploy` refuse before authenticating |
 | `TEMPLATE_API_ID` | pipeline only | Golden Path API id; inject from the vault |
 | `TARGET_REVISION_NUMBER` | pipeline only | Revision **number** as shown in the UI (1=Draft, 2=DEV, 3=HML, 4=PRD) |
 | `TARGET_ENVIRONMENT_ID` | pipeline only | Manager id of the environment receiving `sen deploy` |
+
+> **`SEN_READ_ONLY` is the switch for an installation someone else drives.** Set
+> it when the `sen` on a machine is meant only to answer questions — a shared
+> workstation, or a coding agent that runs the binary and reads its output. The
+> three write commands then refuse with exit 1 before any network call, so the
+> refusal does not depend on a permission allowlist getting the command string
+> right: an absolute path to the executable, `cmd /c sen validate` or a double
+> space would all slip past a string match, and none of them slip past this.
+> Leave it unset on a CI runner, which needs to write.
 
 > **`HOST` and `AUTH_HOST` are separate on purpose.** The Manager is always `https://platform-production.sensedia.com` — that is the default in the code and the expected target, so normally you leave `HOST` unset. `AUTH_HOST` is configured per environment because the Orchestrator Auth API is published separately from the Manager; authenticating against one does not change which Manager the commands reach, and it is not supposed to. Set `HOST` only to point at a different Manager.
 >
@@ -917,6 +928,37 @@ hand-written list. A **new command fails on its own** if it arrives without
 help text, without `--output/-o`, without a row in the option matrix, with a
 non-cp1252 glyph in its help, or missing from the generated reference. The
 matrix tables live in `tests/sen_support/`.
+
+## Standalone executable
+
+Everything above runs `sen` from a Python environment. There is also a single-file
+build with no Python at all on the target machine — that is how `sen` is handed to
+someone who only wants to query the platform.
+
+```powershell
+# Requires a real CPython 3.12 install. The Microsoft Store Python will NOT work:
+# PyInstaller needs python3xx.dll and the stdlib under C:\Program Files\WindowsApps\,
+# a directory whose ACL denies reading even to its owner.
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-exe.ps1 `
+  -Python "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
+```
+
+The script builds in a clean venv, packages with PyInstaller, **fails the build if
+`.sen`, `.sen_session` or `.env` leaked into the bundle**, smoke-tests `sen --version`
+against the version in `pyproject.toml`, and writes
+`dist/sen-<version>/sen-<version>-windows-x64.zip`. Linux is `scripts/build-linux.sh`,
+run from WSL (Ubuntu 22.04, for glibc 2.35).
+
+Extract the zip into a new empty folder and run `install.ps1` from there. It copies to
+`%LOCALAPPDATA%\sen`, puts that folder on the user PATH, restricts its ACL, and asks
+once for the credential. In a frozen build, `.sen` and `.sen_session` live **next to
+`sen.exe`** — not in the repository.
+
+Full walkthrough for the person receiving the package: `scripts/README-executavel.md`.
+
+For an installation that only answers questions — a shared workstation, or a coding
+agent driving the binary — set `SEN_READ_ONLY=1` in that `.sen`. See
+[Variables](#variables).
 
 ## Folder Structure
 - `src/apiops_orchestrator/main.py` — CLI entry point and lazy Composition Root.
