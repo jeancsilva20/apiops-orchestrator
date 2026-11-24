@@ -2,3 +2,9 @@
 *.sh text eol=lf
 # O cmd lê o .cmd linha a linha: CRLF mesmo em checkout no Linux.
 *.cmd text eol=crlf
+# README.md e COMMANDS.md carregam um bloco gerado que o teste compara byte a
+# byte com a saida de `scripts/gen_cli_docs.py`: LF nos dois lados, sempre.
+*.md text eol=lf
+# Idem para a arvore de referencia do materializador e para os pipelines.
+*.yaml text eol=lf
+*.yml text eol=lf

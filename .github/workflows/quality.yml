@@ -1,0 +1,57 @@
+# Portao de qualidade onde os PRs de fato acontecem.
+#
+# O repositorio tem dois arquivos de pipeline (bitbucket-pipelines.yml e
+# pipeline.yaml, do Azure), mas `origin` e o GitHub e os PRs sao abertos la
+# (#2, #3, #9, #12). Sem este arquivo, nenhuma verificacao rodava em PR nenhum —
+# e foi assim que dois modulos de teste passaram a abortar a coleta inteira do
+# pytest sem ninguem notar.
+#
+# Os comandos sao os MESMOS do step `Quality` do Bitbucket. Se os dois arquivos
+# divergirem, o proprio `gen_cli_docs.py --check` falha dos dois lados igual.
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instala o projeto
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+          pip install -e .
+
+      # `black --check` ainda NAO entra: o repositorio nunca foi formatado
+      # (113 de 151 arquivos divergem). Formatar e um commit proprio; ligar o
+      # check antes disso deixaria o portao vermelho de nascenca, e portao que
+      # nasce vermelho e desligado na semana seguinte.
+      - name: Lint
+        run: ruff check src tests
+
+      - name: A documentacao de comandos bate com a CLI
+        run: python scripts/gen_cli_docs.py
+
+      - name: A arvore de referencia bate com o materializador
+        run: python scripts/gerar-arvore-de-referencia.py
+
+      - name: Testes
+        run: pytest -q
+
+      # Piso MEDIDO (ramo), nao meta. As baterias de integracao ficam fora: elas
+      # escrevem na plataforma e so rodam com APIOPS_BATERIA_417/425 ligadas.
+      - name: Piso de cobertura da borda da CLI
+        run: >
+          pytest tests/unit/adapters/inbound/cli
+          --cov=apiops_orchestrator.adapters.inbound.cli
+          --cov-fail-under=93

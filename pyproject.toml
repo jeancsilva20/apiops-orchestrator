@@ -38,6 +38,36 @@ deptry = "^0.23.1"
 bandit = "^1.8.6"
 safety = "^3.6.2"
 
+# Cobertura fica aqui, nao em `addopts` do pytest.ini: instrumentar todo
+# `pytest -k` de loop curto e imposto desnecessario. O gate e um comando
+# explicito, documentado no README e rodado no CI:
+#   pytest tests/unit/adapters/inbound/cli #     --cov=apiops_orchestrator.adapters.inbound.cli --cov-fail-under=93
+# 93 e o piso MEDIDO com `branch = true` (96% por statement, 93% por ramo), nao
+# uma meta: gate declarado acima do medido nasce quebrado e e logo desligado.
+# Sobe quando a medicao subir.
+[tool.coverage.run]
+source = ["apiops_orchestrator"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+
+# Uma fonte so para as duas ferramentas: sem isto, `ruff` e `black` podem
+# divergir na largura de linha e brigar a cada commit.
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.black]
+target-version = ["py312"]
+line-length = 88
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

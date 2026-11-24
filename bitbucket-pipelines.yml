@@ -4,24 +4,60 @@ definitions:
   caches:
     pip: ~/.cache/pip
     poetry: ~/.cache/pypoetry
+  steps:
+    # Rapido e SEM SEGREDO: nenhum clone externo, nenhum `.env`. E essa ausencia
+    # que permite rodar em pull request — um step que precisa de token nao roda
+    # em PR, e foi por isso que nunca houve portao de qualidade aqui.
+    - step: &qualidade
+        name: Quality
+        caches:
+          - pip
+          - poetry
+        script:
+          - python -m pip install --upgrade pip
+          - pip install poetry
+          - poetry install
+
+          # Lint. `black --check` NAO entra ainda: o repositorio nunca foi
+          # formatado (113 de 151 arquivos divergem hoje), e ligar o check sem
+          # antes formatar deixaria o portao vermelho de nascenca. Formatar e um
+          # commit proprio, que nao cabe junto de uma mudanca de comportamento.
+          - poetry run ruff check src tests
+
+          # A documentacao de comandos bate com a CLI? Gera e compara.
+          - poetry run python scripts/gen_cli_docs.py
+
+          # A arvore de referencia do materializador bate com o codigo?
+          - poetry run python scripts/gerar-arvore-de-referencia.py
+
+          # A suite inteira, mais o piso de cobertura da borda da CLI.
+          - poetry run pytest -q
+          - >
+            poetry run pytest tests/unit/adapters/inbound/cli
+            --cov=apiops_orchestrator.adapters.inbound.cli
+            --cov-fail-under=93
 
 pipelines:
+  # Antes so havia `branches: release`, entao commit em main e em feature branch
+  # nao disparava verificacao nenhuma — e foi assim que 2 modulos de teste
+  # passaram a abortar a coleta sem ninguem notar.
+  pull-requests:
+    "**":
+      - step: *qualidade
   branches:
+    main:
+      - step: *qualidade
     release:
+      - step: *qualidade
       - step:
-          name: Build + Run + Tests
+          name: Build + Run + Tests (contra o tenant)
           caches:
             - pip
             - poetry
           script:
-            # Atualiza pip e instala Poetry
             - python -m pip install --upgrade pip
             - pip install poetry
-
-            # Instala dependências do projeto via Poetry
             - poetry install
-
-            # Instala plugin HTML do pytest dentro do ambiente do Poetry
             - poetry run pip install pytest-html
 
             # Clona repositório externo
@@ -29,21 +65,16 @@ pipelines:
             - git clone --depth 1 "https://${BB_USERNAME}:${BB_REPO_TOKEN}@bitbucket.org/sensedia/apis-repo.git" ./external-repo
             - ls -la ./external-repo
 
-            #debug variavel mavem
-            - echo "MAVEN_USERNAME: $MAVEN_USERNAME"
-
             # Gera o .env
             - printf "HOST=%s\nAUTHORIZATION=%s\nREQUEST_TIMEOUT=%s\nAPI_ID=%s\n" \
               "$HOST" "$AUTHORIZATION" "$REQUEST_TIMEOUT" "$API_ID" > .env
 
-            # Executa aplicação
-            - poetry run python src/apiops_orchestrator/main.py
+            # Smoke da CLI. Era `main.py` sem argumentos, que imprime o help e
+            # sai com 2 (no_args_is_help) — o step morria aqui e as linhas
+            # seguintes, inclusive o pytest, nunca chegaram a rodar.
+            - poetry run python src/apiops_orchestrator/main.py sen --version
 
             # Executa testes + relatórios (JUnit + HTML)
-            - mkdir -p test-results
-            - poetry run pytest --junitxml=test-results/pytest-results.xml --html=test-results/pytest-report.html --self-contained-html
-          artifacts:
-            - test-results/**
             - mkdir -p test-results
             - poetry run pytest --junitxml=test-results/pytest-results.xml --html=test-results/pytest-report.html --self-contained-html
           artifacts:
