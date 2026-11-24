@@ -138,6 +138,35 @@ def test_app_root_no_binario_e_a_pasta_do_executavel(tmp_path, monkeypatch):
     assert settings_module._app_root() == tmp_path.resolve()
 
 
+def test_project_root_fora_do_binario_e_a_raiz_do_repositorio(monkeypatch):
+    from apiops_orchestrator.config import settings as settings_module
+
+    monkeypatch.delattr(sys, "frozen", raising=False)
+
+    raiz = settings_module._project_root()
+    assert (raiz / "pyproject.toml").exists()
+    assert raiz == settings_module.PACKAGE_ROOT.parents[1]
+
+
+def test_project_root_no_binario_nao_escapa_para_o_temp(tmp_path, monkeypatch):
+    """A regressao que este teste tranca.
+
+    No onefile `__file__` fica sob `_MEIPASS`, e quatro `.parent` chegavam no
+    %TEMP% do usuario — pasta gravavel por qualquer processo. Um `.env` plantado
+    ali definiria `HOST` e redirecionaria o Manager para um servidor arbitrario,
+    que passaria a receber o bearer token. Congelado, a raiz tem de ser a pasta
+    do executavel, igual ao `_app_root()`.
+    """
+    from apiops_orchestrator.config import settings as settings_module
+
+    executavel = tmp_path / "sen.exe"
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(executavel))
+
+    assert settings_module._project_root() == tmp_path.resolve()
+    assert settings_module._project_root() == settings_module._app_root()
+
+
 def test_sen_file_alone_provides_auth_block(tmp_path, monkeypatch):
     _clean_auth_block(monkeypatch)
     monkeypatch.setenv("HOST", "https://plat.example.com")

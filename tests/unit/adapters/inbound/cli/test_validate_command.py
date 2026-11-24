@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from apiops_orchestrator.adapters.inbound.cli import cli_adapter
 from apiops_orchestrator.adapters.inbound.cli.cli_adapter import app
 from apiops_orchestrator.application.services.api_access_guard import ApiAccessGuard
 from apiops_orchestrator.domain.models.login_session_model import LoginSession
@@ -472,7 +473,37 @@ def test_progresso_nao_contamina_saida_legivel_por_maquina(formato):
     assert resultado.output.lstrip().startswith("{" if formato == "json" else "schema")
 
 
-def test_confirmacao_explica_que_grava_um_rascunho_sem_deploy():
+@pytest.fixture
+def terminal_interativo(monkeypatch):
+    """Declara que o teste exercita o prompt.
+
+    Sob o `CliRunner` o stdin nunca e um terminal, e a confirmacao do
+    `validate` recusa quando nao ha ninguem para responder. Os testes que
+    querem o prompt precisam afirmar o terminal.
+    """
+    monkeypatch.setattr(cli_adapter, "_stdin_is_interactive", lambda: True)
+
+
+def test_confirmacao_recusa_sem_terminal_e_nao_grava():
+    """A regressao que este teste tranca.
+
+    Sem TTY a protecao existia por acidente: o `typer.confirm` tomava EOF e o
+    Click entregava `Abort`. Bastava `echo y | sen validate` para derruba-la e
+    gravar na revisao Draft. Agora a recusa e explicita e vem antes do prompt.
+    """
+    class _ServicoQuePergunta(_ServicoFake):
+        def validate(self, repo_path, *, confirm, progress=None):
+            confirm("Uma versão de rascunho será gravada.")
+            raise AssertionError("gravou com stdin não interativo")
+
+    servico = _ServicoQuePergunta(resultado=_view())
+    resultado = runner.invoke(app, ["sen", "validate"], obj=_ctx(servico), input="y\n")
+
+    assert resultado.exit_code == 130
+    assert "Deseja prosseguir?" not in resultado.output
+
+
+def test_confirmacao_explica_que_grava_um_rascunho_sem_deploy(terminal_interativo):
     """O texto anterior ("Publicar na revisão N") parecia anunciar um deploy.
 
     Quem roda `validate` quer validar; precisa entender que a gravação do
@@ -505,7 +536,7 @@ def test_confirmacao_explica_que_grava_um_rascunho_sem_deploy():
         "﻿y\n",       # resposta inválida e depois fim da entrada (PowerShell 5.1)
     ],
 )
-def test_cancelar_o_prompt_interrompe_com_130_e_sem_relatorio(entrada):
+def test_cancelar_o_prompt_interrompe_com_130_e_sem_relatorio(entrada, terminal_interativo):
     """Ctrl+C / fim da entrada não é um "não": interrompe o comando.
 
     O serviço não chega a devolver nada, nenhum relatório é exibido e o

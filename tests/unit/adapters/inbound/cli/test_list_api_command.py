@@ -182,6 +182,45 @@ def test_api_list_no_apis_when_none_returned():
     assert result.exit_code == 0
     assert "Nenhuma API encontrada." in result.output
 
+def test_api_list_vazio_em_json_e_lista_vazia():
+    """A regressao que este teste tranca.
+
+    A checagem do vazio ficava ANTES do `display_output`, entao `-o json`
+    imprimia "Nenhuma API encontrada." e saia 0: texto em portugues onde quem
+    consome por maquina espera JSON, com codigo de sucesso. Um agente le isso
+    como "a ferramenta quebrou", nao como "zero resultados" — e cai nisso no
+    primeiro filtro que nao casa.
+    """
+    mock_service = MagicMock()
+    mock_service.list_apis.return_value = []
+
+    result = runner.invoke(
+        app,
+        ["sen", "list", "api", "--query", "nao-existe", "-o", "json"],
+        obj={"api_listing_service_factory": lambda: mock_service},
+    )
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "[]"
+    assert "Nenhuma API encontrada" not in result.stdout
+
+
+def test_api_list_revisoes_vazias_em_json_e_lista_vazia():
+    """Mesmo early return, no drill-down de revisoes (`--revisions`)."""
+    mock_service = MagicMock()
+    mock_service.api_revisions.return_value = []
+
+    result = runner.invoke(
+        app,
+        ["sen", "list", "api", "--id", "409", "--revisions", "-o", "json"],
+        obj={"api_listing_service_factory": lambda: mock_service},
+    )
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "[]"
+    assert "Nenhuma revis" not in result.stdout
+
+
 def test_api_list_json():
     """Test 'list api --output json'."""
     from unittest.mock import MagicMock

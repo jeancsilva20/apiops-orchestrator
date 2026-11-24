@@ -70,6 +70,14 @@ _PIPELINE_KEYS = frozenset(
     {"TEMPLATE_API_ID", "TARGET_REVISION_NUMBER", "TARGET_ENVIRONMENT_ID"}
 )
 _MODE_KEY = "EXECUTION_MODE"
+_READ_ONLY_KEY = "SEN_READ_ONLY"
+_READ_ONLY_TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+READ_ONLY_REFUSAL = (
+    "Esta instalação do sen é somente leitura (SEN_READ_ONLY). Os comandos que "
+    "gravam no Manager — validate, publish e deploy — estão desligados. Para "
+    "consultar sem gravar use sen list, sen get e sen export."
+)
 
 INVALID_CONFIGURATION = "A configuração do sen é inválida. Fale com o time da plataforma."
 # ASCII puro de proposito: esta mensagem existe justamente para o caso em que o
@@ -81,6 +89,23 @@ OUTPUT_ENCODING_MESSAGE = (
 OTHER_INVALID_CONFIGURATION = (
     "Há outra configuração inválida. Fale com o time da plataforma."
 )
+
+
+def _read_only() -> bool:
+    """Trava da instalação, lida do ambiente bruto como `_in_pipeline()`.
+
+    Fica no binário, e não só na camada de permissão de quem o chama, porque
+    allowlist de linha de comando não cobre caminho absoluto do executável,
+    `cmd /c`, espaço duplo nem prefixo de variável de ambiente. Aqui a recusa é
+    por construção, venha a chamada de onde vier.
+    """
+    return (os.environ.get(_READ_ONLY_KEY) or "").strip().lower() in _READ_ONLY_TRUTHY
+
+
+def _refuse_if_read_only() -> None:
+    """Recusa antes de montar o adapter: não autentica, não toca na rede."""
+    if _read_only():
+        raise CliError(READ_ONLY_REFUSAL, exit_code=1)
 
 
 def _in_pipeline() -> bool:
@@ -200,6 +225,7 @@ def build_validate_service_factory():
     """
 
     def factory() -> ValidateService:
+        _refuse_if_read_only()
         settings = _load_settings()
         manager_adapter = ManagerApiAdapter(
             token=_build_admin_token(settings),
@@ -222,6 +248,7 @@ def build_publish_service_factory():
     """Factory do `sen publish`, montada preguiçosamente como a do `validate`."""
 
     def factory() -> PublishService:
+        _refuse_if_read_only()
         settings = _load_settings()
         exigir_esteira_no_publish(settings)
         manager_adapter = ManagerApiAdapter(
@@ -243,6 +270,7 @@ def build_deploy_service_factory():
     """Factory do `sen deploy`, montada preguiçosamente como a do `publish`."""
 
     def factory() -> DeployService:
+        _refuse_if_read_only()
         settings = _load_settings()
         exigir_esteira_no_deploy(settings)
         manager_adapter = ManagerApiAdapter(

@@ -90,15 +90,19 @@ sen get trace --id <trace id>                           # one call, pipeline ste
 
 Output examples are deliberately **not** repeated per command: text mode is Rich
 (it changes with `COLUMNS`) and would carry tenant data. One sample is enough to
-show the envelope every `-o json` shares — `schema`, the window and the paging
-keys are stable, and that is what an agent integrates against:
+show the shape an agent integrates against: the window and the paging keys are
+stable.
+
+A note on versioning, because it is easy to assume otherwise: only `sen login`,
+`sen completeness`, `sen validate`, `sen publish` and `sen deploy` wrap their
+payload in a `schema` key. The navigation commands — `list`, `get`, `export`,
+`reveal` — do not. Identify their payload by its shape, not by a version field.
 
 ```bash
 sen list calls --api 409 --errors --limit 2 -o json
 ```
 ```json
 {
-    "schema": "sen.calls/v1",
     "window": { "begin": "2026-11-22T12:00:00Z", "end": "2026-11-23T12:00:00Z", "clamped": false },
     "total": 2,
     "page": 1,

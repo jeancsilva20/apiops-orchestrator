@@ -125,6 +125,15 @@ else {
 }
 
 New-Item -ItemType Directory -Force -Path $Destino | Out-Null
+
+# O .sen (credencial) e o .sen_session (bearer token) vivem nesta pasta. O
+# SessionStore chama os.chmod(0o600), mas no NT isso so mexe no bit read-only e
+# nao restringe ACL nenhuma — a protecao real e a ACL da pasta. Heranca cortada,
+# acesso so para o dono.
+& icacls.exe $Destino /inheritance:r /grant:r "$($env:USERNAME):(OI)(CI)F" | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning "Nao foi possivel restringir a ACL de $Destino. A credencial e o token de sessao ficam legiveis por outros perfis da maquina."
+}
 $daPastaExtraida = (Resolve-Path $origem).Path -ne (Resolve-Path $Destino).Path
 if ($daPastaExtraida) {
     foreach ($arquivo in $arquivosDoPacote) {

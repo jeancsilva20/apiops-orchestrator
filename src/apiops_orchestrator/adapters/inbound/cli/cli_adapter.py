@@ -431,6 +431,20 @@ def _stdout_supports_rounded_box() -> bool:
     return _supports_text("\u256d\u2500")
 
 
+def _stdin_is_interactive() -> bool:
+    """True quando há alguém do outro lado para responder a uma confirmação.
+
+    Isolado numa função pelo mesmo motivo de `_stdout_supports_rounded_box`: é
+    uma pergunta sobre o ambiente, e os testes que exercitam o fluxo interativo
+    precisam poder afirmá-la.
+    """
+    try:
+        return sys.stdin is not None and sys.stdin.isatty()
+    except (AttributeError, ValueError):
+        # stdin fechado ou substituído por algo sem `isatty`: não é interativo.
+        return False
+
+
 def _framed_logo_width() -> int:
     """Largura do quadro do logo — referência de alinhamento dos outros painéis."""
     return len(_framed_logo().splitlines()[0])
@@ -699,11 +713,14 @@ def list_apis(
             work, label=_listing_label(filters), narrate=output is OutputFormat.TEXT
         )
 
-        if not apis:
-            rprint("[yellow]Nenhuma API encontrada.[/yellow]")
-            return
-
         def print_text():
+            # A checagem do vazio vive aqui dentro, e nao antes do
+            # `display_output`: um early return faria `-o json` imprimir esta
+            # frase em vez de `[]`, e quem consome a saida por maquina receberia
+            # texto invalido com codigo de saida 0.
+            if not apis:
+                rprint("[yellow]Nenhuma API encontrada.[/yellow]")
+                return
             if wide:
                 _render_grade(
                     [_listing_cells(entry) + _wide_cells(entry) for entry in apis],
@@ -851,11 +868,12 @@ def _render_revisions_grade(
         label="Consultando completeness das revisões...",
         narrate=output is OutputFormat.TEXT,
     )
-    if not rows:
-        rprint(f"[yellow]Nenhuma revisão encontrada para a API {api_id}.[/yellow]")
-        return
-
     def print_text():
+        # Mesmo motivo de `list api`: fora do callback, `-o json` devolveria
+        # esta frase em vez de `[]`.
+        if not rows:
+            rprint(f"[yellow]Nenhuma revisão encontrada para a API {api_id}.[/yellow]")
+            return
         _render_grade(
             [_revision_cells(row) for row in rows],
             header=REVISIONS_HEADER,
@@ -1438,7 +1456,16 @@ def _confirm_publication(
 
     `n` devolve `False` e o comando encerra sem gravar. Ctrl+C não é resposta:
     interrompe o comando (`_OperationCancelled`).
+
+    Sem terminal a resposta é recusar, e isso é explícito de propósito: antes,
+    o `typer.confirm` tomava EOF e o Click entregava `Abort`, de modo que a
+    proteção existia por acidente — e `echo y | sen validate` a derrubava.
     """
+    if not _stdin_is_interactive():
+        # Ninguém para responder: não há confirmação possível, e uma gravação
+        # no Manager não acontece por omissão.
+        raise _OperationCancelled()
+
     def _ask() -> bool:
         rprint()
         rprint(

@@ -26,3 +26,16 @@ AUTH_LOGIN_PATH="/orq-auth/v1/oauth2/token"
 # O Manager alvo dos demais comandos não vem daqui: é o HOST, que por padrão
 # aponta para https://platform-production.sensedia.com — o esperado, e que no
 # uso normal não se mexe. Para ver qual Manager respondeu, `sen list api`.
+
+# ----------------------------------------------------------------------------
+# Postura desta instalação
+# ----------------------------------------------------------------------------
+# `local` é o default; a linha existe para que a postura seja legível no arquivo
+# em vez de implícita. Fora de `pipeline`, `publish` e `deploy` recusam.
+EXECUTION_MODE=local
+
+# Desliga no próprio binário os comandos que gravam no Manager (validate,
+# publish, deploy). É o que torna esta instalação segura para um agente de
+# código: a recusa acontece antes de autenticar, venha a chamada de onde vier.
+# Apague esta linha se esta instalação precisar gravar (esteira de CI).
+SEN_READ_ONLY=1

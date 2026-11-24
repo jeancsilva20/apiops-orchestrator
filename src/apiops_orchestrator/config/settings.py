@@ -13,11 +13,26 @@ def _app_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+def _project_root() -> Path:
+    """Raiz do repositório do dev. No binário congelado ela não existe: `__file__`
+    cai sob `_MEIPASS` e o quarto `.parent` é o %TEMP% do usuário — um `.env`
+    plantado ali entraria na configuração do sen e poderia redirecionar `HOST`
+    para um servidor arbitrário, que passaria a receber o bearer token."""
+    if getattr(sys, "frozen", False):
+        return _app_root()
+    return Path(__file__).resolve().parents[3]
+
+
+PROJECT_ROOT = _project_root()
 PACKAGE_ROOT = _app_root()
 
 dotenv_path = PROJECT_ROOT / ".env"
 sen_path = PACKAGE_ROOT / ".sen"
+
+# Congelado, `dotenv_path` e `sen_path` apontam para a mesma pasta; manter os
+# dois na lista seria inócuo, mas a deduplicação preserva a ordem (no
+# pydantic-settings o último vence) e deixa a intenção explícita.
+_env_files = tuple(dict.fromkeys((str(dotenv_path), str(sen_path))))
 
 # Credential/config sources precedence (high -> low):
 #   process environment > .sen (package dir) > .env (repo root)
@@ -30,7 +45,7 @@ load_dotenv(dotenv_path=dotenv_path, override=False)
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(str(dotenv_path), str(sen_path)),
+        env_file=_env_files,
         env_file_encoding="utf-8",
         extra="ignore",
     )
